@@ -27,6 +27,7 @@ type ImageLayerResolution = {
 
 type CallType = 'StartConfiguration' | 'Configure';
 type TraversalStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
+type EstimateMode = 'lower-bound-adaptive';
 
 type CpqRouteResponse = {
   sessionId: string;
@@ -192,12 +193,14 @@ export default function BikeBuilderPage() {
   const [debugIncludeHidden, setDebugIncludeHidden] = useState(false);
   const [includeSelectedOption, setIncludeSelectedOption] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [delayRemainingMs, setDelayRemainingMs] = useState(0);
   const [expandedResultKeys, setExpandedResultKeys] = useState<Record<string, boolean>>({});
   const [persistenceEnabled, setPersistenceEnabled] = useState(true);
   const [savedToDatabaseCount, setSavedToDatabaseCount] = useState(0);
   const [saveErrorCount, setSaveErrorCount] = useState(0);
   const [lastSaveStatus, setLastSaveStatus] = useState<PersistenceStatus>('idle');
   const [lastSaveMessage, setLastSaveMessage] = useState('-');
+  const [estimateMode] = useState<EstimateMode>('lower-bound-adaptive');
   const [manualSaveStatus, setManualSaveStatus] = useState<PersistenceStatus>('idle');
   const [manualSaveMessage, setManualSaveMessage] = useState('-');
   const [manualSaveTimestamp, setManualSaveTimestamp] = useState<string | null>(null);
@@ -329,6 +332,15 @@ export default function BikeBuilderPage() {
     if (configureCountRef.current >= maxConfigureCalls) return true;
     if (runStartRef.current && Date.now() - runStartRef.current >= maxRuntimeMinutes * 60 * 1000) return true;
     return false;
+  };
+
+  const getVisibleCombinationLowerBound = (nextState: NormalizedBikeBuilderState) => {
+    const features = getTraversableFeatures(nextState, false).filter((feature) => feature.isVisible !== false && feature.isEnabled !== false);
+    const combinationCount = features.reduce((product, feature) => {
+      const selectableCount = feature.availableOptions.filter((option) => isOptionTraversable(option)).length;
+      return product * BigInt(Math.max(1, selectableCount));
+    }, 1n);
+    return Number(combinationCount > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : combinationCount);
   };
 
   const getTraversableFeatures = (nextState: NormalizedBikeBuilderState, includeHidden: boolean) => {
@@ -519,7 +531,7 @@ export default function BikeBuilderPage() {
         throw new Error(payload.error ?? 'Unknown persistence error');
       }
 
-      const payload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate' };
+      const payload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
       if (payload.status === 'duplicate') {
         setDuplicateSkippedCount((prev) => prev + 1);
         setLastSaveStatus('saved');
@@ -532,7 +544,7 @@ export default function BikeBuilderPage() {
       }
       setSavedToDatabaseCount((prev) => prev + 1);
       setLastSaveStatus('saved');
-      setLastSaveMessage(`saved result #${captured.sequence}`);
+      setLastSaveMessage(`saved result #${captured.sequence}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`);
       return true;
     } catch (error) {
       setSaveErrorCount((prev) => prev + 1);
@@ -621,11 +633,13 @@ export default function BikeBuilderPage() {
       }
 
       const waitFor = Math.min(chunk, remaining);
+      setDelayRemainingMs(remaining);
       await new Promise((resolve) => setTimeout(resolve, waitFor));
       remaining -= waitFor;
       updateElapsed();
     }
 
+    setDelayRemainingMs(0);
     return !traversalControlRef.current.stop;
   };
 
@@ -719,12 +733,20 @@ export default function BikeBuilderPage() {
     featureId,
     optionId,
     optionValue,
+    respectTraversalDelay = false,
   }: {
     sourceState: NormalizedBikeBuilderState;
     featureId: string;
     optionId: string;
     optionValue?: string;
+    respectTraversalDelay?: boolean;
   }): Promise<CpqRouteResponse> => {
+    if (respectTraversalDelay && configureCountRef.current > 0 && delayMs > 0) {
+      const keepGoing = await sleepWithControl(delayMs);
+      if (!keepGoing) {
+        throw new Error('Traversal stopped before configure call.');
+      }
+    }
     setRequestState({ loading: true });
     setActiveFeatureId(featureId);
     const sourceFeature = sourceState.features.find((feature) => feature.featureId === featureId);
@@ -786,17 +808,19 @@ export default function BikeBuilderPage() {
     optionId,
     optionValue,
     sourceStateOverride,
+    respectTraversalDelay = false,
   }: {
     featureId: string;
     optionId: string;
     optionValue?: string;
     sourceStateOverride?: NormalizedBikeBuilderState;
+    respectTraversalDelay?: boolean;
   }) => {
     const sourceState = sourceStateOverride ?? state;
     if (!sourceState?.sessionId) {
       throw new Error('No active session to configure.');
     }
-    return configureSelection({ sourceState, featureId, optionId, optionValue });
+    return configureSelection({ sourceState, featureId, optionId, optionValue, respectTraversalDelay });
   };
 
   const changeOption = async (featureId: string, optionId: string, optionValue?: string) => {
@@ -831,16 +855,12 @@ export default function BikeBuilderPage() {
         return { state: currentState, detail: freshDetailId };
       }
 
-      if (configureCountRef.current > 0) {
-        const keepGoing = await sleepWithControl(delayMs);
-        if (!keepGoing) return { state: currentState, detail: freshDetailId };
-      }
-
       const payload = await configureSelection({
         sourceState: currentState,
         featureId: step.featureId,
         optionId: step.optionId,
         optionValue: step.optionValue,
+        respectTraversalDelay: true,
       });
 
       currentState = payload.parsed;
@@ -864,7 +884,7 @@ export default function BikeBuilderPage() {
     let processedTransitions = 0;
 
     setVisitedStateCount(visitedStateSignatures.size);
-    setEstimatedTotal(Math.max(1, buildTraversalCandidates(seedState).length));
+    setEstimatedTotal(Math.max(1, getVisibleCombinationLowerBound(seedState), buildTraversalCandidates(seedState).length));
 
     while (queue.length > 0) {
       if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
@@ -886,7 +906,8 @@ export default function BikeBuilderPage() {
       const discoveredEstimate = processedTransitions + candidates.length + queue.length;
       setEstimatedTotal((prev) => {
         const branchingFactor = Math.max(1, Math.round(processedTransitions / Math.max(expandedStates, 1)));
-        return Math.max(prev, discoveredEstimate, processedTransitions + queue.length * branchingFactor);
+        const lowerBound = getVisibleCombinationLowerBound(restoredBranch.state);
+        return Math.max(prev, lowerBound, discoveredEstimate, processedTransitions + queue.length * branchingFactor);
       });
 
       for (const candidate of candidates) {
@@ -911,16 +932,12 @@ export default function BikeBuilderPage() {
         setCurrentTraversalDetailId(branch.detail);
         setCurrentTraversalSessionId(branch.state.sessionId ?? '-');
 
-        if (configureCountRef.current > 0 || pathPrefix.length > 0) {
-          const keepGoing = await sleepWithControl(delayMs);
-          if (!keepGoing) return;
-        }
-
         const payload = await applyUiOptionChange({
           sourceStateOverride: branch.state,
           featureId: feature.featureId,
           optionId: option.optionId,
           optionValue: option.value,
+          respectTraversalDelay: true,
         });
         processedTransitions += 1;
         setProcessedCount(processedTransitions);
@@ -961,6 +978,7 @@ export default function BikeBuilderPage() {
     configureCountRef.current = 0;
     setConfigureCallCount(0);
     setElapsedMs(0);
+    setDelayRemainingMs(0);
     setCurrentFeatureLabel('-');
     setCurrentOptionLabel('-');
     setCurrentTraversalBaseDetailId('-');
@@ -980,6 +998,8 @@ export default function BikeBuilderPage() {
     setSaveErrorCount(0);
     setLastSaveStatus('idle');
     setLastSaveMessage('-');
+    setResults([]);
+    setExpandedResultKeys({});
 
     try {
       await runConfigurationTraversal(state);
@@ -1005,6 +1025,7 @@ export default function BikeBuilderPage() {
       setCurrentTraversalDetailId('-');
       setCurrentTraversalSessionId('-');
       setCurrentTraversalCallType('-');
+      setDelayRemainingMs(0);
     }
   };
 
@@ -1146,17 +1167,10 @@ export default function BikeBuilderPage() {
               />
             </label>
             <label style={styles.checkboxLabel}>
-              <input type="checkbox" checked={debugIncludeHidden} onChange={(e) => setDebugIncludeHidden(e.target.checked)} />
-              Include hidden/system features (debug)
-            </label>
-            <label style={styles.checkboxLabel}>
-              <input type="checkbox" checked={includeSelectedOption} onChange={(e) => setIncludeSelectedOption(e.target.checked)} />
-              Include currently selected option
-            </label>
-            <label style={styles.checkboxLabel}>
               <input type="checkbox" checked={persistenceEnabled} onChange={(e) => setPersistenceEnabled(e.target.checked)} />
-              Persist sampler results to DB
+              Save discovered configurations to database
             </label>
+            <span style={styles.tinyMuted}>When enabled, each discovered state is saved into CPQ_sampler_result (deduped by IPN + country).</span>
           </div>
           <div style={styles.progressWrap}>
             <div style={styles.progressLabel}>
@@ -1167,7 +1181,9 @@ export default function BikeBuilderPage() {
               max={Math.max(estimatedTotal, 1)}
               style={styles.progressBar}
             />
-            <div style={styles.tinyMuted}>Estimate adapts while CPQ dependencies reveal new reachable states.</div>
+            <div style={styles.tinyMuted}>
+              Estimate mode: {estimateMode} (visible selectable options define a lower bound; estimate grows as new states are discovered).
+            </div>
           </div>
           <div style={styles.statusRow}>
             <span style={styles.badge}>status: {traversalStatus}</span>
@@ -1184,6 +1200,7 @@ export default function BikeBuilderPage() {
             <span style={styles.badge}>results: {results.length}</span>
             <span style={styles.badge}>configure calls: {configureCallCount}</span>
             <span style={styles.badge}>elapsed: {(elapsedMs / 1000).toFixed(1)}s</span>
+            <span style={styles.badge}>wait: {delayRemainingMs > 0 ? `${delayRemainingMs}ms` : '-'}</span>
             <span style={styles.badge}>detailId: {currentTraversalDetailId}</span>
             <span style={styles.badge}>sessionId: {currentTraversalSessionId}</span>
             <span style={styles.badge}>callType: {currentTraversalCallType}</span>
@@ -1344,6 +1361,14 @@ export default function BikeBuilderPage() {
             {debugOpen && (
               <div style={styles.debugCard}>
                 <h3 style={styles.debugTitle}>Ruleset debug</h3>
+                <label style={styles.checkboxLabel}>
+                  <input type="checkbox" checked={debugIncludeHidden} onChange={(e) => setDebugIncludeHidden(e.target.checked)} />
+                  Traverse hidden/system features (debug)
+                </label>
+                <label style={styles.checkboxLabel}>
+                  <input type="checkbox" checked={includeSelectedOption} onChange={(e) => setIncludeSelectedOption(e.target.checked)} />
+                  Reconfigure with currently-selected options (debug)
+                </label>
                 <ul style={styles.debugList}>
                   <li>lastCallType: {lastCallType}</li>
                   <li>sampler mode: configuration-traversal</li>

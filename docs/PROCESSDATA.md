@@ -25,18 +25,27 @@
   - `country_code` from this context is included in persisted rows.
 
 ## 3) Traversal status/progress semantics
-- Estimated total is adaptive/heuristic because CPQ dependencies are dynamic.
+- Estimated total uses a **lower-bound adaptive** heuristic:
+  - lower bound = product of currently visible/selectable options.
+  - adaptive growth = estimate increases as traversal discovers new states.
 - Processed count represents executed traversal transitions (`/configure` calls).
 - Progress bar displays `processed / estimated`.
-- Additional counters include saved rows and duplicates skipped.
+- Additional counters include configure calls, saved rows, duplicates skipped, save errors, and delay/wait state.
 
-## 4) Setup management
+## 4) Traversal controls
+- Main workflow keeps one essential persistence toggle:
+  - **Save discovered configurations to database** (on by default).
+- Debug-only toggles were moved under **Show debug**:
+  - traverse hidden/system features
+  - include currently-selected options as debug reconfigure steps
+
+## 5) Setup management
 - `/cpq/setup` exposes exactly:
   - Account code management
   - Ruleset management
   - Picture management
 - Backed by `/api/cpq/setup/*` routes.
 
-## 5) Results browsing
+## 6) Results browsing
 - `/cpq/results` loads latest rows per IPN from `CPQ_sampler_result`.
 - Uses picture mappings from `cpq_image_management`.
