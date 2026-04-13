@@ -11,11 +11,12 @@
 - Triggered from `/cpq` using **Start configuration traversal**.
 - Steps:
   1. Initialize configuration via `POST /api/cpq/init`.
-  2. Inspect currently available CPQ features/options from response.
-  3. Apply one option change at a time via `POST /api/cpq/configure`.
-  4. Continue traversal with newly returned dynamic option sets.
+  2. Build traversal candidates from the same visible Configurator dropdown model rendered in UI (`state.features`), not from raw CPQ feature arrays.
+  3. Apply one dropdown option change at a time via `POST /api/cpq/configure`.
+  4. Continue traversal with newly returned visible dropdown sets from the configure response.
 - Traversal is not a static cartesian product; option availability is resolved after each configure call.
 - Persists snapshots via `POST /api/cpq/sampler-result` into `CPQ_sampler_result`.
+- Manual **Save Configuration** uses the same persistence path and same payload shape as traversal auto-save.
 - Duplicate protection:
   - unique tuple is `(ipn_code, country_code)`.
   - first tuple discovered is saved; subsequent duplicates are skipped.
@@ -26,17 +27,17 @@
 
 ## 3) Traversal status/progress semantics
 - Estimated total uses a **lower-bound adaptive** heuristic:
-  - lower bound = product of currently visible/selectable options.
+  - lower bound = product of currently visible/selectable Configurator dropdown choices.
   - adaptive growth = estimate increases as traversal discovers new states.
 - Processed count represents executed traversal transitions (`/configure` calls).
 - Progress bar displays `processed / estimated`.
 - Additional counters include configure calls, saved rows, duplicates skipped, save errors, and delay/wait state.
+- UI also exposes a transient highlight on the most recently changed dropdown field so traversal changes are visually traceable.
 
 ## 4) Traversal controls
 - Main workflow keeps one essential persistence toggle:
   - **Save discovered configurations to database** (on by default).
 - Debug-only toggles were moved under **Show debug**:
-  - traverse hidden/system features
   - include currently-selected options as debug reconfigure steps
 
 ## 5) Setup management

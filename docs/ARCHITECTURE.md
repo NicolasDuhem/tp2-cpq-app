@@ -29,8 +29,11 @@
 
 ## Traversal design
 - Traversal model is a dynamic state graph walk driven by CPQ responses.
-- For each discovered state, the app inspects currently selectable options, applies one change, calls `/configure`, then continues from the returned state.
+- Traversal candidate source of truth is the visible Configurator dropdown model (`state.features`) already rendered in UI.
+- For each discovered state, the app inspects currently selectable visible dropdown options, applies one change, calls `/configure`, then continues from the returned state.
 - State revisits are reduced using a stable state signature of selected options.
+- Progress estimate is lower-bound adaptive and built from visible dropdown choice counts only.
+- Manual **Save Configuration** and traversal auto-save share the same persistence path (`POST /api/cpq/sampler-result`).
 - Persistence uniqueness is enforced by `(ipn_code, country_code)`:
   - `country_code` comes from selected account context (`CPQ_setup_account_context`).
   - first discovered tuple is kept; later duplicates are skipped.

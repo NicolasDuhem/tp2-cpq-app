@@ -125,6 +125,14 @@ type TraversalCandidate = {
   optionValue?: string;
 };
 
+type VisibleConfiguratorDropdown = {
+  featureId: string;
+  featureLabel: string;
+  selectedOptionId?: string;
+  selectedValue?: string;
+  options: BikeBuilderFeatureOption[];
+};
+
 const fallbackTarget: RulesetTarget = {
   label: 'Fallback',
   ruleset: 'BROMPTON_BIKE_BUILDER',
@@ -190,7 +198,6 @@ export default function BikeBuilderPage() {
   const [maxConfigureCalls, setMaxConfigureCalls] = useState(1000);
   const [maxRuntimeMinutes, setMaxRuntimeMinutes] = useState(15);
   const [configureCallCount, setConfigureCallCount] = useState(0);
-  const [debugIncludeHidden, setDebugIncludeHidden] = useState(false);
   const [includeSelectedOption, setIncludeSelectedOption] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [delayRemainingMs, setDelayRemainingMs] = useState(0);
@@ -204,6 +211,7 @@ export default function BikeBuilderPage() {
   const [manualSaveStatus, setManualSaveStatus] = useState<PersistenceStatus>('idle');
   const [manualSaveMessage, setManualSaveMessage] = useState('-');
   const [manualSaveTimestamp, setManualSaveTimestamp] = useState<string | null>(null);
+  const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSetup = async () => {
@@ -254,6 +262,12 @@ export default function BikeBuilderPage() {
 
   const visibleFeatures = state?.features ?? [];
   const hasFeatures = visibleFeatures.length > 0;
+
+  useEffect(() => {
+    if (!highlightedFeatureId) return;
+    const timeout = window.setTimeout(() => setHighlightedFeatureId(null), 1100);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedFeatureId]);
   const selectedOptionsForImageLookup = useMemo<SelectedOptionLookup[]>(() => {
     if (!state) return [];
     return state.features
@@ -334,31 +348,45 @@ export default function BikeBuilderPage() {
     return false;
   };
 
+  const getVisibleConfiguratorDropdowns = (nextState: NormalizedBikeBuilderState): VisibleConfiguratorDropdown[] =>
+    (nextState.features ?? [])
+      .filter((feature) => feature.isVisible !== false)
+      .map((feature) => ({
+        featureId: feature.featureId,
+        featureLabel: feature.featureLabel,
+        selectedOptionId: feature.selectedOptionId,
+        selectedValue: feature.selectedValue,
+        options: feature.availableOptions,
+      }));
+
+  const getTraversableDropdowns = (nextState: NormalizedBikeBuilderState): VisibleConfiguratorDropdown[] =>
+    getVisibleConfiguratorDropdowns(nextState)
+      .filter((feature) => feature.options.length > 0 && feature.options.some((option) => isOptionTraversable(option)))
+      .map((feature) => ({
+        ...feature,
+        options: feature.options.filter((option) => {
+          if (!isOptionTraversable(option)) return false;
+          if (!includeSelectedOption && feature.selectedOptionId === option.optionId) return false;
+          return true;
+        }),
+      }))
+      .filter((feature) => feature.options.length > 0);
+
   const getVisibleCombinationLowerBound = (nextState: NormalizedBikeBuilderState) => {
-    const features = getTraversableFeatures(nextState, false).filter((feature) => feature.isVisible !== false && feature.isEnabled !== false);
+    const features = getTraversableDropdowns(nextState);
     const combinationCount = features.reduce((product, feature) => {
-      const selectableCount = feature.availableOptions.filter((option) => isOptionTraversable(option)).length;
+      const selectableCount = feature.options.length;
       return product * BigInt(Math.max(1, selectableCount));
     }, 1n);
     return Number(combinationCount > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : combinationCount);
   };
 
-  const getTraversableFeatures = (nextState: NormalizedBikeBuilderState, includeHidden: boolean) => {
-    const base = includeHidden ? [...(nextState.features ?? []), ...(nextState.hiddenOrSystemFeatures ?? [])] : [...(nextState.features ?? [])];
-    return base
-      .filter((feature) => includeHidden || (feature.isVisible !== false && feature.isEnabled !== false))
-      .map((feature) => ({
-        ...feature,
-        availableOptions: feature.availableOptions.filter((option) => includeHidden || isOptionTraversable(option)),
-      }));
-  };
-
   const getSelectedOptions = (nextState: NormalizedBikeBuilderState) => {
-    const source = getTraversableFeatures(nextState, debugIncludeHidden);
+    const source = getVisibleConfiguratorDropdowns(nextState);
     return source
       .filter((feature) => feature.selectedOptionId)
       .map((feature) => {
-        const selected = feature.availableOptions.find((opt) => opt.optionId === feature.selectedOptionId);
+        const selected = feature.options.find((opt) => opt.optionId === feature.selectedOptionId);
         return {
           featureLabel: feature.featureLabel,
           featureId: feature.featureId,
@@ -380,8 +408,8 @@ export default function BikeBuilderPage() {
   const pathToKey = (path: TraversalStep[]) => path.map((step) => `${step.featureId}:${step.optionId}:${step.optionValue ?? ''}`).join(' > ');
 
   const snapshotDropdownOrder = (nextState: NormalizedBikeBuilderState) =>
-    getTraversableFeatures(nextState, debugIncludeHidden).map((feature, index) => {
-      const selected = feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId);
+    getVisibleConfiguratorDropdowns(nextState).map((feature, index) => {
+      const selected = feature.options.find((option) => option.optionId === feature.selectedOptionId);
       return {
         level: index + 1,
         featureId: feature.featureId,
@@ -493,63 +521,96 @@ export default function BikeBuilderPage() {
 
     if (!persistenceEnabled) return;
 
-    void persistCapturedResult(captured);
+    void persistCapturedResult(captured, { source: 'traversal' });
   };
 
-  const persistCapturedResult = async (captured: CapturedConfiguration) => {
-    setLastSaveStatus('saving');
+  const postSamplerResult = async (captured: CapturedConfiguration) => {
+    const res = await fetch('/api/cpq/sampler-result', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ipn_code: captured.ipn ?? null,
+        ruleset: captured.ruleset,
+        account_code: accountCode,
+        customer_id: customerId || null,
+        currency: currency || null,
+        language: language || null,
+        country_code: countryCode || null,
+        namespace: captured.namespace,
+        header_id: captured.headerId,
+        detail_id: captured.detailId,
+        session_id: captured.sessionId,
+        json_result: captured,
+      }),
+    });
+
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => ({ error: 'Unknown persistence error' }))) as { error?: string };
+      throw new Error(payload.error ?? 'Unknown persistence error');
+    }
+
+    return (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
+  };
+
+  const persistCapturedResult = async (captured: CapturedConfiguration, options: { source: 'traversal' | 'manual' }) => {
+    if (options.source === 'traversal') {
+      setLastSaveStatus('saving');
+    } else {
+      setManualSaveStatus('saving');
+      setManualSaveMessage('Saving current configuration…');
+    }
     const tupleKey = `${captured.ipn ?? ''}::${countryCode || ''}`;
     if (captured.ipn && countryCode && persistedTupleKeysRef.current.has(tupleKey)) {
-      setDuplicateSkippedCount((prev) => prev + 1);
-      setLastSaveStatus('saved');
-      setLastSaveMessage(`duplicate skipped for ${captured.ipn} / ${countryCode}`);
+      if (options.source === 'traversal') {
+        setDuplicateSkippedCount((prev) => prev + 1);
+        setLastSaveStatus('saved');
+        setLastSaveMessage(`duplicate skipped for ${captured.ipn} / ${countryCode}`);
+      } else {
+        setManualSaveStatus('saved');
+        setManualSaveMessage(`Duplicate skipped for ${captured.ipn} / ${countryCode}`);
+      }
       return false;
     }
 
     try {
-      const res = await fetch('/api/cpq/sampler-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ipn_code: captured.ipn ?? null,
-          ruleset: captured.ruleset,
-          account_code: accountCode,
-          customer_id: customerId || null,
-          currency: currency || null,
-          language: language || null,
-          country_code: countryCode || null,
-          namespace: captured.namespace,
-          header_id: captured.headerId,
-          detail_id: captured.detailId,
-          session_id: captured.sessionId,
-          json_result: captured,
-        }),
-      });
-
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => ({ error: 'Unknown persistence error' }))) as { error?: string };
-        throw new Error(payload.error ?? 'Unknown persistence error');
-      }
-
-      const payload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
+      const payload = await postSamplerResult(captured);
       if (payload.status === 'duplicate') {
-        setDuplicateSkippedCount((prev) => prev + 1);
-        setLastSaveStatus('saved');
-        setLastSaveMessage(`duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${countryCode || 'unknown country'}`);
+        if (options.source === 'traversal') {
+          setDuplicateSkippedCount((prev) => prev + 1);
+          setLastSaveStatus('saved');
+          setLastSaveMessage(`duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${countryCode || 'unknown country'}`);
+        } else {
+          setManualSaveStatus('saved');
+          setManualSaveMessage(`Duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${countryCode || 'unknown country'}`);
+        }
         return false;
       }
 
       if (captured.ipn && countryCode) {
         persistedTupleKeysRef.current.add(tupleKey);
       }
-      setSavedToDatabaseCount((prev) => prev + 1);
-      setLastSaveStatus('saved');
-      setLastSaveMessage(`saved result #${captured.sequence}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`);
+      if (options.source === 'traversal') {
+        setSavedToDatabaseCount((prev) => prev + 1);
+        setLastSaveStatus('saved');
+        setLastSaveMessage(`saved result #${captured.sequence}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`);
+      } else {
+        const timestamp = new Date().toISOString();
+        setManualSaveStatus('saved');
+        setManualSaveTimestamp(timestamp);
+        setManualSaveMessage(
+          `Saved at ${new Date(timestamp).toLocaleString()}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`,
+        );
+      }
       return true;
     } catch (error) {
-      setSaveErrorCount((prev) => prev + 1);
-      setLastSaveStatus('error');
-      setLastSaveMessage(error instanceof Error ? error.message : String(error));
+      if (options.source === 'traversal') {
+        setSaveErrorCount((prev) => prev + 1);
+        setLastSaveStatus('error');
+        setLastSaveMessage(error instanceof Error ? error.message : String(error));
+      } else {
+        setManualSaveStatus('error');
+        setManualSaveMessage(error instanceof Error ? error.message : String(error));
+      }
       console.error('[cpq/sampler] persist failed', { captured, error });
       return false;
     }
@@ -561,9 +622,6 @@ export default function BikeBuilderPage() {
       setManualSaveMessage('Load or build a configuration before saving.');
       return;
     }
-
-    setManualSaveStatus('saving');
-    setManualSaveMessage('Saving current configuration…');
 
     const sourceDetailId = detailId || crypto.randomUUID();
     const manualCaptured = buildCapturedConfiguration({
@@ -581,39 +639,7 @@ export default function BikeBuilderPage() {
       source: 'manual-save',
     });
 
-    try {
-      const res = await fetch('/api/cpq/sampler-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ipn_code: manualCaptured.ipn ?? null,
-          ruleset: manualCaptured.ruleset,
-          account_code: accountCode,
-          customer_id: customerId || null,
-          currency: currency || null,
-          language: language || null,
-          country_code: countryCode || null,
-          namespace: manualCaptured.namespace,
-          header_id: manualCaptured.headerId,
-          detail_id: manualCaptured.detailId,
-          session_id: manualCaptured.sessionId,
-          json_result: manualCaptured,
-        }),
-      });
-
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => ({ error: 'Unknown persistence error' }))) as { error?: string };
-        throw new Error(payload.error ?? 'Unknown persistence error');
-      }
-
-      const timestamp = new Date().toISOString();
-      setManualSaveStatus('saved');
-      setManualSaveTimestamp(timestamp);
-      setManualSaveMessage(`Saved at ${new Date(timestamp).toLocaleString()}`);
-    } catch (error) {
-      setManualSaveStatus('error');
-      setManualSaveMessage(error instanceof Error ? error.message : String(error));
-    }
+    await persistCapturedResult(manualCaptured, { source: 'manual' });
   };
 
   const sleepWithControl = async (ms: number) => {
@@ -781,6 +807,7 @@ export default function BikeBuilderPage() {
     setLastCallType('Configure');
     setCurrentTraversalCallType('Configure');
     setLastChangedFeatureId(featureId);
+    setHighlightedFeatureId(featureId);
     setLastChangedOptionId(optionId);
     setLastChangedOptionValue(optionValue ?? '');
     setLastSelectedBefore(selectedBefore?.label ?? sourceFeature?.selectedOptionId ?? '');
@@ -832,9 +859,9 @@ export default function BikeBuilderPage() {
   };
 
   const buildTraversalCandidates = (nextState: NormalizedBikeBuilderState): TraversalCandidate[] => {
-    return getTraversableFeatures(nextState, debugIncludeHidden)
+    return getTraversableDropdowns(nextState)
       .flatMap((feature) =>
-        getTraversalOptionsForFeature(feature).map((option) => ({
+        feature.options.map((option) => ({
           featureLabel: feature.featureLabel,
           featureId: feature.featureId,
           optionLabel: option.label,
@@ -868,13 +895,6 @@ export default function BikeBuilderPage() {
 
     return { state: currentState, detail: freshDetailId };
   };
-
-  const getTraversalOptionsForFeature = (feature: NormalizedBikeBuilderState['features'][number]) =>
-    feature.availableOptions.filter((option) => {
-      if (!debugIncludeHidden && !isOptionTraversable(option)) return false;
-      if (!includeSelectedOption && feature.selectedOptionId === option.optionId) return false;
-      return true;
-    });
 
   const runConfigurationTraversal = async (seedState: NormalizedBikeBuilderState) => {
     const queue: TraversalStep[][] = [[]];
@@ -918,9 +938,9 @@ export default function BikeBuilderPage() {
         const branch = await replayPathFromFreshStart(pathPrefix);
         if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
 
-        const feature = getTraversableFeatures(branch.state, debugIncludeHidden).find((item) => item.featureId === candidate.featureId);
+        const feature = getTraversableDropdowns(branch.state).find((item) => item.featureId === candidate.featureId);
         if (!feature) continue;
-        const option = feature.availableOptions.find((item) => item.optionId === candidate.optionId);
+        const option = feature.options.find((item) => item.optionId === candidate.optionId);
         if (!option) continue;
 
         const nextPath = [
@@ -1201,6 +1221,7 @@ export default function BikeBuilderPage() {
             <span style={styles.badge}>configure calls: {configureCallCount}</span>
             <span style={styles.badge}>elapsed: {(elapsedMs / 1000).toFixed(1)}s</span>
             <span style={styles.badge}>wait: {delayRemainingMs > 0 ? `${delayRemainingMs}ms` : '-'}</span>
+            <span style={styles.badge}>candidate source: visible configurator dropdowns</span>
             <span style={styles.badge}>detailId: {currentTraversalDetailId}</span>
             <span style={styles.badge}>sessionId: {currentTraversalSessionId}</span>
             <span style={styles.badge}>callType: {currentTraversalCallType}</span>
@@ -1219,7 +1240,7 @@ export default function BikeBuilderPage() {
             <h2 style={styles.sectionTitle}>Configurator</h2>
             {!hasFeatures && <p style={styles.muted}>Load a ruleset to begin.</p>}
             {visibleFeatures.map((feature) => (
-              <div key={feature.featureId} style={styles.featureCard}>
+              <div key={feature.featureId} style={{ ...styles.featureCard, ...(highlightedFeatureId === feature.featureId ? styles.featureCardHighlighted : {}) }}>
                 <div style={styles.featureHeader}>{feature.featureLabel}</div>
                 <select
                   value={feature.selectedOptionId}
@@ -1361,10 +1382,6 @@ export default function BikeBuilderPage() {
             {debugOpen && (
               <div style={styles.debugCard}>
                 <h3 style={styles.debugTitle}>Ruleset debug</h3>
-                <label style={styles.checkboxLabel}>
-                  <input type="checkbox" checked={debugIncludeHidden} onChange={(e) => setDebugIncludeHidden(e.target.checked)} />
-                  Traverse hidden/system features (debug)
-                </label>
                 <label style={styles.checkboxLabel}>
                   <input type="checkbox" checked={includeSelectedOption} onChange={(e) => setIncludeSelectedOption(e.target.checked)} />
                   Reconfigure with currently-selected options (debug)
@@ -1526,6 +1543,7 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   featureCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 8, display: 'grid', gap: 6, background: '#fcfcfd' },
+  featureCardHighlighted: { border: '2px solid #2563eb', background: '#eff6ff', boxShadow: '0 0 0 2px rgba(37,99,235,0.15)' },
   featureHeader: { fontSize: 13, fontWeight: 600, color: '#111827' },
   select: { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, background: '#fff' },
   summaryCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 10, display: 'grid', gap: 6, fontSize: 13 },
