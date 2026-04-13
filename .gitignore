@@ -1,0 +1,11 @@
+.env.local
+node_modules
+.next
+
+# CPQ
+CPQ/node_modules/
+CPQ/.env
+CPQ/.env.*
+CPQ/dist/
+CPQ/build/
+CPQ/.next/

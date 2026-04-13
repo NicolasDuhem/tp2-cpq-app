@@ -1,0 +1,112 @@
+.page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 1400px;
+  margin: 0 auto;
+  overflow-x: hidden;
+}
+
+.filters {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.filterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #444;
+}
+
+.filterItem select {
+  border: 1px solid #c3c3c3;
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.tile {
+  border: 1px solid #dedede;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.imageWrap {
+  border-radius: 8px;
+  border: 1px solid #ececec;
+  background: #f7f7f7;
+  aspect-ratio: 4 / 3;
+  position: relative;
+  overflow: hidden;
+}
+
+.imageLayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 12px;
+}
+
+.ipn {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111;
+  overflow-wrap: anywhere;
+}
+
+.line,
+.spec,
+.colour {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #666;
+}
+
+.empty {
+  border: 1px dashed #cfcfcf;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  color: #666;
+}
