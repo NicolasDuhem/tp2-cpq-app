@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   try {
-    const row = await persistSamplerResult({
+    const result = await persistSamplerResult({
       ipn_code: body.ipn_code as string | null | undefined,
       ruleset: String(body.ruleset ?? ''),
       account_code: String(body.account_code ?? ''),
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       session_id: body.session_id as string | null | undefined,
       json_result: body.json_result,
     });
-    return NextResponse.json({ row }, { status: 201 });
+    return NextResponse.json(result, { status: result.status === 'inserted' ? 201 : 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to persist sampler result' },
