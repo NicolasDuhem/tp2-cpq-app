@@ -21,3 +21,10 @@
 ## Indexing / uniqueness notes
 - `cpq_sampler_result_ipn_country_unique_idx` enforces DB-side uniqueness for non-null `(ipn_code, country_code)`.
 - App/API also apply deduplication logic so first-discovered tuple is retained and later duplicates are skipped.
+
+
+## Sampler matrix consumption notes
+- `sku_code` shown on `/cpq/results` is sourced from `CPQ_sampler_result.ipn_code`.
+- `bike_type` is enriched by joining `CPQ_sampler_result.ruleset` to `CPQ_setup_ruleset.cpq_ruleset`.
+- Feature columns come from `CPQ_sampler_result.json_result.selectedOptions[*]` entries.
+- Country matrix values are populated from `CPQ_sampler_result.detail_id` keyed by `country_code`.

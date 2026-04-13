@@ -8,7 +8,7 @@
   1. Account code management
   2. Ruleset management
   3. Picture management
-- `/cpq/results`: latest sampler result browser by IPN.
+- `/cpq/results`: sampler result matrix (bike rows, dynamic feature columns, dynamic country/detailId columns).
 
 ## API architecture
 ### Runtime APIs (`/api/cpq/*`)
