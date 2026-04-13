@@ -475,52 +475,6 @@ export default function BikeBuilderPage() {
     };
   };
 
-  const saveSnapshot = ({
-    nextState,
-    activeDetailId,
-    baseDetailId,
-    sourceDetailId,
-    rawSnippet,
-    traversalLevel,
-    traversalPath,
-    parentPathKey,
-    changedFeatureId,
-    changedOptionId,
-    changedOptionValue,
-  }: {
-    nextState: NormalizedBikeBuilderState;
-    activeDetailId: string;
-    baseDetailId: string;
-    sourceDetailId: string;
-    rawSnippet?: unknown;
-    traversalLevel: number;
-    traversalPath: TraversalStep[];
-    parentPathKey: string;
-    changedFeatureId: string;
-    changedOptionId: string;
-    changedOptionValue?: string;
-  }) => {
-    const captured = buildCapturedConfiguration({
-      nextState,
-      activeDetailId,
-      baseDetailId,
-      sourceDetailId,
-      rawSnippet,
-      traversalLevel,
-      traversalPath,
-      parentPathKey,
-      changedFeatureId,
-      changedOptionId,
-      changedOptionValue,
-    });
-
-    setResults((prev) => [...prev, { ...captured, sequence: prev.length + 1 }]);
-
-    if (!persistenceEnabled) return;
-
-    void persistCapturedResult(captured, { source: 'traversal' });
-  };
-
   const postSamplerResult = async (captured: CapturedConfiguration) => {
     const res = await fetch('/api/cpq/sampler-result', {
       method: 'POST',
@@ -572,6 +526,9 @@ export default function BikeBuilderPage() {
     try {
       const payload = await postSamplerResult(captured);
       if (payload.status === 'duplicate') {
+        if (captured.ipn && countryCode) {
+          persistedTupleKeysRef.current.add(tupleKey);
+        }
         if (options.source === 'traversal') {
           setDuplicateSkippedCount((prev) => prev + 1);
           setLastSaveStatus('saved');
@@ -613,30 +570,50 @@ export default function BikeBuilderPage() {
     }
   };
 
-  const saveCurrentConfiguration = async () => {
-    if (!state) {
+  const saveCurrentConfiguration = async (
+    options?: {
+      source?: 'manual' | 'traversal';
+      nextState?: NormalizedBikeBuilderState;
+      traversalLevel?: number;
+      traversalPath?: TraversalStep[];
+      parentPathKey?: string;
+      changedFeatureId?: string;
+      changedOptionId?: string;
+      changedOptionValue?: string;
+      sourceTag?: string;
+    },
+  ) => {
+    const source = options?.source ?? 'manual';
+    const sourceState = options?.nextState ?? state;
+
+    if (!sourceState) {
       setManualSaveStatus('error');
       setManualSaveMessage('Load or build a configuration before saving.');
       return;
     }
 
     const sourceDetailId = detailId || crypto.randomUUID();
-    const manualCaptured = buildCapturedConfiguration({
-      nextState: state,
+    const captured = buildCapturedConfiguration({
+      nextState: sourceState,
       activeDetailId: detailId,
       baseDetailId: sourceDetailId,
       sourceDetailId,
       rawSnippet: extractRawSnippet(lastRawResponse),
-      traversalLevel: 0,
-      traversalPath: [],
-      parentPathKey: 'manual-root',
-      changedFeatureId: 'manual-save',
-      changedOptionId: 'manual-save',
-      changedOptionValue: 'manual',
-      source: 'manual-save',
+      traversalLevel: options?.traversalLevel ?? 0,
+      traversalPath: options?.traversalPath ?? [],
+      parentPathKey: options?.parentPathKey ?? 'manual-root',
+      changedFeatureId: options?.changedFeatureId ?? 'manual-save',
+      changedOptionId: options?.changedOptionId ?? 'manual-save',
+      changedOptionValue: options?.changedOptionValue ?? 'manual',
+      source: options?.sourceTag ?? (source === 'manual' ? 'manual-save' : 'traversal-auto-save'),
     });
 
-    await persistCapturedResult(manualCaptured, { source: 'manual' });
+    if (source === 'traversal') {
+      setResults((prev) => [...prev, { ...captured, sequence: prev.length + 1 }]);
+      if (!persistenceEnabled) return;
+    }
+
+    await persistCapturedResult(captured, { source });
   };
 
   const sleepWithControl = async (ms: number) => {
@@ -847,133 +824,110 @@ export default function BikeBuilderPage() {
     return configureSelection({ sourceState, featureId, optionId, optionValue, respectTraversalDelay });
   };
 
-  const changeOption = async (featureId: string, optionId: string, optionValue?: string) => {
+  const changeOption = async (
+    featureId: string,
+    optionId: string,
+    optionValue?: string,
+    options?: { suppressError?: boolean; sourceStateOverride?: NormalizedBikeBuilderState; respectTraversalDelay?: boolean },
+  ) => {
     try {
-      await applyUiOptionChange({ featureId, optionId, optionValue });
-    } catch {
+      return await applyUiOptionChange({
+        featureId,
+        optionId,
+        optionValue,
+        sourceStateOverride: options?.sourceStateOverride,
+        respectTraversalDelay: options?.respectTraversalDelay,
+      });
+    } catch (error) {
+      if (!options?.suppressError) throw error;
       // UI error state already set.
     }
-  };
-
-  const replayPathFromFreshStart = async (path: TraversalStep[]) => {
-    const freshDetailId = crypto.randomUUID();
-    const initPayload = await startFreshConfiguration(target, freshDetailId, { clearState: false });
-    let currentState = initPayload.parsed;
-
-    for (const step of path) {
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) {
-        return { state: currentState, detail: freshDetailId };
-      }
-
-      const payload = await configureSelection({
-        sourceState: currentState,
-        featureId: step.featureId,
-        optionId: step.optionId,
-        optionValue: step.optionValue,
-        respectTraversalDelay: true,
-      });
-
-      currentState = payload.parsed;
-    }
-
-    return { state: currentState, detail: freshDetailId };
+    return undefined;
   };
 
   const runConfigurationTraversal = async (seedState: NormalizedBikeBuilderState) => {
-    const traversableAtStart = getTraversableDropdowns(seedState);
+    let currentState = seedState;
+    let processedConfigurations = 0;
+    const visitedSignatures = new Set<string>([signatureForState(seedState)]);
+    const attemptedFeatureOptions = new Set<string>();
+    const traversalPathHistory: TraversalStep[] = [];
+
+    setVisitedStateCount(visitedSignatures.size);
     setEstimatedTotal(Math.max(1, getVisibleCombinationLowerBound(seedState)));
 
-    const traversedSignatures = new Set<string>();
-    let processedConfigurations = 0;
+    while (!traversalControlRef.current.stop && !hasExceededRunLimits()) {
+      const dropdowns = getTraversableDropdowns(currentState);
+      setEstimatedTotal((prev) => Math.max(prev, getVisibleCombinationLowerBound(currentState)));
+      if (!dropdowns.length) break;
 
-    const traverseAtPath = async (pathPrefix: TraversalStep[]) => {
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
+      let nextCandidate:
+        | {
+            feature: VisibleConfiguratorDropdown;
+            option: BikeBuilderFeatureOption;
+            featureIndex: number;
+          }
+        | undefined;
 
-      const restoredBranch = await replayPathFromFreshStart(pathPrefix);
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-
-      const dropdowns = getTraversableDropdowns(restoredBranch.state);
-      setCurrentTraversalLevel(pathPrefix.length);
-      setCurrentTraversalPathLabel(pathToKey(pathPrefix) || '-');
-      setCurrentTraversalDetailId(restoredBranch.detail);
-      setCurrentTraversalSessionId(restoredBranch.state.sessionId ?? '-');
-
-      const feature = dropdowns[pathPrefix.length];
-      if (!feature) {
-        const signature = signatureForState(restoredBranch.state);
-        if (traversedSignatures.has(signature)) return;
-        traversedSignatures.add(signature);
-        setVisitedStateCount(traversedSignatures.size);
-        processedConfigurations += 1;
-        setProcessedCount(processedConfigurations);
-        saveSnapshot({
-          nextState: restoredBranch.state,
-          activeDetailId: restoredBranch.detail,
-          baseDetailId: detailId,
-          sourceDetailId: restoredBranch.detail,
-          rawSnippet: extractRawSnippet(lastRawResponse),
-          traversalLevel: pathPrefix.length,
-          traversalPath: pathPrefix,
-          parentPathKey: pathToKey(pathPrefix.slice(0, -1)),
-          changedFeatureId: pathPrefix[pathPrefix.length - 1]?.featureId ?? 'root',
-          changedOptionId: pathPrefix[pathPrefix.length - 1]?.optionId ?? 'root',
-          changedOptionValue: pathPrefix[pathPrefix.length - 1]?.optionValue,
-        });
-        return;
+      for (let featureIndex = 0; featureIndex < dropdowns.length && !nextCandidate; featureIndex += 1) {
+        const feature = dropdowns[featureIndex];
+        for (const option of feature.options) {
+          const optionKey = `${feature.featureId}::${option.optionId}::${option.value ?? ''}`;
+          if (attemptedFeatureOptions.has(optionKey)) continue;
+          nextCandidate = { feature, option, featureIndex };
+          attemptedFeatureOptions.add(optionKey);
+          break;
+        }
       }
 
-      for (const option of feature.options) {
-        if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
+      if (!nextCandidate) break;
 
-        setCurrentFeatureLabel(feature.featureLabel);
-        setCurrentOptionLabel(option.label);
-        setCurrentTraversalSourceDetailId(restoredBranch.detail);
+      const { feature, option, featureIndex } = nextCandidate;
+      const nextStep = {
+        featureId: feature.featureId,
+        featureLabel: feature.featureLabel,
+        optionId: option.optionId,
+        optionLabel: option.label,
+        optionValue: option.value,
+      } satisfies TraversalStep;
+      traversalPathHistory.push(nextStep);
 
-        const nextPath = [
-          ...pathPrefix,
-          {
-            featureId: feature.featureId,
-            featureLabel: feature.featureLabel,
-            optionId: option.optionId,
-            optionLabel: option.label,
-            optionValue: option.value,
-          },
-        ];
-        setCurrentTraversalPathLabel(pathToKey(nextPath));
+      setCurrentTraversalLevel(featureIndex + 1);
+      setCurrentFeatureLabel(feature.featureLabel);
+      setCurrentOptionLabel(option.label);
+      setCurrentTraversalPathLabel(pathToKey(traversalPathHistory));
+      setCurrentTraversalSourceDetailId(detailId);
+      setCurrentTraversalDetailId(detailId);
+      setCurrentTraversalSessionId(currentState.sessionId ?? '-');
 
-        const payload = await applyUiOptionChange({
-          sourceStateOverride: restoredBranch.state,
-          featureId: feature.featureId,
-          optionId: option.optionId,
-          optionValue: option.value,
-          respectTraversalDelay: true,
-        });
-
-        setCurrentTraversalDetailId(restoredBranch.detail);
-        setCurrentTraversalSessionId(payload.parsed.sessionId ?? '-');
-        await traverseAtPath(nextPath);
-      }
-    };
-
-    if (!traversableAtStart.length) {
-      saveSnapshot({
-        nextState: seedState,
-        activeDetailId: detailId,
-        baseDetailId: detailId,
-        sourceDetailId: detailId,
-        rawSnippet: extractRawSnippet(lastRawResponse),
-        traversalLevel: 0,
-        traversalPath: [],
-        parentPathKey: 'root',
-        changedFeatureId: 'root',
-        changedOptionId: 'root',
+      const payload = await changeOption(feature.featureId, option.optionId, option.value, {
+        suppressError: false,
+        sourceStateOverride: currentState,
+        respectTraversalDelay: true,
       });
-      setProcessedCount(1);
-      setVisitedStateCount(1);
-      return;
-    }
 
-    await traverseAtPath([]);
+      if (!payload) continue;
+      currentState = payload.parsed;
+
+      const stateSignature = signatureForState(currentState);
+      if (!visitedSignatures.has(stateSignature)) {
+        visitedSignatures.add(stateSignature);
+        setVisitedStateCount(visitedSignatures.size);
+      }
+
+      processedConfigurations += 1;
+      setProcessedCount(processedConfigurations);
+
+      await saveCurrentConfiguration({
+        source: 'traversal',
+        nextState: currentState,
+        traversalLevel: featureIndex + 1,
+        traversalPath: [...traversalPathHistory],
+        parentPathKey: pathToKey(traversalPathHistory.slice(0, -1)) || 'root',
+        changedFeatureId: feature.featureId,
+        changedOptionId: option.optionId,
+        changedOptionValue: option.value,
+      });
+    }
   };
 
   const startTraversal = async () => {
