@@ -7,6 +7,20 @@
   - `POST /api/cpq/init`
   - `POST /api/cpq/configure`
 
+## 1.1) Operating modes on `/cpq`
+- **CPQ for a market**:
+  - existing single-market account-context behavior
+  - supports traversal and manual save
+- **CPQ for a bike across market**:
+  - uses current selected bike configuration (no traversal through all combinations)
+  - country checkbox source: active `CPQ_setup_account_context` rows (unique `country_code`)
+  - per selected market:
+    1. initialize with that market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`)
+    2. replay selected configurator options
+    3. save through `POST /api/cpq/sampler-result`
+    4. wait 5000ms before next market
+  - shows status for selected count, processed count, saved count, duplicates skipped, current country, last message
+
 ## 2) Configuration traversal process (single workflow)
 - Triggered from `/cpq` using **Start configuration traversal**.
 - Steps:
@@ -24,6 +38,18 @@
 - Country derivation:
   - selected account at page top maps to `CPQ_setup_account_context`.
   - `country_code` from this context is included in persisted rows.
+
+## 2.1) detailId refresh/capture behavior
+- `detailId` is extracted from CPQ init/configure responses and stored in live normalized state.
+- UI live `detailId` is refreshed after each successful `/configure`.
+- Save actions use current live `detailId` in priority order:
+  1. explicit override (across-market run)
+  2. current normalized state detailId
+  3. local fallback detailId
+- Applies to:
+  - manual save
+  - traversal auto-save
+  - across-market save
 
 ## 3) Traversal status/progress semantics
 - Estimated total uses a **lower-bound adaptive** heuristic:
