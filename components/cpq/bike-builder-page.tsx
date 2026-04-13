@@ -26,8 +26,7 @@ type ImageLayerResolution = {
 };
 
 type CallType = 'StartConfiguration' | 'Configure';
-type TraversalMode = 'sampler' | 'ui-hierarchical';
-type TraversalStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
+type TraversalStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
 
 type CpqRouteResponse = {
   sessionId: string;
@@ -90,7 +89,7 @@ type CapturedConfiguration = {
   baseDetailId: string;
   sourceDetailId: string;
   branchDetailId: string;
-  samplerMode: TraversalMode;
+  samplerMode: 'configuration-traversal';
   description?: string;
   ipn?: string;
   price?: number;
@@ -107,22 +106,17 @@ type CapturedConfiguration = {
   rawSnippet?: unknown;
 };
 
-type SamplerSeedContext = {
-  baseDetailId: string;
-  baseSessionId: string;
-  ruleset: string;
-  namespace: string;
-  headerId: string;
-  accountCode: string;
-  customerId?: string;
-  currency?: string;
-  language?: string;
-  countryCode?: string;
-};
-
 type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 type TraversalStep = {
+  featureLabel: string;
+  featureId: string;
+  optionLabel: string;
+  optionId: string;
+  optionValue?: string;
+};
+
+type TraversalCandidate = {
   featureLabel: string;
   featureId: string;
   optionLabel: string;
@@ -176,20 +170,21 @@ export default function BikeBuilderPage() {
   });
 
   const [traversalStatus, setTraversalStatus] = useState<TraversalStatus>('idle');
-  const [activeMode, setActiveMode] = useState<TraversalMode | null>(null);
   const [currentFeatureLabel, setCurrentFeatureLabel] = useState('-');
   const [currentOptionLabel, setCurrentOptionLabel] = useState('-');
   const [currentTraversalLevel, setCurrentTraversalLevel] = useState(0);
   const [currentTraversalPathLabel, setCurrentTraversalPathLabel] = useState('-');
-  const [currentSamplerMode, setCurrentSamplerMode] = useState('-');
   const [currentTraversalBaseDetailId, setCurrentTraversalBaseDetailId] = useState('-');
   const [currentTraversalSourceDetailId, setCurrentTraversalSourceDetailId] = useState('-');
   const [currentTraversalDetailId, setCurrentTraversalDetailId] = useState('-');
   const [currentTraversalSessionId, setCurrentTraversalSessionId] = useState('-');
   const [currentTraversalCallType, setCurrentTraversalCallType] = useState<CallType | '-'>('-');
+  const [estimatedTotal, setEstimatedTotal] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [duplicateSkippedCount, setDuplicateSkippedCount] = useState(0);
+  const [visitedStateCount, setVisitedStateCount] = useState(0);
   const [results, setResults] = useState<CapturedConfiguration[]>([]);
   const [delayMs, setDelayMs] = useState(5000);
-  const [maxDepth, setMaxDepth] = useState(3);
   const [maxResults, setMaxResults] = useState(150);
   const [maxConfigureCalls, setMaxConfigureCalls] = useState(1000);
   const [maxRuntimeMinutes, setMaxRuntimeMinutes] = useState(15);
@@ -252,6 +247,7 @@ export default function BikeBuilderPage() {
   const traversalControlRef = useRef({ stop: false, pause: false });
   const runStartRef = useRef<number | null>(null);
   const configureCountRef = useRef(0);
+  const persistedTupleKeysRef = useRef<Set<string>>(new Set());
 
   const visibleFeatures = state?.features ?? [];
   const hasFeatures = visibleFeatures.length > 0;
@@ -430,7 +426,7 @@ export default function BikeBuilderPage() {
       baseDetailId,
       sourceDetailId,
       branchDetailId: activeDetailId,
-      samplerMode: activeMode ?? 'sampler',
+      samplerMode: 'configuration-traversal',
       description: nextState.productDescription,
       ipn: nextState.ipnCode,
       price: nextState.configuredPrice,
@@ -490,6 +486,14 @@ export default function BikeBuilderPage() {
 
   const persistCapturedResult = async (captured: CapturedConfiguration) => {
     setLastSaveStatus('saving');
+    const tupleKey = `${captured.ipn ?? ''}::${countryCode || ''}`;
+    if (captured.ipn && countryCode && persistedTupleKeysRef.current.has(tupleKey)) {
+      setDuplicateSkippedCount((prev) => prev + 1);
+      setLastSaveStatus('saved');
+      setLastSaveMessage(`duplicate skipped for ${captured.ipn} / ${countryCode}`);
+      return false;
+    }
+
     try {
       const res = await fetch('/api/cpq/sampler-result', {
         method: 'POST',
@@ -515,14 +519,27 @@ export default function BikeBuilderPage() {
         throw new Error(payload.error ?? 'Unknown persistence error');
       }
 
+      const payload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate' };
+      if (payload.status === 'duplicate') {
+        setDuplicateSkippedCount((prev) => prev + 1);
+        setLastSaveStatus('saved');
+        setLastSaveMessage(`duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${countryCode || 'unknown country'}`);
+        return false;
+      }
+
+      if (captured.ipn && countryCode) {
+        persistedTupleKeysRef.current.add(tupleKey);
+      }
       setSavedToDatabaseCount((prev) => prev + 1);
       setLastSaveStatus('saved');
       setLastSaveMessage(`saved result #${captured.sequence}`);
+      return true;
     } catch (error) {
       setSaveErrorCount((prev) => prev + 1);
       setLastSaveStatus('error');
       setLastSaveMessage(error instanceof Error ? error.message : String(error));
       console.error('[cpq/sampler] persist failed', { captured, error });
+      return false;
     }
   };
 
@@ -790,73 +807,18 @@ export default function BikeBuilderPage() {
     }
   };
 
-  const runSampler = async (seedState: NormalizedBikeBuilderState) => {
-    const seed: SamplerSeedContext = {
-      baseDetailId: detailId,
-      baseSessionId: seedState.sessionId,
-      ruleset: target.ruleset,
-      namespace: target.namespace,
-      headerId: target.headerId,
-      accountCode,
-      customerId,
-      currency,
-      language,
-      countryCode,
-    };
-
-    setCurrentSamplerMode('sampler-per-branch-start');
-    setCurrentTraversalBaseDetailId(seed.baseDetailId);
-
-    const features = getTraversableFeatures(seedState, debugIncludeHidden);
-    for (const feature of features) {
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-      setCurrentFeatureLabel(feature.featureLabel);
-
-      const options = feature.availableOptions.filter(isOptionTraversable);
-      for (const option of options) {
-        if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-        setCurrentOptionLabel(option.label);
-
-        if (configureCountRef.current > 0) {
-          const keepGoing = await sleepWithControl(delayMs);
-          if (!keepGoing) return;
-        }
-
-        const branchDetailId = crypto.randomUUID();
-        const sourceDetailId = seed.baseDetailId;
-        setCurrentTraversalSourceDetailId(sourceDetailId);
-        setCurrentTraversalDetailId(branchDetailId);
-        setCurrentTraversalCallType('StartConfiguration');
-        const branchStart = await startFreshConfiguration(target, branchDetailId, {
-          clearState: false,
-          sourceHeaderId: seed.headerId,
-          sourceDetailId,
-        });
-        setCurrentTraversalSessionId(branchStart.parsed.sessionId ?? '-');
-        setCurrentTraversalCallType('Configure');
-
-        const payload = await configureSelection({
-          sourceState: branchStart.parsed,
+  const buildTraversalCandidates = (nextState: NormalizedBikeBuilderState): TraversalCandidate[] => {
+    return getTraversableFeatures(nextState, debugIncludeHidden)
+      .flatMap((feature) =>
+        getTraversalOptionsForFeature(feature).map((option) => ({
+          featureLabel: feature.featureLabel,
           featureId: feature.featureId,
+          optionLabel: option.label,
           optionId: option.optionId,
           optionValue: option.value,
-        });
-        setCurrentTraversalSessionId(payload.parsed.sessionId ?? '-');
-        saveSnapshot({
-          nextState: payload.parsed,
-          activeDetailId: branchDetailId,
-          baseDetailId: seed.baseDetailId,
-          sourceDetailId,
-          rawSnippet: extractRawSnippet(payload.rawResponse),
-          traversalLevel: 1,
-          traversalPath: [{ featureId: feature.featureId, featureLabel: feature.featureLabel, optionId: option.optionId, optionLabel: option.label, optionValue: option.value }],
-          parentPathKey: '',
-          changedFeatureId: feature.featureId,
-          changedOptionId: option.optionId,
-          changedOptionValue: option.value,
-        });
-      }
-    }
+        })),
+      )
+      .sort((a, b) => `${a.featureId}:${a.optionId}`.localeCompare(`${b.featureId}:${b.optionId}`));
   };
 
   const replayPathFromFreshStart = async (path: TraversalStep[]) => {
@@ -894,52 +856,60 @@ export default function BikeBuilderPage() {
       return true;
     });
 
-  const runUiHierarchicalTraversal = async () => {
-    const enumerate = async (pathPrefix: TraversalStep[], levelIndex: number): Promise<void> => {
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-      if (levelIndex >= maxDepth) return;
+  const runConfigurationTraversal = async (seedState: NormalizedBikeBuilderState) => {
+    const queue: TraversalStep[][] = [[]];
+    const visitedStateSignatures = new Set<string>([signatureForState(seedState)]);
+    const expandedStateSignatures = new Set<string>();
+    let expandedStates = 0;
+    let processedTransitions = 0;
 
+    setVisitedStateCount(visitedStateSignatures.size);
+    setEstimatedTotal(Math.max(1, buildTraversalCandidates(seedState).length));
+
+    while (queue.length > 0) {
+      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
+      const pathPrefix = queue.shift() ?? [];
       const restoredBranch = await replayPathFromFreshStart(pathPrefix);
       if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
 
-      const features = getTraversableFeatures(restoredBranch.state, debugIncludeHidden);
-      const feature = features[levelIndex];
-      if (!feature) return;
-
-      setCurrentTraversalLevel(levelIndex + 1);
-      setCurrentFeatureLabel(feature.featureLabel);
+      setCurrentTraversalLevel(pathPrefix.length);
+      setCurrentTraversalPathLabel(pathToKey(pathPrefix) || '-');
       setCurrentTraversalDetailId(restoredBranch.detail);
       setCurrentTraversalSessionId(restoredBranch.state.sessionId ?? '-');
 
-      const options = getTraversalOptionsForFeature(feature);
-      for (const option of options) {
+      const currentSignature = signatureForState(restoredBranch.state);
+      if (expandedStateSignatures.has(currentSignature)) continue;
+      expandedStateSignatures.add(currentSignature);
+      expandedStates += 1;
+
+      const candidates = buildTraversalCandidates(restoredBranch.state);
+      const discoveredEstimate = processedTransitions + candidates.length + queue.length;
+      setEstimatedTotal((prev) => {
+        const branchingFactor = Math.max(1, Math.round(processedTransitions / Math.max(expandedStates, 1)));
+        return Math.max(prev, discoveredEstimate, processedTransitions + queue.length * branchingFactor);
+      });
+
+      for (const candidate of candidates) {
         if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
+        setCurrentFeatureLabel(candidate.featureLabel);
+        setCurrentOptionLabel(candidate.optionLabel);
 
         const branch = await replayPathFromFreshStart(pathPrefix);
         if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
 
-        const branchFeatures = getTraversableFeatures(branch.state, debugIncludeHidden);
-        const branchFeature = branchFeatures[levelIndex];
-        if (!branchFeature) continue;
+        const feature = getTraversableFeatures(branch.state, debugIncludeHidden).find((item) => item.featureId === candidate.featureId);
+        if (!feature) continue;
+        const option = feature.availableOptions.find((item) => item.optionId === candidate.optionId);
+        if (!option) continue;
 
-        const branchOption = branchFeature.availableOptions.find((candidate) => candidate.optionId === option.optionId);
-        if (!branchOption) continue;
-        if (!includeSelectedOption && branchFeature.selectedOptionId === branchOption.optionId) continue;
-
-        setCurrentTraversalDetailId(branch.detail);
-        setCurrentTraversalSessionId(branch.state.sessionId ?? '-');
-        setCurrentOptionLabel(branchOption.label);
         const nextPath = [
           ...pathPrefix,
-          {
-            featureId: branchFeature.featureId,
-            featureLabel: branchFeature.featureLabel,
-            optionId: branchOption.optionId,
-            optionLabel: branchOption.label,
-            optionValue: branchOption.value,
-          },
+          { featureId: feature.featureId, featureLabel: feature.featureLabel, optionId: option.optionId, optionLabel: option.label, optionValue: option.value },
         ];
-        setCurrentTraversalPathLabel(pathToKey(nextPath) || '-');
+        setCurrentTraversalPathLabel(pathToKey(nextPath));
+        setCurrentTraversalSourceDetailId(branch.detail);
+        setCurrentTraversalDetailId(branch.detail);
+        setCurrentTraversalSessionId(branch.state.sessionId ?? '-');
 
         if (configureCountRef.current > 0 || pathPrefix.length > 0) {
           const keepGoing = await sleepWithControl(delayMs);
@@ -948,10 +918,12 @@ export default function BikeBuilderPage() {
 
         const payload = await applyUiOptionChange({
           sourceStateOverride: branch.state,
-          featureId: branchFeature.featureId,
-          optionId: branchOption.optionId,
-          optionValue: branchOption.value,
+          featureId: feature.featureId,
+          optionId: option.optionId,
+          optionValue: option.value,
         });
+        processedTransitions += 1;
+        setProcessedCount(processedTransitions);
 
         saveSnapshot({
           nextState: payload.parsed,
@@ -959,22 +931,25 @@ export default function BikeBuilderPage() {
           baseDetailId: detailId,
           sourceDetailId: branch.detail,
           rawSnippet: extractRawSnippet(payload.rawResponse),
-          traversalLevel: levelIndex + 1,
+          traversalLevel: nextPath.length,
           traversalPath: nextPath,
           parentPathKey: pathToKey(pathPrefix),
-          changedFeatureId: branchFeature.featureId,
-          changedOptionId: branchOption.optionId,
-          changedOptionValue: branchOption.value,
+          changedFeatureId: feature.featureId,
+          changedOptionId: option.optionId,
+          changedOptionValue: option.value,
         });
 
-        await enumerate(nextPath, levelIndex + 1);
+        const childSignature = signatureForState(payload.parsed);
+        if (!visitedStateSignatures.has(childSignature)) {
+          visitedStateSignatures.add(childSignature);
+          setVisitedStateCount(visitedStateSignatures.size);
+          queue.push(nextPath);
+        }
       }
-    };
-
-    await enumerate([], 0);
+    }
   };
 
-  const startTraversal = async (mode: TraversalMode) => {
+  const startTraversal = async () => {
     if (!state) {
       setRequestState({ loading: false, error: 'Load a configuration before traversal.' });
       return;
@@ -988,14 +963,18 @@ export default function BikeBuilderPage() {
     setElapsedMs(0);
     setCurrentFeatureLabel('-');
     setCurrentOptionLabel('-');
-    setCurrentSamplerMode('-');
     setCurrentTraversalBaseDetailId('-');
     setCurrentTraversalSourceDetailId('-');
     setCurrentTraversalDetailId('-');
     setCurrentTraversalSessionId('-');
     setCurrentTraversalCallType('-');
+    setProcessedCount(0);
+    setEstimatedTotal(0);
+    setVisitedStateCount(0);
+    setDuplicateSkippedCount(0);
+    persistedTupleKeysRef.current = new Set();
     setTraversalStatus('running');
-    setActiveMode(mode);
+    setCurrentTraversalBaseDetailId(detailId);
     setRequestState({ loading: false });
     setSavedToDatabaseCount(0);
     setSaveErrorCount(0);
@@ -1003,8 +982,7 @@ export default function BikeBuilderPage() {
     setLastSaveMessage('-');
 
     try {
-      if (mode === 'sampler') await runSampler(state);
-      if (mode === 'ui-hierarchical') await runUiHierarchicalTraversal();
+      await runConfigurationTraversal(state);
 
       if (traversalControlRef.current.stop) {
         setTraversalStatus('stopped');
@@ -1014,16 +992,14 @@ export default function BikeBuilderPage() {
         setTraversalStatus('completed');
       }
     } catch (error) {
-      setTraversalStatus('stopped');
+      setTraversalStatus('failed');
       setRequestState({ loading: false, error: error instanceof Error ? error.message : String(error) });
     } finally {
       updateElapsed();
-      setActiveMode(null);
       setCurrentFeatureLabel('-');
       setCurrentOptionLabel('-');
       setCurrentTraversalLevel(0);
       setCurrentTraversalPathLabel('-');
-      setCurrentSamplerMode('-');
       setCurrentTraversalBaseDetailId('-');
       setCurrentTraversalSourceDetailId('-');
       setCurrentTraversalDetailId('-');
@@ -1121,11 +1097,8 @@ export default function BikeBuilderPage() {
 
         <section style={styles.controlPanel}>
           <div style={styles.controlActions}>
-            <button style={styles.button} onClick={() => void startTraversal('sampler')} disabled={!state || traversalStatus === 'running'}>
-              Start sampler
-            </button>
-            <button style={styles.button} onClick={() => void startTraversal('ui-hierarchical')} disabled={!state || traversalStatus === 'running'}>
-              Start UI hierarchical traversal
+            <button style={styles.button} onClick={() => void startTraversal()} disabled={!state || traversalStatus === 'running'}>
+              Start configuration traversal
             </button>
             <button style={styles.secondaryButton} onClick={pauseTraversal} disabled={traversalStatus !== 'running'}>
               Pause
@@ -1147,10 +1120,6 @@ export default function BikeBuilderPage() {
             <label style={styles.label}>
               Delay (ms)
               <input type="number" min={0} value={delayMs} onChange={(e) => setDelayMs(Number(e.target.value) || 0)} style={styles.input} />
-            </label>
-            <label style={styles.label}>
-              Max depth
-              <input type="number" min={1} value={maxDepth} onChange={(e) => setMaxDepth(Math.max(1, Number(e.target.value) || 1))} style={styles.input} />
             </label>
             <label style={styles.label}>
               Max results
@@ -1189,16 +1158,29 @@ export default function BikeBuilderPage() {
               Persist sampler results to DB
             </label>
           </div>
+          <div style={styles.progressWrap}>
+            <div style={styles.progressLabel}>
+              Estimated progress: {processedCount}/{Math.max(estimatedTotal, processedCount, 1)}
+            </div>
+            <progress
+              value={Math.min(processedCount, Math.max(estimatedTotal, 1))}
+              max={Math.max(estimatedTotal, 1)}
+              style={styles.progressBar}
+            />
+            <div style={styles.tinyMuted}>Estimate adapts while CPQ dependencies reveal new reachable states.</div>
+          </div>
           <div style={styles.statusRow}>
             <span style={styles.badge}>status: {traversalStatus}</span>
-            <span style={styles.badge}>mode: {activeMode ?? '-'}</span>
-            <span style={styles.badge}>sampler mode: {currentSamplerMode}</span>
+            <span style={styles.badge}>country context: {countryCode || '-'}</span>
+            <span style={styles.badge}>estimated total: {Math.max(estimatedTotal, processedCount)}</span>
+            <span style={styles.badge}>processed: {processedCount}</span>
             <span style={styles.badge}>level: {currentTraversalLevel || '-'}</span>
             <span style={styles.badge}>feature: {currentFeatureLabel}</span>
             <span style={styles.badge}>option: {currentOptionLabel}</span>
             <span style={styles.badge}>path: {currentTraversalPathLabel}</span>
             <span style={styles.badge}>baseDetailId: {currentTraversalBaseDetailId}</span>
             <span style={styles.badge}>sourceDetailId: {currentTraversalSourceDetailId}</span>
+            <span style={styles.badge}>visited states: {visitedStateCount}</span>
             <span style={styles.badge}>results: {results.length}</span>
             <span style={styles.badge}>configure calls: {configureCallCount}</span>
             <span style={styles.badge}>elapsed: {(elapsedMs / 1000).toFixed(1)}s</span>
@@ -1206,6 +1188,7 @@ export default function BikeBuilderPage() {
             <span style={styles.badge}>sessionId: {currentTraversalSessionId}</span>
             <span style={styles.badge}>callType: {currentTraversalCallType}</span>
             <span style={styles.badge}>DB saves: {savedToDatabaseCount}</span>
+            <span style={styles.badge}>duplicates skipped: {duplicateSkippedCount}</span>
             <span style={styles.badge}>DB save errors: {saveErrorCount}</span>
             <span style={styles.badge}>last DB status: {lastSaveStatus}</span>
             <span style={styles.badge}>last DB message: {lastSaveMessage}</span>
@@ -1363,7 +1346,7 @@ export default function BikeBuilderPage() {
                 <h3 style={styles.debugTitle}>Ruleset debug</h3>
                 <ul style={styles.debugList}>
                   <li>lastCallType: {lastCallType}</li>
-                  <li>sampler mode: {currentSamplerMode}</li>
+                  <li>sampler mode: configuration-traversal</li>
                   <li>baseDetailId: {currentTraversalBaseDetailId}</li>
                   <li>sourceDetailId: {currentTraversalSourceDetailId}</li>
                   <li>branch detailId: {currentTraversalDetailId}</li>
@@ -1471,6 +1454,9 @@ const styles: Record<string, CSSProperties> = {
     padding: '8px 10px',
   },
   statusRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  progressWrap: { display: 'grid', gap: 6 },
+  progressLabel: { fontSize: 12, color: '#374151', fontWeight: 600 },
+  progressBar: { width: '100%', height: 14 },
   layout: { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', minWidth: 0 },
   leftColumn: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, display: 'grid', gap: 8, minWidth: 0 },
   rightColumn: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, display: 'grid', gap: 8, alignContent: 'start', minWidth: 0 },

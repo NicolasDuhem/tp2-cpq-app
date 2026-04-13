@@ -4,7 +4,7 @@ CPQ-only Next.js application prepared for migration from `AppBikeConfig` into a 
 
 ## Retained functional scope
 - CPQ Bike Builder runtime
-- CPQ sampler process and result persistence
+- Single CPQ configuration traversal workflow (dynamic `/configure`-driven sampling) and result persistence
 - CPQ setup area:
   - Account code management
   - Ruleset management
@@ -39,3 +39,15 @@ npm run dev
 - `docs/DATABASE.md`
 - `docs/PROCESSDATA.md`
 - `docs/EXTRACTION_REPORT.md`
+
+## Traversal behavior (Bike Builder page)
+- The `/cpq` page now has **one** traversal action: **Start configuration traversal**.
+- Traversal starts from an initialized CPQ configuration (`/api/cpq/init`) and explores reachable states by applying **one option change at a time** via `/api/cpq/configure`.
+- The traversal is dependency-aware (dynamic CPQ tree/graph), not a static cartesian product.
+- Progress area shows:
+  - estimated total (heuristic, adaptive)
+  - processed transitions
+  - saved rows
+  - duplicate `(ipn_code, country_code)` skipped
+  - run status (`idle/running/paused/stopped/completed/failed`)
+- `country_code` is derived from the selected account context (`CPQ_setup_account_context`) shown in the page summary.
