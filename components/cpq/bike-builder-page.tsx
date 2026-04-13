@@ -846,88 +846,78 @@ export default function BikeBuilderPage() {
   };
 
   const runConfigurationTraversal = async (seedState: NormalizedBikeBuilderState) => {
-    let currentState = seedState;
     let processedConfigurations = 0;
     const visitedSignatures = new Set<string>([signatureForState(seedState)]);
-    const attemptedFeatureOptions = new Set<string>();
-    const traversalPathHistory: TraversalStep[] = [];
 
     setVisitedStateCount(visitedSignatures.size);
     setEstimatedTotal(Math.max(1, getVisibleCombinationLowerBound(seedState)));
 
-    while (!traversalControlRef.current.stop && !hasExceededRunLimits()) {
-      const dropdowns = getTraversableDropdowns(currentState);
-      setEstimatedTotal((prev) => Math.max(prev, getVisibleCombinationLowerBound(currentState)));
-      if (!dropdowns.length) break;
+    const traverseFromLevel = async (
+      sourceState: NormalizedBikeBuilderState,
+      level: number,
+      traversalPath: TraversalStep[],
+    ): Promise<void> => {
+      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
 
-      let nextCandidate:
-        | {
-            feature: VisibleConfiguratorDropdown;
-            option: BikeBuilderFeatureOption;
-            featureIndex: number;
-          }
-        | undefined;
+      const dropdowns = getTraversableDropdowns(sourceState);
+      setEstimatedTotal((prev) => Math.max(prev, getVisibleCombinationLowerBound(sourceState)));
+      if (level >= dropdowns.length) return;
 
-      for (let featureIndex = 0; featureIndex < dropdowns.length && !nextCandidate; featureIndex += 1) {
-        const feature = dropdowns[featureIndex];
-        for (const option of feature.options) {
-          const optionKey = `${feature.featureId}::${option.optionId}::${option.value ?? ''}`;
-          if (attemptedFeatureOptions.has(optionKey)) continue;
-          nextCandidate = { feature, option, featureIndex };
-          attemptedFeatureOptions.add(optionKey);
-          break;
+      const feature = dropdowns[level];
+      for (const option of feature.options) {
+        if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
+
+        const nextStep = {
+          featureId: feature.featureId,
+          featureLabel: feature.featureLabel,
+          optionId: option.optionId,
+          optionLabel: option.label,
+          optionValue: option.value,
+        } satisfies TraversalStep;
+        const nextPath = [...traversalPath, nextStep];
+
+        setCurrentTraversalLevel(level + 1);
+        setCurrentFeatureLabel(feature.featureLabel);
+        setCurrentOptionLabel(option.label);
+        setCurrentTraversalPathLabel(pathToKey(nextPath));
+        setCurrentTraversalSourceDetailId(detailId);
+        setCurrentTraversalDetailId(detailId);
+        setCurrentTraversalSessionId(sourceState.sessionId ?? '-');
+
+        const payload = await changeOption(feature.featureId, option.optionId, option.value, {
+          suppressError: false,
+          sourceStateOverride: sourceState,
+          respectTraversalDelay: true,
+        });
+
+        if (!payload) continue;
+        const nextState = payload.parsed;
+
+        const stateSignature = signatureForState(nextState);
+        if (!visitedSignatures.has(stateSignature)) {
+          visitedSignatures.add(stateSignature);
+          setVisitedStateCount(visitedSignatures.size);
         }
+
+        processedConfigurations += 1;
+        setProcessedCount(processedConfigurations);
+
+        await saveCurrentConfiguration({
+          source: 'traversal',
+          nextState,
+          traversalLevel: level + 1,
+          traversalPath: nextPath,
+          parentPathKey: pathToKey(nextPath.slice(0, -1)) || 'root',
+          changedFeatureId: feature.featureId,
+          changedOptionId: option.optionId,
+          changedOptionValue: option.value,
+        });
+
+        await traverseFromLevel(nextState, level + 1, nextPath);
       }
+    };
 
-      if (!nextCandidate) break;
-
-      const { feature, option, featureIndex } = nextCandidate;
-      const nextStep = {
-        featureId: feature.featureId,
-        featureLabel: feature.featureLabel,
-        optionId: option.optionId,
-        optionLabel: option.label,
-        optionValue: option.value,
-      } satisfies TraversalStep;
-      traversalPathHistory.push(nextStep);
-
-      setCurrentTraversalLevel(featureIndex + 1);
-      setCurrentFeatureLabel(feature.featureLabel);
-      setCurrentOptionLabel(option.label);
-      setCurrentTraversalPathLabel(pathToKey(traversalPathHistory));
-      setCurrentTraversalSourceDetailId(detailId);
-      setCurrentTraversalDetailId(detailId);
-      setCurrentTraversalSessionId(currentState.sessionId ?? '-');
-
-      const payload = await changeOption(feature.featureId, option.optionId, option.value, {
-        suppressError: false,
-        sourceStateOverride: currentState,
-        respectTraversalDelay: true,
-      });
-
-      if (!payload) continue;
-      currentState = payload.parsed;
-
-      const stateSignature = signatureForState(currentState);
-      if (!visitedSignatures.has(stateSignature)) {
-        visitedSignatures.add(stateSignature);
-        setVisitedStateCount(visitedSignatures.size);
-      }
-
-      processedConfigurations += 1;
-      setProcessedCount(processedConfigurations);
-
-      await saveCurrentConfiguration({
-        source: 'traversal',
-        nextState: currentState,
-        traversalLevel: featureIndex + 1,
-        traversalPath: [...traversalPathHistory],
-        parentPathKey: pathToKey(traversalPathHistory.slice(0, -1)) || 'root',
-        changedFeatureId: feature.featureId,
-        changedOptionId: option.optionId,
-        changedOptionValue: option.value,
-      });
-    }
+    await traverseFromLevel(seedState, 0, []);
   };
 
   const startTraversal = async () => {
