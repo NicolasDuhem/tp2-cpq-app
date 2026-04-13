@@ -42,12 +42,17 @@ npm run dev
 
 ## Traversal behavior (Bike Builder page)
 - The `/cpq` page now has **one** traversal action: **Start configuration traversal**.
-- Traversal starts from an initialized CPQ configuration (`/api/cpq/init`) and explores reachable states by applying **one option change at a time** via `/api/cpq/configure`.
+- Traversal candidates are sourced from the same **visible Configurator dropdown model** used by the UI (`state.features`), not from raw CPQ payload feature arrays.
+- Traversal starts from an initialized CPQ configuration (`/api/cpq/init`) and explores reachable states by applying **one visible dropdown option change at a time** via `/api/cpq/configure`.
 - The traversal is dependency-aware (dynamic CPQ tree/graph), not a static cartesian product.
+- During traversal, the last changed dropdown field is transiently highlighted in the Configurator panel.
 - Progress area shows:
-  - estimated total (heuristic, adaptive)
+  - estimated total (heuristic, lower-bound adaptive; based on visible dropdown choices only)
   - processed transitions
   - saved rows
   - duplicate `(ipn_code, country_code)` skipped
+  - configure call count
+  - last save status/message
   - run status (`idle/running/paused/stopped/completed/failed`)
+- Manual **Save Configuration** and traversal auto-save share the same persistence path (`POST /api/cpq/sampler-result`) and dedupe behavior.
 - `country_code` is derived from the selected account context (`CPQ_setup_account_context`) shown in the page summary.
