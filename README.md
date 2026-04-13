@@ -56,10 +56,14 @@ npm run dev
 - Keeps same main layout (**Configurator / Bike preview / Summary**).
 - Adds market checkbox list sourced from active `CPQ_setup_account_context` rows (unique `country_code` values).
 - Runs the current selected bike configuration across selected markets:
-  1. initialize market context from account context row (`account_code`, `customer_id`, `currency`, `language`, `country_code`)
-  2. replay selected configurator choices
-  3. persist to `CPQ_sampler_result` using existing save endpoint
-  4. wait 5000ms between markets
+  1. capture baseline selections from the **current live UI state** (`state.features`) in visible configurator order
+  2. for each selected market, create a fresh branch with a **new detailId** and market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`) via `POST /api/cpq/init`
+  3. use the returned **fresh sessionId** and replay baseline selections incrementally via `POST /api/cpq/configure`
+  4. save through the existing persistence path (`POST /api/cpq/sampler-result`) with the market run's current detailId/session state
+  5. skip duplicates by `(ipn_code, country_code)` and wait 5000ms between markets
+- Runtime identity model:
+  - `sessionId` = live CPQ runtime state for incremental `/configure` calls.
+  - `detailId` = configuration identity; across-market mode generates a new detailId per market branch before replaying baseline selections.
 - Progress shows selected/processed/saved/duplicate counts, current country, and last message.
 
 ## Traversal behavior (Bike Builder page)

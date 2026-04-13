@@ -13,12 +13,14 @@
   - supports traversal and manual save
 - **CPQ for a bike across market**:
   - uses current selected bike configuration (no traversal through all combinations)
+  - captures canonical baseline selections from live UI `state.features` (visible configurator dropdown order) **before** market loop starts
   - country checkbox source: active `CPQ_setup_account_context` rows (unique `country_code`)
   - per selected market:
-    1. initialize with that market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`)
-    2. replay selected configurator options
-    3. save through `POST /api/cpq/sampler-result`
-    4. wait 5000ms before next market
+    1. generate a new `detailId` (new configuration identity for this market branch)
+    2. initialize with that market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`) using `POST /api/cpq/init`
+    3. use the fresh `sessionId` returned by init and replay baseline selections via incremental `POST /api/cpq/configure` calls (one change at a time)
+    4. save through `POST /api/cpq/sampler-result` using the latest market run state and market run `detailId`
+    5. wait 5000ms before next market
   - shows status for selected count, processed count, saved count, duplicates skipped, current country, last message
 
 ## 2) Configuration traversal process (single workflow)
@@ -42,6 +44,10 @@
 ## 2.1) detailId refresh/capture behavior
 - `detailId` is unique per configuration state and is extracted from every parsed CPQ response (`/init`, `/configure`, and equivalent parsed-state flows).
 - Canonical live `detailId` is refreshed after each successful CPQ response and replaces any previous value in UI state/debug badges.
+- Runtime identity split:
+  - `sessionId`: runtime CPQ session state used by `/configure`.
+  - `detailId`: configuration identity passed at init/start of a branch.
+- Across-market mode generates a fresh `detailId` per market branch before replaying baseline selections.
 - Save actions use current live `detailId` in priority order:
   1. explicit override (across-market run)
   2. current normalized state detailId
