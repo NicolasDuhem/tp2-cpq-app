@@ -256,10 +256,12 @@ export default function BikeBuilderPage() {
     void loadSetup();
   }, []);
 
+  const currentDetailId = state?.detailId ?? detailId;
   const traversalControlRef = useRef({ stop: false, pause: false });
   const runStartRef = useRef<number | null>(null);
   const configureCountRef = useRef(0);
   const persistedTupleKeysRef = useRef<Set<string>>(new Set());
+  const currentDetailIdRef = useRef(currentDetailId);
 
   const visibleFeatures = state?.features ?? [];
   const hasFeatures = visibleFeatures.length > 0;
@@ -277,6 +279,10 @@ export default function BikeBuilderPage() {
     const timeout = window.setTimeout(() => setHighlightedFeatureId(null), 1100);
     return () => window.clearTimeout(timeout);
   }, [highlightedFeatureId]);
+
+  useEffect(() => {
+    currentDetailIdRef.current = currentDetailId;
+  }, [currentDetailId]);
   const selectedOptionsForImageLookup = useMemo<SelectedOptionLookup[]>(() => {
     if (!state) return [];
     return state.features
@@ -597,6 +603,23 @@ export default function BikeBuilderPage() {
     }
   };
 
+
+  const applyCpqResponseState = (nextState: NormalizedBikeBuilderState) => {
+    const refreshedDetailId = nextState.detailId ?? currentDetailIdRef.current;
+    const normalizedState =
+      refreshedDetailId && nextState.detailId !== refreshedDetailId
+        ? { ...nextState, detailId: refreshedDetailId }
+        : nextState;
+
+    setState(normalizedState);
+    if (refreshedDetailId) {
+      setDetailId(refreshedDetailId);
+      setCurrentTraversalDetailId(refreshedDetailId);
+    }
+
+    return { normalizedState, refreshedDetailId };
+  };
+
   const saveCurrentConfiguration = async (
     options?: {
       source?: 'manual' | 'traversal';
@@ -622,7 +645,7 @@ export default function BikeBuilderPage() {
       return undefined;
     }
 
-    const activeDetailId = options?.detailIdOverride ?? sourceState.detailId ?? detailId ?? crypto.randomUUID();
+    const activeDetailId = options?.detailIdOverride ?? sourceState.detailId ?? currentDetailIdRef.current ?? crypto.randomUUID();
     const sourceDetailId = activeDetailId;
     const captured = buildCapturedConfiguration({
       nextState: sourceState,
@@ -689,8 +712,6 @@ export default function BikeBuilderPage() {
     if (options?.clearState !== false) {
       setState(null);
     }
-    setDetailId(freshDetailId);
-
     const requestBody = {
       ruleset: nextTarget.ruleset,
       namespace: nextTarget.namespace,
@@ -721,8 +742,10 @@ export default function BikeBuilderPage() {
       throw new Error(message);
     }
 
-    setState(payload.parsed);
-    setDetailId(payload.parsed.detailId ?? freshDetailId);
+    const { normalizedState, refreshedDetailId } = applyCpqResponseState(payload.parsed);
+    if (!refreshedDetailId) {
+      setDetailId(freshDetailId);
+    }
     setLastCallType('StartConfiguration');
     setCurrentTraversalCallType('StartConfiguration');
     setLastChangedFeatureId('');
@@ -740,7 +763,7 @@ export default function BikeBuilderPage() {
     setLastRequestedOptionValue('');
     setLastReturnedFeatureCurrentValue('');
     setRequestState({ loading: false });
-    return payload;
+    return { ...payload, parsed: normalizedState };
   };
 
   const onRulesetChange = async (nextRulesetId: string) => {
@@ -828,10 +851,7 @@ export default function BikeBuilderPage() {
 
     configureCountRef.current += 1;
     setConfigureCallCount(configureCountRef.current);
-    setState(payload.parsed);
-    if (payload.parsed.detailId) {
-      setDetailId(payload.parsed.detailId);
-    }
+    const { normalizedState } = applyCpqResponseState(payload.parsed);
     setLastCallType('Configure');
     setCurrentTraversalCallType('Configure');
     setLastChangedFeatureId(featureId);
@@ -839,7 +859,7 @@ export default function BikeBuilderPage() {
     setLastChangedOptionId(optionId);
     setLastChangedOptionValue(optionValue ?? '');
     setLastSelectedBefore(selectedBefore?.label ?? sourceFeature?.selectedOptionId ?? '');
-    const updatedFeature = payload.parsed.features.find((feature) => feature.featureId === featureId);
+    const updatedFeature = normalizedState.features.find((feature) => feature.featureId === featureId);
     const selectedAfter = updatedFeature?.availableOptions.find((option) => option.optionId === updatedFeature.selectedOptionId);
     setLastSelectedAfter(selectedAfter?.label ?? updatedFeature?.selectedOptionId ?? '');
     setLastSelectedMatchSource(updatedFeature?.selectedMatchSource ?? '');
@@ -855,7 +875,7 @@ export default function BikeBuilderPage() {
     setRequestState({ loading: false });
     setActiveFeatureId(null);
 
-    return payload;
+    return { ...payload, parsed: normalizedState };
   };
 
   const applyUiOptionChange = async ({
@@ -942,8 +962,8 @@ export default function BikeBuilderPage() {
         setCurrentFeatureLabel(feature.featureLabel);
         setCurrentOptionLabel(option.label);
         setCurrentTraversalPathLabel(pathToKey(nextPath));
-        setCurrentTraversalSourceDetailId(detailId);
-        setCurrentTraversalDetailId(detailId);
+        setCurrentTraversalSourceDetailId(sourceState.detailId ?? currentDetailIdRef.current ?? '-');
+        setCurrentTraversalDetailId(sourceState.detailId ?? currentDetailIdRef.current ?? '-');
         setCurrentTraversalSessionId(sourceState.sessionId ?? '-');
 
         const payload = await changeOption(feature.featureId, option.optionId, option.value, {
@@ -1008,7 +1028,7 @@ export default function BikeBuilderPage() {
     setDuplicateSkippedCount(0);
     persistedTupleKeysRef.current = new Set();
     setTraversalStatus('running');
-    setCurrentTraversalBaseDetailId(detailId);
+    setCurrentTraversalBaseDetailId(currentDetailIdRef.current ?? '-');
     setRequestState({ loading: false });
     setSavedToDatabaseCount(0);
     setSaveErrorCount(0);
@@ -1141,7 +1161,7 @@ export default function BikeBuilderPage() {
         const initPayload = await startFreshConfiguration(target, crypto.randomUUID(), { contextOverride });
         let nextState = initPayload.parsed;
         let latestRaw = initPayload.rawResponse;
-        let latestDetailId = initPayload.parsed.detailId ?? detailId;
+        let latestDetailId = initPayload.parsed.detailId ?? currentDetailIdRef.current;
 
         for (const selectedOption of selectedOptionsSnapshot) {
           const feature = nextState.features.find((item) => item.featureId === selectedOption.featureId);
@@ -1492,7 +1512,7 @@ export default function BikeBuilderPage() {
                 <strong>Header ID:</strong> {target.headerId}
               </div>
               <div>
-                <strong>Detail ID:</strong> {detailId}
+                <strong>Detail ID:</strong> {currentDetailId}
               </div>
               <div>
                 <strong>Session ID:</strong> {state?.sessionId ?? '-'}

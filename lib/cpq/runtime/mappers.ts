@@ -129,6 +129,14 @@ const findDetailId = (root: Record<string, unknown>): { value?: string; field?: 
     const record = asRecord(current.value);
     if (!record) continue;
 
+    const caption = asString(pick(record, 'Caption', 'caption'));
+    if (caption && caption.trim().toLowerCase() === 'detailid') {
+      const captionValue = asString(pick(record, 'Value', 'value'));
+      if (captionValue) {
+        return { value: captionValue, field: `${current.path}.Caption/Value` };
+      }
+    }
+
     for (const [key, val] of Object.entries(record)) {
       const keyNormalized = key.toLowerCase();
       if (preferredKeys.has(keyNormalized)) {

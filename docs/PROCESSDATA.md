@@ -40,8 +40,8 @@
   - `country_code` from this context is included in persisted rows.
 
 ## 2.1) detailId refresh/capture behavior
-- `detailId` is extracted from CPQ init/configure responses and stored in live normalized state.
-- UI live `detailId` is refreshed after each successful `/configure`.
+- `detailId` is unique per configuration state and is extracted from every parsed CPQ response (`/init`, `/configure`, and equivalent parsed-state flows).
+- Canonical live `detailId` is refreshed after each successful CPQ response and replaces any previous value in UI state/debug badges.
 - Save actions use current live `detailId` in priority order:
   1. explicit override (across-market run)
   2. current normalized state detailId

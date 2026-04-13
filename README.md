@@ -78,4 +78,4 @@ npm run dev
   - run status (`idle/running/paused/stopped/completed/failed`)
 - Manual **Save Configuration** and traversal auto-save share the same persistence path (`POST /api/cpq/sampler-result`) and dedupe behavior.
 - `country_code` is derived from the selected account context (`CPQ_setup_account_context`) shown in the page summary.
-- `detailId` is now refreshed from CPQ responses on init/configure and reused by manual save, traversal save, and across-market save.
+- `detailId` is unique per CPQ configuration state. The app refreshes it from every parsed CPQ response (init/configure) and always uses the latest live value for UI badges and all save paths (manual, traversal, across-market).
