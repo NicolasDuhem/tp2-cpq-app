@@ -68,6 +68,43 @@ const findSessionId = (root: Record<string, unknown>): { value?: string; field?:
   const directCandidates: Array<[string, unknown]> = [
     ['SessionId', pick(root, 'SessionId', 'sessionId')],
     ['ConfigurationSessionId', pick(root, 'ConfigurationSessionId', 'configurationSessionId')],
+  ];
+
+  for (const [field, value] of directCandidates) {
+    const cast = asString(value);
+    if (cast) return { value: cast, field };
+  }
+
+  const queue: Array<{ path: string; value: unknown }> = [{ path: 'root', value: root }];
+  const preferredKeys = new Set(['sessionid', 'configurationsessionid']);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+
+    if (Array.isArray(current.value)) {
+      current.value.forEach((child, idx) => queue.push({ path: `${current.path}[${idx}]`, value: child }));
+      continue;
+    }
+
+    const record = asRecord(current.value);
+    if (!record) continue;
+
+    for (const [key, val] of Object.entries(record)) {
+      const keyNormalized = key.toLowerCase();
+      if (preferredKeys.has(keyNormalized)) {
+        const cast = asString(val);
+        if (cast) return { value: cast, field: `${current.path}.${key}` };
+      }
+      queue.push({ path: `${current.path}.${key}`, value: val });
+    }
+  }
+
+  return {};
+};
+
+const findDetailId = (root: Record<string, unknown>): { value?: string; field?: string } => {
+  const directCandidates: Array<[string, unknown]> = [
     ['DetailId', pick(root, 'DetailId', 'detailId')],
     ['ConfigurationId', pick(root, 'ConfigurationId', 'configurationId')],
   ];
@@ -78,7 +115,7 @@ const findSessionId = (root: Record<string, unknown>): { value?: string; field?:
   }
 
   const queue: Array<{ path: string; value: unknown }> = [{ path: 'root', value: root }];
-  const preferredKeys = new Set(['sessionid', 'detailid', 'configurationsessionid', 'configurationid']);
+  const preferredKeys = new Set(['detailid', 'configurationid']);
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -306,10 +343,12 @@ export const mapCpqToNormalizedState = (payload: CpqApiEnvelope, ruleset: string
   const { deduped, hiddenOrSystem } = dedupeFeatureCandidates(rawCandidates);
   const visibleFeatures = deduped.filter((feature) => feature.isVisible !== false);
   const session = findSessionId(root);
+  const detail = findDetailId(root);
   const ipn = findIpnCode(root);
 
   return {
     sessionId: session.value ?? 'unknown-session',
+    detailId: detail.value,
     ruleset,
     pages,
     screens,

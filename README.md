@@ -40,8 +40,30 @@ npm run dev
 - `docs/PROCESSDATA.md`
 - `docs/EXTRACTION_REPORT.md`
 
+## Bike Builder operating modes (`/cpq`)
+- Mode selector at top of page:
+  - **CPQ for a market** (existing single-market behavior)
+  - **CPQ for a bike across market** (run one selected bike across multiple markets)
+
+### CPQ for a market
+- Preserves existing behavior:
+  - account code selector
+  - configurator option changes via `/api/cpq/configure`
+  - traversal actions and auto-save
+  - manual **Save Configuration**
+
+### CPQ for a bike across market
+- Keeps same main layout (**Configurator / Bike preview / Summary**).
+- Adds market checkbox list sourced from active `CPQ_setup_account_context` rows (unique `country_code` values).
+- Runs the current selected bike configuration across selected markets:
+  1. initialize market context from account context row (`account_code`, `customer_id`, `currency`, `language`, `country_code`)
+  2. replay selected configurator choices
+  3. persist to `CPQ_sampler_result` using existing save endpoint
+  4. wait 5000ms between markets
+- Progress shows selected/processed/saved/duplicate counts, current country, and last message.
+
 ## Traversal behavior (Bike Builder page)
-- The `/cpq` page now has **one** traversal action: **Start configuration traversal**.
+- In **CPQ for a market** mode, the `/cpq` page has one traversal action: **Start configuration traversal**.
 - Traversal candidates are sourced from the same **visible Configurator dropdown model** used by the UI (`state.features`), not from raw CPQ payload feature arrays.
 - Traversal starts from an initialized CPQ configuration (`/api/cpq/init`) and explores reachable states by applying **one visible dropdown option change at a time** via `/api/cpq/configure`.
 - The traversal is dependency-aware (dynamic CPQ tree/graph), not a static cartesian product.
@@ -56,3 +78,4 @@ npm run dev
   - run status (`idle/running/paused/stopped/completed/failed`)
 - Manual **Save Configuration** and traversal auto-save share the same persistence path (`POST /api/cpq/sampler-result`) and dedupe behavior.
 - `country_code` is derived from the selected account context (`CPQ_setup_account_context`) shown in the page summary.
+- `detailId` is now refreshed from CPQ responses on init/configure and reused by manual save, traversal save, and across-market save.
