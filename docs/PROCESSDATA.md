@@ -74,5 +74,9 @@
 - Backed by `/api/cpq/setup/*` routes.
 
 ## 6) Results browsing
-- `/cpq/results` loads latest rows per IPN from `CPQ_sampler_result`.
-- Uses picture mappings from `cpq_image_management`.
+- `/cpq/results` now renders a bike matrix sourced from `CPQ_sampler_result` and `CPQ_setup_ruleset`.
+- Row identity is normalized as `sku_code + ruleset + selected feature signature` (sku_code maps to `CPQ_sampler_result.ipn_code`).
+- Dynamic feature columns are derived from `json_result.selectedOptions` entries (`featureLabel` -> selected `optionLabel`/`optionValue`).
+- Dynamic country columns come from observed sampler `country_code` values plus active `CPQ_setup_account_context.country_code` values.
+- Country cell values are sampler `detail_id`; missing combinations render as grey placeholders.
+- The page includes simple business filters (`ruleset`, `bike_type`, `sku_code`, country presence) and feature-column visibility controls.
