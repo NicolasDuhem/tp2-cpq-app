@@ -794,8 +794,8 @@ export default function BikeBuilderPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           configuration_reference: configurationReferenceInput.trim() || undefined,
-          canonical_header_id: canonicalIdentity.canonicalHeaderId,
-          canonical_detail_id: canonicalIdentity.canonicalDetailId,
+          source_header_id: canonicalIdentity.canonicalHeaderId,
+          source_detail_id: canonicalIdentity.canonicalDetailId,
           ruleset: canonicalIdentity.ruleset,
           namespace: canonicalIdentity.namespace,
           product_description: state.productDescription ?? null,
@@ -809,13 +809,21 @@ export default function BikeBuilderPage() {
           },
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as { row?: { configuration_reference: string }; error?: string };
-      if (!res.ok || !payload.row) throw new Error(payload.error ?? 'Failed to save canonical reference.');
+      const payload = (await res.json().catch(() => ({}))) as {
+        row?: { configuration_reference: string };
+        canonicalCopy?: { target_header_id?: string; target_detail_id?: string };
+        error?: string;
+      };
+      if (!res.ok || !payload.row) {
+        throw new Error(payload.error ?? 'Failed to save canonical reference via ProductConfigurator CopyConfiguration.');
+      }
       setConfigurationReferenceInput(payload.row.configuration_reference);
       setReferenceSaveStatus('saved');
-      setReferenceSaveMessage(`Saved retrievable reference ${payload.row.configuration_reference}.`);
+      setReferenceSaveMessage(`Saved retrievable canonical reference ${payload.row.configuration_reference}.`);
       setCanonicalSourceIdentity({
         ...canonicalIdentity,
+        canonicalHeaderId: payload.canonicalCopy?.target_header_id ?? canonicalIdentity.canonicalHeaderId,
+        canonicalDetailId: payload.canonicalCopy?.target_detail_id ?? canonicalIdentity.canonicalDetailId,
         configurationReference: payload.row.configuration_reference,
       });
     } catch (error) {

@@ -35,3 +35,8 @@
 ## Canonical retrieve registry notes
 - `cpq_configuration_references` is the source of truth for retrieve identity.
 - `CPQ_sampler_result` stays a historical output/snapshot table and is not used as canonical retrieve registry.
+
+
+## Canonical save write rule
+- Rows in `cpq_configuration_references` are only written/updated after backend copy succeeds into a fresh canonical `detail_id`.
+- `source_working_detail_id` and `source_session_id` remain trace metadata and are not treated as canonical retrieve identity.
