@@ -427,9 +427,9 @@ export default function BikeBuilderPage() {
       .sort((a, b) => a.featureId.localeCompare(b.featureId));
   };
 
-  const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderState): BaselineSelection[] =>
+const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderState): BaselineSelection[] =>
     getVisibleConfiguratorDropdowns(sourceState)
-      .map((feature, index) => {
+      .map<BaselineSelection | null>((feature, index) => {
         const selected = feature.options.find((option) => option.optionId === feature.selectedOptionId);
         if (!feature.selectedOptionId) return null;
         return {
@@ -441,7 +441,7 @@ export default function BikeBuilderPage() {
           selectedOptionValue: selected?.value ?? feature.selectedValue,
         } satisfies BaselineSelection;
       })
-      .filter((item): item is BaselineSelection => Boolean(item));
+      .filter((item): item is BaselineSelection => item !== null);
 
   const startMarketConfigurationBranch = async (
     countryContext: AccountContextRecord,
