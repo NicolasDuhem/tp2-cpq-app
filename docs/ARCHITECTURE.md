@@ -16,6 +16,9 @@
 - `POST /api/cpq/configure`: applies one runtime selection update.
 - `POST /api/cpq/image-layers`: resolves configured picture layers.
 - `POST /api/cpq/sampler-result`: persists traversal snapshots with duplicate protection on `(ipn_code, country_code)`.
+- `POST /api/cpq/configuration-references`: creates/updates canonical retrievable identities.
+- `GET /api/cpq/configuration-references`: resolves one canonical row by `configuration_reference`.
+- `POST /api/cpq/retrieve-configuration`: resolve helper used by retrieve UI flow.
 
 ### Setup APIs (`/api/cpq/setup/*`)
 - Account context management (`account-context`, `account-context/:id`).
@@ -53,3 +56,8 @@
   4. hydrates/evaluates the new session with configure
   5. persists result with dedupe `(ipn_code, country_code)`
   6. waits 5000 ms before the next country
+
+## Runtime and canonical identities
+- Runtime working identity (`sessionId`, working `detailId`) is transient and used for live Configure calls.
+- Canonical retrievable identity (`configuration_reference`, `canonical_header_id`, `canonical_detail_id`) is persisted in `cpq_configuration_references`.
+- Retrieve creates a new working detail and uses canonical ids in `sourceHeaderDetail`.

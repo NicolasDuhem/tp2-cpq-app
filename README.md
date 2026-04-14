@@ -21,6 +21,9 @@ CPQ-only Next.js application prepared for migration from `AppBikeConfig` into a 
 - `POST /api/cpq/configure`
 - `POST /api/cpq/image-layers`
 - `POST /api/cpq/sampler-result`
+- `POST /api/cpq/configuration-references` (save canonical retrievable identity)
+- `GET /api/cpq/configuration-references?configuration_reference=...`
+- `POST /api/cpq/retrieve-configuration` (resolve canonical identity for retrieve/rebuild)
 - Setup APIs under `/api/cpq/setup/*` for account context, rulesets, and picture management
 
 ## Quick start
@@ -38,6 +41,7 @@ npm run dev
 - `docs/REPO_STRUCTURE.md`
 - `docs/DATABASE.md`
 - `docs/PROCESSDATA.md`
+- `docs/RETRIEVE_AND_REFERENCE_FLOW.md`
 - `docs/EXTRACTION_REPORT.md`
 
 ## Bike Builder operating modes (`/cpq`)

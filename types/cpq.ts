@@ -50,6 +50,20 @@ export type BikeBuilderFeature = {
   availableOptions: BikeBuilderFeatureOption[];
 };
 
+
+export type RuntimeWorkingIdentity = {
+  sessionId?: string;
+  workingDetailId?: string;
+};
+
+export type CanonicalConfigurationIdentity = {
+  configurationReference?: string;
+  canonicalHeaderId: string;
+  canonicalDetailId: string;
+  ruleset: string;
+  namespace: string;
+};
+
 export type CpqParsingDebug = {
   sessionIdField?: string;
   rawFeatureCount: number;
