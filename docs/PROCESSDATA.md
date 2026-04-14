@@ -92,3 +92,10 @@
 - Dynamic country columns come from observed sampler `country_code` values plus active `CPQ_setup_account_context.country_code` values.
 - Country cell values are sampler `detail_id`; missing combinations render as grey placeholders.
 - The page includes simple business filters (`ruleset`, `bike_type`, `sku_code`, country presence) and feature-column visibility controls.
+
+
+## 7) Canonical reference save + retrieve
+- `/cpq` now has **Save configuration reference** and **Retrieve configuration** actions.
+- Save persists canonical retrieve identity into `cpq_configuration_references`.
+- Retrieve resolves `configuration_reference`, generates a new working detailId, calls StartConfiguration with canonical `sourceHeaderDetail`, then runs Configure hydration and rebuilds UI state.
+- Across-market flow reuses the same canonical rebuild helper so it can later call retrieve flow directly per market.

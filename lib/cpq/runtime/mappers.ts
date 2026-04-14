@@ -186,6 +186,39 @@ const findHeaderId = (root: Record<string, unknown>): { value?: string; field?: 
   return {};
 };
 
+const findSourceDetailId = (root: Record<string, unknown>): { value?: string; field?: string } => {
+  const directCandidates: Array<[string, unknown]> = [['SourceDetailId', pick(root, 'SourceDetailId', 'sourceDetailId')]];
+
+  for (const [field, value] of directCandidates) {
+    const cast = asString(value);
+    if (cast) return { value: cast, field };
+  }
+
+  const queue: Array<{ path: string; value: unknown }> = [{ path: 'root', value: root }];
+  const preferredKeys = new Set(['sourcedetailid']);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    if (Array.isArray(current.value)) {
+      current.value.forEach((child, idx) => queue.push({ path: `${current.path}[${idx}]`, value: child }));
+      continue;
+    }
+    const record = asRecord(current.value);
+    if (!record) continue;
+
+    for (const [key, val] of Object.entries(record)) {
+      if (preferredKeys.has(key.toLowerCase())) {
+        const cast = asString(val);
+        if (cast) return { value: cast, field: `${current.path}.${key}` };
+      }
+      queue.push({ path: `${current.path}.${key}`, value: val });
+    }
+  }
+
+  return {};
+};
+
 const findConfigurationReference = (root: Record<string, unknown>): { value?: string; field?: string } => {
   const directCandidates: Array<[string, unknown]> = [
     ['ConfigurationReference', pick(root, 'ConfigurationReference', 'configurationReference')],
@@ -431,6 +464,7 @@ export const mapCpqToNormalizedState = (payload: CpqApiEnvelope, ruleset: string
   const session = findSessionId(root);
   const detail = findDetailId(root);
   const header = findHeaderId(root);
+  const sourceDetail = findSourceDetailId(root);
   const configurationReference = findConfigurationReference(root);
   const ipn = findIpnCode(root);
 
@@ -438,7 +472,7 @@ export const mapCpqToNormalizedState = (payload: CpqApiEnvelope, ruleset: string
     sessionId: session.value ?? 'unknown-session',
     detailId: detail.value,
     sourceHeaderId: header.value,
-    sourceDetailId: detail.value,
+    sourceDetailId: sourceDetail.value,
     configurationReference: configurationReference.value,
     ruleset,
     namespace: asString(pick(root, 'Namespace', 'namespace')),

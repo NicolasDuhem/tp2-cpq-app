@@ -57,8 +57,8 @@ type AccountContextRecord = {
 };
 
 type CanonicalSourceIdentity = {
-  sourceHeaderId: string;
-  sourceDetailId: string;
+  canonicalHeaderId: string;
+  canonicalDetailId: string;
   ruleset: string;
   namespace: string;
   configurationReference?: string;
@@ -173,6 +173,11 @@ export default function BikeBuilderPage() {
   const [detailId, setDetailId] = useState(() => crypto.randomUUID());
   const [state, setState] = useState<NormalizedBikeBuilderState | null>(null);
   const [canonicalSourceIdentity, setCanonicalSourceIdentity] = useState<CanonicalSourceIdentity | null>(null);
+  const [configurationReferenceInput, setConfigurationReferenceInput] = useState('');
+  const [referenceSaveStatus, setReferenceSaveStatus] = useState<PersistenceStatus>('idle');
+  const [referenceSaveMessage, setReferenceSaveMessage] = useState('-');
+  const [referenceRetrieveStatus, setReferenceRetrieveStatus] = useState<PersistenceStatus>('idle');
+  const [referenceRetrieveMessage, setReferenceRetrieveMessage] = useState('-');
   const [requestState, setRequestState] = useState<RequestState>({ loading: false });
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -671,33 +676,44 @@ export default function BikeBuilderPage() {
   const resolveCanonicalSourceIdentity = ({
     payloadState,
     nextTarget,
-    sourceHeaderId,
-    sourceDetailId,
+    canonicalHeaderId,
+    canonicalDetailId,
+    configurationReference,
   }: {
     payloadState: NormalizedBikeBuilderState;
     nextTarget: RulesetTarget;
-    sourceHeaderId?: string;
-    sourceDetailId?: string;
+    canonicalHeaderId?: string;
+    canonicalDetailId?: string;
+    configurationReference?: string;
   }): CanonicalSourceIdentity | null => {
-    const resolvedSourceHeaderId = sourceHeaderId ?? payloadState.sourceHeaderId ?? nextTarget.headerId;
-    const resolvedSourceDetailId = sourceDetailId ?? payloadState.sourceDetailId ?? payloadState.detailId;
-    if (!resolvedSourceHeaderId || !resolvedSourceDetailId) return null;
+    const resolvedHeaderId =
+      canonicalHeaderId ?? payloadState.sourceHeaderId ?? canonicalSourceIdentity?.canonicalHeaderId ?? nextTarget.headerId;
+    const resolvedDetailId =
+      canonicalDetailId ?? payloadState.sourceDetailId ?? canonicalSourceIdentity?.canonicalDetailId ?? null;
+    if (!resolvedHeaderId || !resolvedDetailId) return null;
     return {
-      sourceHeaderId: resolvedSourceHeaderId,
-      sourceDetailId: resolvedSourceDetailId,
+      canonicalHeaderId: resolvedHeaderId,
+      canonicalDetailId: resolvedDetailId,
       ruleset: payloadState.ruleset ?? nextTarget.ruleset,
       namespace: payloadState.namespace ?? nextTarget.namespace,
-      configurationReference: payloadState.configurationReference,
+      configurationReference: configurationReference ?? payloadState.configurationReference ?? canonicalSourceIdentity?.configurationReference,
     };
   };
 
 
   const applyCpqResponseState = (nextState: NormalizedBikeBuilderState) => {
+    const priorState = state;
     const refreshedDetailId = nextState.detailId ?? currentDetailIdRef.current;
+    const normalizedStateBase = {
+      ...nextState,
+      sourceHeaderId: nextState.sourceHeaderId ?? priorState?.sourceHeaderId,
+      sourceDetailId: nextState.sourceDetailId ?? priorState?.sourceDetailId,
+      configurationReference: nextState.configurationReference ?? priorState?.configurationReference,
+    };
     const normalizedState =
-      refreshedDetailId && nextState.detailId !== refreshedDetailId
-        ? { ...nextState, detailId: refreshedDetailId }
-        : nextState;
+      refreshedDetailId && normalizedStateBase.detailId !== refreshedDetailId
+        ? { ...normalizedStateBase, detailId: refreshedDetailId }
+        : normalizedStateBase;
 
     setState(normalizedState);
     if (refreshedDetailId) {
@@ -706,6 +722,152 @@ export default function BikeBuilderPage() {
     }
 
     return { normalizedState, refreshedDetailId };
+  };
+
+  const rebuildConfigurationFromCanonicalSource = async ({
+    canonicalIdentity,
+    contextOverride,
+    configurationReference,
+  }: {
+    canonicalIdentity: CanonicalSourceIdentity;
+    contextOverride?: Partial<BikeBuilderContext>;
+    configurationReference?: string;
+  }) => {
+    const newWorkingDetailId = crypto.randomUUID();
+    const startPayload = await startFreshConfiguration(
+      {
+        ...target,
+        headerId: canonicalIdentity.canonicalHeaderId,
+        ruleset: canonicalIdentity.ruleset,
+        namespace: canonicalIdentity.namespace,
+      },
+      newWorkingDetailId,
+      {
+        contextOverride,
+        sourceHeaderId: canonicalIdentity.canonicalHeaderId,
+        sourceDetailId: canonicalIdentity.canonicalDetailId,
+      },
+    );
+    const rebuilt = await hydrateRebuiltConfiguration(startPayload.parsed, contextOverride ?? {});
+    const refreshedState = {
+      ...rebuilt.nextState,
+      sourceHeaderId: canonicalIdentity.canonicalHeaderId,
+      sourceDetailId: canonicalIdentity.canonicalDetailId,
+      configurationReference,
+    };
+    const { normalizedState } = applyCpqResponseState(refreshedState);
+    setCanonicalSourceIdentity({
+      ...canonicalIdentity,
+      configurationReference,
+    });
+    return { normalizedState, latestRaw: rebuilt.latestRaw, latestDetailId: rebuilt.latestDetailId };
+  };
+
+  const saveConfigurationReference = async () => {
+    if (!state) {
+      setReferenceSaveStatus('error');
+      setReferenceSaveMessage('Load a configuration before saving a reference.');
+      return;
+    }
+
+    const canonicalIdentity =
+      resolveCanonicalSourceIdentity({ payloadState: state, nextTarget: target }) ??
+      ({
+        canonicalHeaderId: target.headerId,
+        canonicalDetailId: state.detailId ?? currentDetailIdRef.current ?? '',
+        ruleset: target.ruleset,
+        namespace: target.namespace,
+        configurationReference: undefined,
+      } satisfies CanonicalSourceIdentity);
+
+    if (!canonicalIdentity.canonicalDetailId) {
+      setReferenceSaveStatus('error');
+      setReferenceSaveMessage('Missing canonical detailId to persist reference.');
+      return;
+    }
+
+    setReferenceSaveStatus('saving');
+    setReferenceSaveMessage('Saving canonical retrievable reference…');
+    try {
+      const res = await fetch('/api/cpq/configuration-references', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configuration_reference: configurationReferenceInput.trim() || undefined,
+          canonical_header_id: canonicalIdentity.canonicalHeaderId,
+          canonical_detail_id: canonicalIdentity.canonicalDetailId,
+          ruleset: canonicalIdentity.ruleset,
+          namespace: canonicalIdentity.namespace,
+          product_description: state.productDescription ?? null,
+          account_code: accountCode || null,
+          country_code: countryCode || null,
+          source_working_detail_id: state.detailId ?? null,
+          source_session_id: state.sessionId ?? null,
+          json_snapshot: {
+            ipnCode: state.ipnCode ?? null,
+            selectedOptionIds: state.selectedOptionIds ?? [],
+          },
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { row?: { configuration_reference: string }; error?: string };
+      if (!res.ok || !payload.row) throw new Error(payload.error ?? 'Failed to save canonical reference.');
+      setConfigurationReferenceInput(payload.row.configuration_reference);
+      setReferenceSaveStatus('saved');
+      setReferenceSaveMessage(`Saved retrievable reference ${payload.row.configuration_reference}.`);
+      setCanonicalSourceIdentity({
+        ...canonicalIdentity,
+        configurationReference: payload.row.configuration_reference,
+      });
+    } catch (error) {
+      setReferenceSaveStatus('error');
+      setReferenceSaveMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const retrieveConfigurationReference = async () => {
+    const reference = configurationReferenceInput.trim();
+    if (!reference) {
+      setReferenceRetrieveStatus('error');
+      setReferenceRetrieveMessage('Enter a configuration reference first.');
+      return;
+    }
+    setReferenceRetrieveStatus('saving');
+    setReferenceRetrieveMessage('Resolving reference and rebuilding configuration…');
+    try {
+      const lookupRes = await fetch('/api/cpq/retrieve-configuration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configuration_reference: reference }),
+      });
+      const lookupPayload = (await lookupRes.json().catch(() => ({}))) as {
+        error?: string;
+        resolved?: {
+          canonical_header_id: string;
+          canonical_detail_id: string;
+          ruleset: string;
+          namespace: string;
+        };
+      };
+      if (!lookupRes.ok || !lookupPayload.resolved) {
+        throw new Error(lookupPayload.error ?? 'Reference not found.');
+      }
+
+      const canonicalIdentity: CanonicalSourceIdentity = {
+        canonicalHeaderId: lookupPayload.resolved.canonical_header_id,
+        canonicalDetailId: lookupPayload.resolved.canonical_detail_id,
+        ruleset: lookupPayload.resolved.ruleset,
+        namespace: lookupPayload.resolved.namespace,
+        configurationReference: reference,
+      };
+      const rebuilt = await rebuildConfigurationFromCanonicalSource({ canonicalIdentity, configurationReference: reference });
+      setReferenceRetrieveStatus('saved');
+      setReferenceRetrieveMessage(
+        `Retrieved ${reference}. New working detailId: ${rebuilt.latestDetailId} (canonical detailId unchanged).`,
+      );
+    } catch (error) {
+      setReferenceRetrieveStatus('error');
+      setReferenceRetrieveMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const saveCurrentConfiguration = async (
@@ -737,7 +899,7 @@ export default function BikeBuilderPage() {
 
     const activeDetailId = options?.detailIdOverride ?? sourceState.detailId ?? currentDetailIdRef.current ?? crypto.randomUUID();
     const sourceDetailId = options?.sourceDetailIdOverride ?? activeDetailId;
-    const sourceHeaderId = options?.sourceHeaderIdOverride ?? canonicalSourceIdentity?.sourceHeaderId ?? target.headerId;
+    const sourceHeaderId = options?.sourceHeaderIdOverride ?? canonicalSourceIdentity?.canonicalHeaderId ?? target.headerId;
     const captured = buildCapturedConfiguration({
       nextState: sourceState,
       activeDetailId,
@@ -841,15 +1003,15 @@ export default function BikeBuilderPage() {
       ...payload.parsed,
       namespace: payload.parsed.namespace ?? nextTarget.namespace,
       sourceHeaderId: options?.sourceHeaderId ?? payload.parsed.sourceHeaderId ?? nextTarget.headerId,
-      sourceDetailId: options?.sourceDetailId ?? payload.parsed.sourceDetailId ?? payload.parsed.detailId ?? freshDetailId,
+      sourceDetailId: options?.sourceDetailId ?? payload.parsed.sourceDetailId,
     };
 
     const { normalizedState, refreshedDetailId } = applyCpqResponseState(enrichedParsed);
     const canonicalIdentity = resolveCanonicalSourceIdentity({
       payloadState: enrichedParsed,
       nextTarget,
-      sourceHeaderId: options?.sourceHeaderId,
-      sourceDetailId: options?.sourceDetailId,
+      canonicalHeaderId: options?.sourceHeaderId,
+      canonicalDetailId: options?.sourceDetailId,
     });
     if (canonicalIdentity) {
       setCanonicalSourceIdentity(canonicalIdentity);
@@ -1236,7 +1398,7 @@ export default function BikeBuilderPage() {
 
     if (!sourceIdentity) {
       setAcrossMarketStatus('failed');
-      setAcrossMarketLastMessage('Canonical source identity is missing (sourceHeaderId/sourceDetailId).');
+      setAcrossMarketLastMessage('Canonical source identity is missing (canonicalHeaderId/canonicalDetailId).');
       return;
     }
 
@@ -1260,8 +1422,8 @@ export default function BikeBuilderPage() {
             {
               marketCode: selectedCountryCode,
               runDetailId: '-',
-              sourceHeaderId: sourceIdentity.sourceHeaderId,
-              sourceDetailId: sourceIdentity.sourceDetailId,
+              sourceHeaderId: sourceIdentity.canonicalHeaderId,
+              sourceDetailId: sourceIdentity.canonicalDetailId,
               status: 'incompatible-failed',
               saveStatus: 'failed',
               rebuilt: false,
@@ -1290,33 +1452,23 @@ export default function BikeBuilderPage() {
             {
               marketCode: selectedCountryCode,
               runDetailId,
-              sourceHeaderId: sourceIdentity.sourceHeaderId,
-              sourceDetailId: sourceIdentity.sourceDetailId,
+              sourceHeaderId: sourceIdentity.canonicalHeaderId,
+              sourceDetailId: sourceIdentity.canonicalDetailId,
               status: 'started',
               saveStatus: 'not-saved',
               rebuilt: false,
               message: 'StartConfiguration request started.',
             },
           ]);
-          setAcrossMarketLastMessage(`Starting ${selectedCountryCode} retrieve with detailId ${runDetailId}…`);
-          const initPayload = await startFreshConfiguration(
-            {
-              ...target,
-              ruleset: sourceIdentity.ruleset,
-              namespace: sourceIdentity.namespace,
-            },
-            runDetailId,
-            {
-              contextOverride,
-              sourceHeaderId: sourceIdentity.sourceHeaderId,
-              sourceDetailId: sourceIdentity.sourceDetailId,
-            },
-          );
-          setAcrossMarketLastMessage(`Rebuild Configure hydration for ${selectedCountryCode}…`);
-          const rebuilt = await hydrateRebuiltConfiguration(initPayload.parsed, contextOverride);
-          const nextState = rebuilt.nextState;
-          const latestRaw = rebuilt.latestRaw ?? initPayload.rawResponse;
-          const latestDetailId = rebuilt.latestDetailId ?? initPayload.parsed.detailId ?? runDetailId;
+          setAcrossMarketLastMessage(`Starting ${selectedCountryCode} retrieve from canonical reference…`);
+          const rebuilt = await rebuildConfigurationFromCanonicalSource({
+            canonicalIdentity: sourceIdentity,
+            contextOverride,
+            configurationReference: sourceIdentity.configurationReference,
+          });
+          const nextState = rebuilt.normalizedState;
+          const latestRaw = rebuilt.latestRaw;
+          const latestDetailId = rebuilt.latestDetailId;
           const rebuiltSuccessfully = Boolean(nextState.sessionId && latestDetailId);
           const ipnCode = nextState.ipnCode;
 
@@ -1332,8 +1484,8 @@ export default function BikeBuilderPage() {
               changedOptionId: 'across-market-run',
               changedOptionValue: selectedCountryCode,
               detailIdOverride: latestDetailId,
-              sourceHeaderIdOverride: sourceIdentity.sourceHeaderId,
-              sourceDetailIdOverride: sourceIdentity.sourceDetailId,
+              sourceHeaderIdOverride: sourceIdentity.canonicalHeaderId,
+              sourceDetailIdOverride: sourceIdentity.canonicalDetailId,
               rawSnippetOverride: extractRawSnippet(latestRaw),
               contextOverride,
             });
@@ -1351,8 +1503,8 @@ export default function BikeBuilderPage() {
           const report: MarketRunReport = {
             marketCode: selectedCountryCode,
             runDetailId: latestDetailId,
-            sourceHeaderId: sourceIdentity.sourceHeaderId,
-            sourceDetailId: sourceIdentity.sourceDetailId,
+            sourceHeaderId: sourceIdentity.canonicalHeaderId,
+            sourceDetailId: sourceIdentity.canonicalDetailId,
             status: finalStatus,
             saveStatus,
             rebuilt: rebuiltSuccessfully,
@@ -1375,8 +1527,8 @@ export default function BikeBuilderPage() {
             {
               marketCode: selectedCountryCode,
               runDetailId: '-',
-              sourceHeaderId: sourceIdentity.sourceHeaderId,
-              sourceDetailId: sourceIdentity.sourceDetailId,
+              sourceHeaderId: sourceIdentity.canonicalHeaderId,
+              sourceDetailId: sourceIdentity.canonicalDetailId,
               status: 'incompatible-failed',
               saveStatus: 'failed',
               rebuilt: false,
@@ -1598,8 +1750,8 @@ export default function BikeBuilderPage() {
               <span style={styles.badge}>processed: {acrossMarketProcessedCount}</span>
               <span style={styles.badge}>saved: {acrossMarketSavedCount}</span>
               <span style={styles.badge}>duplicates skipped: {acrossMarketDuplicateCount}</span>
-              <span style={styles.badge}>sourceHeaderId: {canonicalSourceIdentity?.sourceHeaderId ?? '-'}</span>
-              <span style={styles.badge}>sourceDetailId: {canonicalSourceIdentity?.sourceDetailId ?? '-'}</span>
+              <span style={styles.badge}>sourceHeaderId: {canonicalSourceIdentity?.canonicalHeaderId ?? '-'}</span>
+              <span style={styles.badge}>sourceDetailId: {canonicalSourceIdentity?.canonicalDetailId ?? '-'}</span>
               <span style={styles.badge}>source ruleset: {canonicalSourceIdentity?.ruleset ?? target.ruleset}</span>
               <span style={styles.badge}>current country: {acrossMarketCurrentCountry}</span>
               <span style={styles.badge}>last message: {acrossMarketLastMessage}</span>
@@ -1727,6 +1879,36 @@ export default function BikeBuilderPage() {
               </div>
               <div>
                 <strong>Session ID:</strong> {state?.sessionId ?? '-'}
+              </div>
+            </div>
+            <div style={styles.summaryCard}>
+              <label style={styles.label}>
+                Configuration reference
+                <input
+                  value={configurationReferenceInput}
+                  onChange={(e) => setConfigurationReferenceInput(e.target.value)}
+                  placeholder="CFG-YYYYMMDD-XXXXXXXX"
+                  style={styles.input}
+                />
+              </label>
+              <div style={styles.controlActions}>
+                <button style={styles.button} onClick={() => void saveConfigurationReference()} disabled={!state || referenceSaveStatus === 'saving'}>
+                  {referenceSaveStatus === 'saving' ? 'Saving reference…' : 'Save configuration reference'}
+                </button>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => void retrieveConfigurationReference()}
+                  disabled={!configurationReferenceInput.trim() || referenceRetrieveStatus === 'saving'}
+                >
+                  {referenceRetrieveStatus === 'saving' ? 'Retrieving…' : 'Retrieve configuration'}
+                </button>
+              </div>
+              <div style={referenceSaveStatus === 'error' ? styles.error : styles.tinyMuted}>Save reference: {referenceSaveMessage}</div>
+              <div style={referenceRetrieveStatus === 'error' ? styles.error : styles.tinyMuted}>
+                Retrieve reference: {referenceRetrieveMessage}
+              </div>
+              <div style={styles.tinyMuted}>
+                Canonical source: {canonicalSourceIdentity?.canonicalHeaderId ?? '-'} / {canonicalSourceIdentity?.canonicalDetailId ?? '-'}
               </div>
             </div>
             <div style={styles.summaryCard}>

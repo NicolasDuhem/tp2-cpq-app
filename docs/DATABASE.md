@@ -9,7 +9,9 @@
    - Persistent traversal snapshots and sync-processing flags.
    - Logical uniqueness is `(ipn_code, country_code)`.
    - `country_code` originates from selected setup account context (`CPQ_setup_account_context`).
-4. `cpq_image_management`
+4. `cpq_configuration_references`
+   - Canonical retrieve registry for `configuration_reference` -> (`canonical_header_id`, `canonical_detail_id`, ruleset, namespace).
+5. `cpq_image_management`
    - Selection-to-picture-layer mappings.
 
 ## SQL baseline strategy
@@ -28,3 +30,8 @@
 - `bike_type` is enriched by joining `CPQ_sampler_result.ruleset` to `CPQ_setup_ruleset.cpq_ruleset`.
 - Feature columns come from `CPQ_sampler_result.json_result.selectedOptions[*]` entries.
 - Country matrix values are populated from `CPQ_sampler_result.detail_id` keyed by `country_code`.
+
+
+## Canonical retrieve registry notes
+- `cpq_configuration_references` is the source of truth for retrieve identity.
+- `CPQ_sampler_result` stays a historical output/snapshot table and is not used as canonical retrieve registry.
