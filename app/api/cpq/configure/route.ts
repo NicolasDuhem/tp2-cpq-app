@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
   }
 
   const context = buildContext(body.context);
+  const cpqRequestBody = {
+    sessionID: body.sessionId,
+    selections: [{ id: body.featureId, value: body.optionValue }],
+  };
   console.log('[cpq/configure] request', {
     sessionId: body.sessionId,
     featureId: body.featureId,
@@ -51,9 +55,10 @@ export async function POST(req: NextRequest) {
       rawResponse: normalized.raw ?? normalized,
       requestBody: {
         finalConfigureUrl,
-        sessionID: body.sessionId,
-        selections: [{ id: body.featureId, value: body.optionValue }],
+        ...cpqRequestBody,
       },
+      downstreamRequestBody: cpqRequestBody,
+      downstreamResponseBody: normalized.raw ?? normalized,
       callType: 'Configure',
     });
   }
@@ -85,9 +90,10 @@ export async function POST(req: NextRequest) {
       rawResponse: cpqResponse,
       requestBody: {
         finalConfigureUrl,
-        sessionID: body.sessionId,
-        selections: [{ id: body.featureId, value: body.optionValue }],
+        ...cpqRequestBody,
       },
+      downstreamRequestBody: cpqRequestBody,
+      downstreamResponseBody: cpqResponse,
       callType: 'Configure',
     });
   } catch (error) {
