@@ -118,6 +118,15 @@ type TraversalStep = {
   optionValue?: string;
 };
 
+type BaselineSelection = {
+  order: number;
+  featureId: string;
+  featureLabel: string;
+  selectedOptionId: string;
+  selectedOptionLabel?: string;
+  selectedOptionValue?: string;
+};
+
 type VisibleConfiguratorDropdown = {
   featureId: string;
   featureLabel: string;
@@ -416,6 +425,68 @@ export default function BikeBuilderPage() {
         } satisfies CapturedOption;
       })
       .sort((a, b) => a.featureId.localeCompare(b.featureId));
+  };
+
+  const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderState): BaselineSelection[] =>
+    getVisibleConfiguratorDropdowns(sourceState)
+      .map((feature, index) => {
+        const selected = feature.options.find((option) => option.optionId === feature.selectedOptionId);
+        if (!feature.selectedOptionId) return null;
+        return {
+          order: index,
+          featureId: feature.featureId,
+          featureLabel: feature.featureLabel,
+          selectedOptionId: feature.selectedOptionId,
+          selectedOptionLabel: selected?.label,
+          selectedOptionValue: selected?.value ?? feature.selectedValue,
+        } satisfies BaselineSelection;
+      })
+      .filter((item): item is BaselineSelection => Boolean(item));
+
+  const startMarketConfigurationBranch = async (
+    countryContext: AccountContextRecord,
+    runDetailId: string,
+  ): Promise<CpqRouteResponse> =>
+    startFreshConfiguration(target, runDetailId, {
+      contextOverride: {
+        accountCode: countryContext.account_code,
+        customerId: countryContext.customer_id,
+        currency: countryContext.currency,
+        language: countryContext.language,
+        countryCode: countryContext.country_code,
+      },
+    });
+
+  const replayBaselineSelectionsIntoSession = async (
+    seedState: NormalizedBikeBuilderState,
+    baselineSelections: BaselineSelection[],
+    contextOverride: Partial<BikeBuilderContext>,
+  ) => {
+    let nextState = seedState;
+    let latestRaw: unknown = null;
+    let latestDetailId = seedState.detailId ?? currentDetailIdRef.current;
+
+    for (const selection of baselineSelections) {
+      const liveFeature = nextState.features.find((item) => item.featureId === selection.featureId);
+      if (!liveFeature || !liveFeature.isVisible) continue;
+
+      const selectedById = liveFeature.availableOptions.find((item) => item.optionId === selection.selectedOptionId);
+      const selectedByValue = liveFeature.availableOptions.find((item) => item.value === selection.selectedOptionValue);
+      const resolvedOption = selectedById ?? selectedByValue;
+      if (!resolvedOption || resolvedOption.isSelectable === false) continue;
+      if (liveFeature.selectedOptionId === resolvedOption.optionId) continue;
+
+      const configured = await changeOption(selection.featureId, resolvedOption.optionId, resolvedOption.value, {
+        sourceStateOverride: nextState,
+        contextOverride,
+      });
+      if (!configured) continue;
+      nextState = configured.parsed;
+      latestRaw = configured.rawResponse;
+      latestDetailId = configured.parsed.detailId ?? latestDetailId;
+    }
+
+    return { nextState, latestRaw, latestDetailId };
   };
 
   const signatureForState = (nextState: NormalizedBikeBuilderState) => {
@@ -1114,16 +1185,9 @@ export default function BikeBuilderPage() {
       return;
     }
 
-    const selectedOptionsSnapshot = state.features
-      .filter((feature) => feature.selectedOptionId)
-      .map((feature) => {
-        const selected = feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId);
-        return {
-          featureId: feature.featureId,
-          optionId: feature.selectedOptionId as string,
-          optionValue: selected?.value ?? feature.selectedValue,
-        };
-      });
+    const baselineStateSnapshot = state;
+    const baselineDetailIdSnapshot = currentDetailIdRef.current;
+    const selectedOptionsSnapshot = captureCurrentBaselineSelections(baselineStateSnapshot);
 
     if (!selectedOptionsSnapshot.length) {
       setAcrossMarketStatus('failed');
@@ -1138,77 +1202,70 @@ export default function BikeBuilderPage() {
     setAcrossMarketCurrentCountry('-');
     setAcrossMarketLastMessage('Starting across-market run…');
 
-    for (let index = 0; index < selectedAcrossMarketCountryCodes.length; index += 1) {
-      const selectedCountryCode = selectedAcrossMarketCountryCodes[index];
-      const contextRow = uniqueCountryMarkets.find((row) => row.country_code === selectedCountryCode);
-      if (!contextRow) {
-        setAcrossMarketProcessedCount(index + 1);
-        setAcrossMarketLastMessage(`No account context found for country ${selectedCountryCode}, skipped.`);
-        continue;
-      }
-
-      const contextOverride: Partial<BikeBuilderContext> = {
-        accountCode: contextRow.account_code,
-        customerId: contextRow.customer_id,
-        currency: contextRow.currency,
-        language: contextRow.language,
-        countryCode: contextRow.country_code,
-      };
-
-      try {
-        setAcrossMarketCurrentCountry(selectedCountryCode);
-        setAcrossMarketLastMessage(`Initializing ${selectedCountryCode}…`);
-        const initPayload = await startFreshConfiguration(target, crypto.randomUUID(), { contextOverride });
-        let nextState = initPayload.parsed;
-        let latestRaw = initPayload.rawResponse;
-        let latestDetailId = initPayload.parsed.detailId ?? currentDetailIdRef.current;
-
-        for (const selectedOption of selectedOptionsSnapshot) {
-          const feature = nextState.features.find((item) => item.featureId === selectedOption.featureId);
-          if (!feature) continue;
-          const option = feature.availableOptions.find((item) => item.optionId === selectedOption.optionId);
-          if (!option || option.isSelectable === false) continue;
-          const configured = await changeOption(selectedOption.featureId, selectedOption.optionId, selectedOption.optionValue, {
-            sourceStateOverride: nextState,
-            contextOverride,
-          });
-          if (!configured) continue;
-          nextState = configured.parsed;
-          latestRaw = configured.rawResponse;
-          latestDetailId = configured.parsed.detailId ?? latestDetailId;
+    try {
+      for (let index = 0; index < selectedAcrossMarketCountryCodes.length; index += 1) {
+        const selectedCountryCode = selectedAcrossMarketCountryCodes[index];
+        const contextRow = uniqueCountryMarkets.find((row) => row.country_code === selectedCountryCode);
+        if (!contextRow) {
+          setAcrossMarketProcessedCount(index + 1);
+          setAcrossMarketLastMessage(`No account context found for country ${selectedCountryCode}, skipped.`);
+          continue;
         }
 
-        const saved = await saveCurrentConfiguration({
-          source: 'traversal',
-          nextState,
-          sourceTag: 'across-market-save',
-          changedFeatureId: 'across-market-run',
-          changedOptionId: 'across-market-run',
-          changedOptionValue: selectedCountryCode,
-          detailIdOverride: latestDetailId,
-          rawSnippetOverride: extractRawSnippet(latestRaw),
-          contextOverride,
-        });
-        if (saved) setAcrossMarketSavedCount((prev) => prev + 1);
-        else setAcrossMarketDuplicateCount((prev) => prev + 1);
-        setAcrossMarketLastMessage(`Processed ${selectedCountryCode}.`);
-      } catch (error) {
-        setAcrossMarketStatus('failed');
-        setAcrossMarketLastMessage(`${selectedCountryCode} failed: ${error instanceof Error ? error.message : String(error)}`);
-        setAcrossMarketCurrentCountry(selectedCountryCode);
-        return;
-      } finally {
-        setAcrossMarketProcessedCount(index + 1);
-      }
+        const contextOverride: Partial<BikeBuilderContext> = {
+          accountCode: contextRow.account_code,
+          customerId: contextRow.customer_id,
+          currency: contextRow.currency,
+          language: contextRow.language,
+          countryCode: contextRow.country_code,
+        };
 
-      if (index < selectedAcrossMarketCountryCodes.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        try {
+          setAcrossMarketCurrentCountry(selectedCountryCode);
+          const runDetailId = crypto.randomUUID();
+          setAcrossMarketLastMessage(`Starting ${selectedCountryCode} branch with detailId ${runDetailId}…`);
+          const initPayload = await startMarketConfigurationBranch(contextRow, runDetailId);
+          setAcrossMarketLastMessage(`Replaying baseline for ${selectedCountryCode}…`);
+          const replayed = await replayBaselineSelectionsIntoSession(initPayload.parsed, selectedOptionsSnapshot, contextOverride);
+          const nextState = replayed.nextState;
+          const latestRaw = replayed.latestRaw ?? initPayload.rawResponse;
+          const latestDetailId = replayed.latestDetailId ?? initPayload.parsed.detailId ?? runDetailId;
+
+          setAcrossMarketLastMessage(`Saving ${selectedCountryCode}…`);
+          const saved = await saveCurrentConfiguration({
+            source: 'traversal',
+            nextState,
+            sourceTag: 'across-market-save',
+            changedFeatureId: 'across-market-run',
+            changedOptionId: 'across-market-run',
+            changedOptionValue: selectedCountryCode,
+            detailIdOverride: latestDetailId,
+            rawSnippetOverride: extractRawSnippet(latestRaw),
+            contextOverride,
+          });
+          if (saved) setAcrossMarketSavedCount((prev) => prev + 1);
+          else setAcrossMarketDuplicateCount((prev) => prev + 1);
+          setAcrossMarketLastMessage(`Processed ${selectedCountryCode}.`);
+        } catch (error) {
+          setAcrossMarketStatus('failed');
+          setAcrossMarketLastMessage(`${selectedCountryCode} failed: ${error instanceof Error ? error.message : String(error)}`);
+          setAcrossMarketCurrentCountry(selectedCountryCode);
+          return;
+        } finally {
+          setAcrossMarketProcessedCount(index + 1);
+        }
+
+        if (index < selectedAcrossMarketCountryCodes.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
       }
+      setAcrossMarketStatus('completed');
+      setAcrossMarketCurrentCountry('-');
+      setAcrossMarketLastMessage('Across-market run completed.');
+    } finally {
+      setState(baselineStateSnapshot);
+      if (baselineDetailIdSnapshot) setDetailId(baselineDetailIdSnapshot);
     }
-
-    setAcrossMarketStatus('completed');
-    setAcrossMarketCurrentCountry('-');
-    setAcrossMarketLastMessage('Across-market run completed.');
   };
 
   return (
