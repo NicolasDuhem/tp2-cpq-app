@@ -95,7 +95,15 @@
 
 
 ## 7) Canonical reference save + retrieve
-- `/cpq` now has **Save configuration reference** and **Retrieve configuration** actions.
-- Save persists canonical retrieve identity into `cpq_configuration_references`.
-- Retrieve resolves `configuration_reference`, generates a new working detailId, calls StartConfiguration with canonical `sourceHeaderDetail`, then runs Configure hydration and rebuilds UI state.
-- Across-market flow reuses the same canonical rebuild helper so it can later call retrieve flow directly per market.
+- `/cpq` has **Save configuration reference** and **Retrieve configuration** actions.
+- Save now performs server-side copy-first semantics:
+  1. generate fresh canonical target detailId
+  2. call `CopyConfiguration`-style endpoint (`deleteSource=false`, `overwriteTarget=false`)
+  3. persist `cpq_configuration_references` only if copy succeeds
+- Retrieve resolves `configuration_reference`, generates a new working detailId, calls StartConfiguration with canonical `sourceHeaderDetail`, then runs one Configure hydration step and rebuilds UI state.
+- Across-market flow reuses the same canonical rebuild helper.
+
+
+## 8) Copy capability fallback behavior
+- If copy capability is not configured in env, canonical save is explicitly unavailable (HTTP 501) and no canonical reference row is written.
+- This prevents downstream flows from assuming legacy-equivalent canonical semantics when capability is missing.

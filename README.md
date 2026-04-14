@@ -42,6 +42,7 @@ npm run dev
 - `docs/DATABASE.md`
 - `docs/PROCESSDATA.md`
 - `docs/RETRIEVE_AND_REFERENCE_FLOW.md`
+- `docs/CANONICAL_SAVE_CAPABILITY_GAP.md`
 - `docs/EXTRACTION_REPORT.md`
 
 ## Bike Builder operating modes (`/cpq`)

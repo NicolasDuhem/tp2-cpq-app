@@ -61,3 +61,9 @@
 - Runtime working identity (`sessionId`, working `detailId`) is transient and used for live Configure calls.
 - Canonical retrievable identity (`configuration_reference`, `canonical_header_id`, `canonical_detail_id`) is persisted in `cpq_configuration_references`.
 - Retrieve creates a new working detail and uses canonical ids in `sourceHeaderDetail`.
+
+
+## Canonical save capability
+- Canonical reference persistence is now gated by backend copy capability (`CopyConfiguration`-style API).
+- Runtime endpoint used by app: `POST /api/cpq/configuration-references` -> server-side copy call -> DB persist on success.
+- If copy capability env is missing, API returns `501` and canonical row is not written.
