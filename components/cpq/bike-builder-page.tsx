@@ -34,9 +34,20 @@ type CpqRouteResponse = {
   parsed: NormalizedBikeBuilderState;
   rawResponse: unknown;
   requestBody?: unknown;
+  downstreamRequestBody?: unknown;
+  downstreamResponseBody?: unknown;
   callType?: CallType;
   error?: string;
   details?: string;
+};
+
+type DebugTraceEntry = {
+  action: string;
+  endpoint: string;
+  route: string;
+  timestamp: string;
+  payload: unknown;
+  title?: string;
 };
 
 type RulesetTarget = {
@@ -190,6 +201,10 @@ export default function BikeBuilderPage() {
   const [lastSelectedMatchSource, setLastSelectedMatchSource] = useState<string>('');
   const [lastRawRequest, setLastRawRequest] = useState<unknown>(null);
   const [lastRawResponse, setLastRawResponse] = useState<unknown>(null);
+  const [lastSaveRequestDebug, setLastSaveRequestDebug] = useState<DebugTraceEntry | null>(null);
+  const [lastSaveResponseDebug, setLastSaveResponseDebug] = useState<DebugTraceEntry | null>(null);
+  const [lastConfigureRequestDebug, setLastConfigureRequestDebug] = useState<DebugTraceEntry | null>(null);
+  const [lastConfigureResponseDebug, setLastConfigureResponseDebug] = useState<DebugTraceEntry | null>(null);
   const [lastConfigureUrl, setLastConfigureUrl] = useState<string>('');
   const [lastConfigureSelectionCount, setLastConfigureSelectionCount] = useState<number>(0);
   const [lastSessionIdSent, setLastSessionIdSent] = useState<string>('');
@@ -573,23 +588,24 @@ export default function BikeBuilderPage() {
     contextOverride?: Partial<BikeBuilderContext>,
   ) => {
     const persistedCountryCode = contextOverride?.countryCode ?? countryCode;
+    const requestPayload = {
+      ipn_code: captured.ipn ?? null,
+      ruleset: captured.ruleset,
+      account_code: contextOverride?.accountCode ?? accountCode,
+      customer_id: (contextOverride?.customerId ?? customerId) || null,
+      currency: (contextOverride?.currency ?? currency) || null,
+      language: (contextOverride?.language ?? language) || null,
+      country_code: persistedCountryCode || null,
+      namespace: captured.namespace,
+      header_id: captured.headerId,
+      detail_id: captured.detailId,
+      session_id: captured.sessionId,
+      json_result: captured,
+    };
     const res = await fetch('/api/cpq/sampler-result', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ipn_code: captured.ipn ?? null,
-        ruleset: captured.ruleset,
-        account_code: contextOverride?.accountCode ?? accountCode,
-        customer_id: (contextOverride?.customerId ?? customerId) || null,
-        currency: (contextOverride?.currency ?? currency) || null,
-        language: (contextOverride?.language ?? language) || null,
-        country_code: persistedCountryCode || null,
-        namespace: captured.namespace,
-        header_id: captured.headerId,
-        detail_id: captured.detailId,
-        session_id: captured.sessionId,
-        json_result: captured,
-      }),
+      body: JSON.stringify(requestPayload),
     });
 
     if (!res.ok) {
@@ -597,7 +613,8 @@ export default function BikeBuilderPage() {
       throw new Error(payload.error ?? 'Unknown persistence error');
     }
 
-    return (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
+    const responsePayload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
+    return { requestPayload, responsePayload };
   };
 
   const persistCapturedResult = async (
@@ -625,8 +642,26 @@ export default function BikeBuilderPage() {
     }
 
     try {
-      const payload = await postSamplerResult(captured, options.contextOverride);
-      if (payload.status === 'duplicate') {
+      const timestamp = new Date().toISOString();
+      const { requestPayload, responsePayload } = await postSamplerResult(captured, options.contextOverride);
+      setLastSaveRequestDebug({
+        action: options.source === 'manual' ? 'manual-save-button' : 'traversal-auto-save',
+        endpoint: '/api/cpq/sampler-result',
+        route: '/api/cpq/sampler-result',
+        timestamp,
+        payload: requestPayload,
+        title: `${captured.ipn ?? 'No IPN'} · ${captured.detailId}`,
+      });
+      setLastSaveResponseDebug({
+        action: options.source === 'manual' ? 'manual-save-button' : 'traversal-auto-save',
+        endpoint: '/api/cpq/sampler-result',
+        route: '/api/cpq/sampler-result',
+        timestamp,
+        payload: responsePayload,
+        title: extractDebugTitle(responsePayload),
+      });
+
+      if (responsePayload.status === 'duplicate') {
         if (captured.ipn && persistedCountryCode) {
           persistedTupleKeysRef.current.add(tupleKey);
         }
@@ -649,13 +684,13 @@ export default function BikeBuilderPage() {
       if (options.source === 'traversal') {
         setSavedToDatabaseCount((prev) => prev + 1);
         setLastSaveStatus('saved');
-        setLastSaveMessage(`saved result #${captured.sequence}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`);
+        setLastSaveMessage(`saved result #${captured.sequence}${responsePayload.row?.id ? ` (row ${responsePayload.row.id})` : ''}`);
       } else {
-        const timestamp = new Date().toISOString();
+        const savedAt = new Date().toISOString();
         setManualSaveStatus('saved');
-        setManualSaveTimestamp(timestamp);
+        setManualSaveTimestamp(savedAt);
         setManualSaveMessage(
-          `Saved at ${new Date(timestamp).toLocaleString()}${payload.row?.id ? ` (row ${payload.row.id})` : ''}`,
+          `Saved at ${new Date(savedAt).toLocaleString()}${responsePayload.row?.id ? ` (row ${responsePayload.row.id})` : ''}`,
         );
       }
       return true;
@@ -1115,6 +1150,15 @@ export default function BikeBuilderPage() {
         countryCode: contextOverride?.countryCode ?? countryCode,
       },
     };
+    const configureTimestamp = new Date().toISOString();
+    setLastConfigureRequestDebug({
+      action: 'manual-option-change',
+      endpoint: '/api/cpq/configure',
+      route: '/api/cpq/configure',
+      timestamp: configureTimestamp,
+      payload: requestBody,
+      title: `${featureId} -> ${optionId}`,
+    });
 
     const res = await fetch('/api/cpq/configure', {
       method: 'POST',
@@ -1153,6 +1197,18 @@ export default function BikeBuilderPage() {
     setLastPreviousFeatureCurrentValue(sourceFeature?.currentValue ?? '');
     setLastRequestedOptionValue(optionValue ?? '');
     setLastReturnedFeatureCurrentValue(updatedFeature?.currentValue ?? '');
+    setLastConfigureResponseDebug({
+      action: 'manual-option-change',
+      endpoint: debugRequest?.finalConfigureUrl ?? '/api/cpq/configure',
+      route: '/api/cpq/configure',
+      timestamp: configureTimestamp,
+      payload: {
+        appRouteResponse: payload,
+        downstreamRequestBody: payload.downstreamRequestBody ?? payload.requestBody,
+        downstreamResponseBody: payload.downstreamResponseBody ?? payload.rawResponse,
+      },
+      title: extractDebugTitle(payload.downstreamResponseBody ?? payload.rawResponse),
+    });
     setRequestState({ loading: false });
     setActiveFeatureId(null);
 
@@ -1560,6 +1616,36 @@ export default function BikeBuilderPage() {
     }
   };
 
+  const renderTraceSection = (title: string, trace: DebugTraceEntry | null) => (
+    <details style={styles.traceSection} open>
+      <summary>{title}</summary>
+      {!trace ? (
+        <div style={styles.tinyMuted}>No data captured yet.</div>
+      ) : (
+        <div style={styles.traceBody}>
+          <div>
+            <strong>Front-end action:</strong> {trace.action}
+          </div>
+          <div>
+            <strong>App route:</strong> {trace.route}
+          </div>
+          <div>
+            <strong>Endpoint:</strong> {trace.endpoint}
+          </div>
+          <div>
+            <strong>Timestamp:</strong> {new Date(trace.timestamp).toLocaleString()}
+          </div>
+          {trace.title ? (
+            <div>
+              <strong>Extracted label:</strong> {trace.title}
+            </div>
+          ) : null}
+          <pre style={styles.pre}>{JSON.stringify(trace.payload, null, 2)}</pre>
+        </div>
+      )}
+    </details>
+  );
+
   return (
     <main style={styles.page}>
       <div style={styles.container}>
@@ -1928,6 +2014,13 @@ export default function BikeBuilderPage() {
               </div>
               {manualSaveTimestamp && <div style={styles.tinyMuted}>Last saved: {new Date(manualSaveTimestamp).toLocaleString()}</div>}
             </div>
+            <details style={styles.debugCard} open>
+              <summary style={styles.debugTitle}>CPQ Request/Response Trace Panel (temporary)</summary>
+              {renderTraceSection('Last Save Request', lastSaveRequestDebug)}
+              {renderTraceSection('Last Save Response', lastSaveResponseDebug)}
+              {renderTraceSection('Last Configure Request', lastConfigureRequestDebug)}
+              {renderTraceSection('Last Configure Response', lastConfigureResponseDebug)}
+            </details>
 
             <h2 style={styles.sectionTitle}>Captured results</h2>
             <div style={styles.resultsList}>
@@ -2051,6 +2144,34 @@ function extractRawSnippet(rawResponse: unknown) {
   };
 }
 
+function extractDebugTitle(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const objectPayload = payload as Record<string, unknown>;
+  const candidateKeys = [
+    'title',
+    'Title',
+    'caption',
+    'Caption',
+    'fileName',
+    'filename',
+    'label',
+    'operation',
+    'operationName',
+    'Description',
+    'description',
+    'IPNCode',
+    'status',
+  ];
+
+  for (const key of candidateKeys) {
+    const value = objectPayload[key];
+    if (typeof value === 'string' && value.trim()) return `${key}: ${value}`;
+    if (typeof value === 'number') return `${key}: ${value}`;
+  }
+
+  return undefined;
+}
+
 const styles: Record<string, CSSProperties> = {
   page: { fontFamily: 'Inter, Arial, sans-serif', background: '#f6f7fb', minHeight: 0, padding: 16, overflowY: 'auto', overflowX: 'hidden' },
   container: { maxWidth: 1360, margin: '0 auto', display: 'grid', gap: 12, minWidth: 0 },
@@ -2139,6 +2260,8 @@ const styles: Record<string, CSSProperties> = {
   resultMeta: { fontSize: 12, color: '#374151' },
   debugCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 10, display: 'grid', gap: 8, fontSize: 12 },
   debugTitle: { margin: 0, fontSize: 14 },
+  traceSection: { border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, background: '#fff' },
+  traceBody: { display: 'grid', gap: 6, marginTop: 6 },
   debugList: { margin: 0, paddingLeft: 18, display: 'grid', gap: 4 },
   pre: { maxHeight: 220, overflow: 'auto', background: '#f8fafc', padding: 8, borderRadius: 8, border: '1px solid #e5e7eb' },
   tinyMuted: { fontSize: 11, color: '#6b7280' },
