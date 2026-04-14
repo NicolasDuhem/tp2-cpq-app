@@ -33,10 +33,13 @@ export async function POST(req: NextRequest) {
     profile: requestPayload.profile,
     instance: requestPayload.instance,
     accountCode: requestPayload.context?.accountCode,
+    company: requestPayload.context?.company,
+    accountType: requestPayload.context?.accountType,
     customerId: requestPayload.context?.customerId,
     currency: requestPayload.context?.currency,
     language: requestPayload.context?.language,
     countryCode: requestPayload.context?.countryCode,
+    customerLocation: requestPayload.context?.customerLocation,
   });
 
   if (process.env.CPQ_USE_MOCK === 'true') {

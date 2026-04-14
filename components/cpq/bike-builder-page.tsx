@@ -122,9 +122,45 @@ type BaselineSelection = {
   order: number;
   featureId: string;
   featureLabel: string;
+  source: 'visible' | 'hidden-or-system';
   selectedOptionId: string;
   selectedOptionLabel?: string;
   selectedOptionValue?: string;
+};
+
+type ReplayOutcomeStatus = 'applied' | 'remapped' | 'conflict' | 'unavailable';
+type MarketRunStatus = 'exact-match' | 'remapped-close' | 'conflict-not-exact' | 'failed';
+
+type ReplayOutcome = {
+  featureId: string;
+  featureLabel: string;
+  baselineOptionId: string;
+  baselineOptionLabel?: string;
+  baselineOptionValue?: string;
+  resolvedOptionId?: string;
+  resolvedOptionLabel?: string;
+  resolvedOptionValue?: string;
+  status: ReplayOutcomeStatus;
+  reason?: string;
+};
+
+type MarketRunReport = {
+  marketCode: string;
+  branchDetailId: string;
+  sourceDetailId: string;
+  status: MarketRunStatus;
+  saveStatus: 'saved' | 'duplicate' | 'not-saved' | 'failed';
+  exactMatch: boolean;
+  replayMode: 'strict';
+  replayOutcomes: ReplayOutcome[];
+  baselineSignature: string;
+  finalSignature?: string;
+  diffSummary: {
+    missingFeatures: string[];
+    changedSelections: string[];
+    extraSelections: string[];
+  };
+  message: string;
 };
 
 type VisibleConfiguratorDropdown = {
@@ -222,6 +258,7 @@ export default function BikeBuilderPage() {
   const [acrossMarketDuplicateCount, setAcrossMarketDuplicateCount] = useState(0);
   const [acrossMarketCurrentCountry, setAcrossMarketCurrentCountry] = useState('-');
   const [acrossMarketLastMessage, setAcrossMarketLastMessage] = useState('-');
+  const [acrossMarketReports, setAcrossMarketReports] = useState<MarketRunReport[]>([]);
 
   useEffect(() => {
     const loadSetup = async () => {
@@ -427,15 +464,21 @@ export default function BikeBuilderPage() {
       .sort((a, b) => a.featureId.localeCompare(b.featureId));
   };
 
-const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderState): BaselineSelection[] =>
-    getVisibleConfiguratorDropdowns(sourceState)
+  const getAllFeatureCandidates = (sourceState: NormalizedBikeBuilderState) => [
+    ...(sourceState.features ?? []),
+    ...(sourceState.hiddenOrSystemFeatures ?? []),
+  ];
+
+  const captureFullBaselineStateFromCurrentConfig = (sourceState: NormalizedBikeBuilderState): BaselineSelection[] =>
+    getAllFeatureCandidates(sourceState)
       .map<BaselineSelection | null>((feature, index) => {
-        const selected = feature.options.find((option) => option.optionId === feature.selectedOptionId);
+        const selected = feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId);
         if (!feature.selectedOptionId) return null;
         return {
           order: index,
           featureId: feature.featureId,
           featureLabel: feature.featureLabel,
+          source: feature.isVisible === false ? 'hidden-or-system' : 'visible',
           selectedOptionId: feature.selectedOptionId,
           selectedOptionLabel: selected?.label,
           selectedOptionValue: selected?.value ?? feature.selectedValue,
@@ -443,21 +486,86 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
       })
       .filter((item): item is BaselineSelection => item !== null);
 
-  const startMarketConfigurationBranch = async (
+  const startMarketBranchFromCurrentConfig = async (
     countryContext: AccountContextRecord,
     runDetailId: string,
+    sourceDetailId: string,
   ): Promise<CpqRouteResponse> =>
     startFreshConfiguration(target, runDetailId, {
       contextOverride: {
         accountCode: countryContext.account_code,
+        company: countryContext.account_code,
         customerId: countryContext.customer_id,
         currency: countryContext.currency,
         language: countryContext.language,
         countryCode: countryContext.country_code,
+        customerLocation: countryContext.country_code,
       },
+      sourceHeaderId: target.headerId,
+      sourceDetailId,
     });
 
-  const replayBaselineSelectionsIntoSession = async (
+  const reconcileSelectionAgainstLiveState = (
+    selection: BaselineSelection,
+    liveFeature: NormalizedBikeBuilderState['features'][number] | undefined,
+  ): ReplayOutcome => {
+    if (!liveFeature) {
+      return {
+        featureId: selection.featureId,
+        featureLabel: selection.featureLabel,
+        baselineOptionId: selection.selectedOptionId,
+        baselineOptionLabel: selection.selectedOptionLabel,
+        baselineOptionValue: selection.selectedOptionValue,
+        status: 'unavailable',
+        reason: 'feature-not-present',
+      };
+    }
+
+    const byId = liveFeature.availableOptions.find((item) => item.optionId === selection.selectedOptionId);
+    const byValue = liveFeature.availableOptions.find((item) => item.value === selection.selectedOptionValue);
+    const resolved = byId ?? byValue;
+    if (!resolved) {
+      return {
+        featureId: selection.featureId,
+        featureLabel: selection.featureLabel,
+        baselineOptionId: selection.selectedOptionId,
+        baselineOptionLabel: selection.selectedOptionLabel,
+        baselineOptionValue: selection.selectedOptionValue,
+        status: 'unavailable',
+        reason: 'option-not-found',
+      };
+    }
+
+    if (resolved.isSelectable === false) {
+      return {
+        featureId: selection.featureId,
+        featureLabel: selection.featureLabel,
+        baselineOptionId: selection.selectedOptionId,
+        baselineOptionLabel: selection.selectedOptionLabel,
+        baselineOptionValue: selection.selectedOptionValue,
+        resolvedOptionId: resolved.optionId,
+        resolvedOptionLabel: resolved.label,
+        resolvedOptionValue: resolved.value,
+        status: 'conflict',
+        reason: 'option-not-selectable',
+      };
+    }
+
+    return {
+      featureId: selection.featureId,
+      featureLabel: selection.featureLabel,
+      baselineOptionId: selection.selectedOptionId,
+      baselineOptionLabel: selection.selectedOptionLabel,
+      baselineOptionValue: selection.selectedOptionValue,
+      resolvedOptionId: resolved.optionId,
+      resolvedOptionLabel: resolved.label,
+      resolvedOptionValue: resolved.value,
+      status: byId ? 'applied' : 'remapped',
+      reason: byId ? 'matched-by-option-id' : 'matched-by-option-value',
+    };
+  };
+
+  const replayBaselineIntoMarketSession = async (
     seedState: NormalizedBikeBuilderState,
     baselineSelections: BaselineSelection[],
     contextOverride: Partial<BikeBuilderContext>,
@@ -465,28 +573,84 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
     let nextState = seedState;
     let latestRaw: unknown = null;
     let latestDetailId = seedState.detailId ?? currentDetailIdRef.current;
+    const outcomes: ReplayOutcome[] = [];
+    const strictMode = true;
 
     for (const selection of baselineSelections) {
-      const liveFeature = nextState.features.find((item) => item.featureId === selection.featureId);
-      if (!liveFeature || !liveFeature.isVisible) continue;
+      const liveFeature = [...nextState.features, ...(nextState.hiddenOrSystemFeatures ?? [])].find(
+        (item) => item.featureId === selection.featureId,
+      );
+      const outcome = reconcileSelectionAgainstLiveState(selection, liveFeature);
+      outcomes.push(outcome);
+      if (!liveFeature) {
+        if (strictMode) break;
+        continue;
+      }
 
-      const selectedById = liveFeature.availableOptions.find((item) => item.optionId === selection.selectedOptionId);
-      const selectedByValue = liveFeature.availableOptions.find((item) => item.value === selection.selectedOptionValue);
-      const resolvedOption = selectedById ?? selectedByValue;
-      if (!resolvedOption || resolvedOption.isSelectable === false) continue;
-      if (liveFeature.selectedOptionId === resolvedOption.optionId) continue;
+      if (outcome.status === 'conflict' || outcome.status === 'unavailable') {
+        if (strictMode) break;
+        continue;
+      }
 
-      const configured = await changeOption(selection.featureId, resolvedOption.optionId, resolvedOption.value, {
+      if (!outcome.resolvedOptionId) continue;
+      if (liveFeature.selectedOptionId === outcome.resolvedOptionId) {
+        outcomes[outcomes.length - 1] = { ...outcome, status: outcome.status === 'remapped' ? 'remapped' : 'applied' };
+        continue;
+      }
+
+      const configured = await changeOption(selection.featureId, outcome.resolvedOptionId, outcome.resolvedOptionValue, {
         sourceStateOverride: nextState,
         contextOverride,
       });
-      if (!configured) continue;
+      if (!configured) {
+        outcomes[outcomes.length - 1] = { ...outcome, status: 'conflict', reason: 'configure-call-failed' };
+        if (strictMode) break;
+        continue;
+      }
       nextState = configured.parsed;
       latestRaw = configured.rawResponse;
       latestDetailId = configured.parsed.detailId ?? latestDetailId;
     }
 
-    return { nextState, latestRaw, latestDetailId };
+    return { nextState, latestRaw, latestDetailId, outcomes, strictMode };
+  };
+
+  const signatureFromSelections = (selections: BaselineSelection[]) =>
+    selections
+      .map((item) => `${item.featureId}:${item.selectedOptionId}:${item.selectedOptionValue ?? ''}`)
+      .sort()
+      .join('|');
+
+  const computeBaselineDiff = (baselineSelections: BaselineSelection[], nextState: NormalizedBikeBuilderState) => {
+    const baselineMap = new Map(baselineSelections.map((item) => [item.featureId, item]));
+    const finalSelections = captureFullBaselineStateFromCurrentConfig(nextState);
+    const finalMap = new Map(finalSelections.map((item) => [item.featureId, item]));
+    const missingFeatures: string[] = [];
+    const changedSelections: string[] = [];
+    const extraSelections: string[] = [];
+
+    for (const [featureId, baseline] of baselineMap.entries()) {
+      const finalSelection = finalMap.get(featureId);
+      if (!finalSelection) {
+        missingFeatures.push(`${baseline.featureLabel} (${featureId})`);
+        continue;
+      }
+      if (finalSelection.selectedOptionId !== baseline.selectedOptionId) {
+        changedSelections.push(
+          `${baseline.featureLabel} (${featureId}): ${baseline.selectedOptionId} -> ${finalSelection.selectedOptionId}`,
+        );
+      }
+    }
+
+    for (const [featureId, finalSelection] of finalMap.entries()) {
+      if (!baselineMap.has(featureId)) extraSelections.push(`${finalSelection.featureLabel} (${featureId})`);
+    }
+
+    return {
+      finalSelections,
+      exactMatch: missingFeatures.length === 0 && changedSelections.length === 0,
+      diffSummary: { missingFeatures, changedSelections, extraSelections },
+    };
   };
 
   const signatureForState = (nextState: NormalizedBikeBuilderState) => {
@@ -793,10 +957,13 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
       sourceDetailId: options?.sourceDetailId,
       context: {
         accountCode: options?.contextOverride?.accountCode ?? accountCode,
+        company: options?.contextOverride?.company ?? options?.contextOverride?.accountCode ?? accountCode,
+        accountType: options?.contextOverride?.accountType,
         customerId: options?.contextOverride?.customerId ?? customerId,
         currency: options?.contextOverride?.currency ?? currency,
         language: options?.contextOverride?.language ?? language,
         countryCode: options?.contextOverride?.countryCode ?? countryCode,
+        customerLocation: options?.contextOverride?.customerLocation ?? options?.contextOverride?.countryCode ?? countryCode,
       },
     };
 
@@ -1187,7 +1354,14 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
 
     const baselineStateSnapshot = state;
     const baselineDetailIdSnapshot = currentDetailIdRef.current;
-    const selectedOptionsSnapshot = captureCurrentBaselineSelections(baselineStateSnapshot);
+    const selectedOptionsSnapshot = captureFullBaselineStateFromCurrentConfig(baselineStateSnapshot);
+    const baselineSignature = signatureFromSelections(selectedOptionsSnapshot);
+    const sourceDetailId = baselineStateSnapshot.detailId ?? currentDetailIdRef.current;
+    if (!sourceDetailId) {
+      setAcrossMarketStatus('failed');
+      setAcrossMarketLastMessage('Current configuration detailId is missing; cannot branch across markets.');
+      return;
+    }
 
     if (!selectedOptionsSnapshot.length) {
       setAcrossMarketStatus('failed');
@@ -1201,6 +1375,7 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
     setAcrossMarketDuplicateCount(0);
     setAcrossMarketCurrentCountry('-');
     setAcrossMarketLastMessage('Starting across-market run…');
+    setAcrossMarketReports([]);
 
     try {
       for (let index = 0; index < selectedAcrossMarketCountryCodes.length; index += 1) {
@@ -1214,42 +1389,99 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
 
         const contextOverride: Partial<BikeBuilderContext> = {
           accountCode: contextRow.account_code,
+          company: contextRow.account_code,
+          accountType: 'Dealer',
           customerId: contextRow.customer_id,
           currency: contextRow.currency,
           language: contextRow.language,
           countryCode: contextRow.country_code,
+          customerLocation: contextRow.country_code,
         };
 
         try {
           setAcrossMarketCurrentCountry(selectedCountryCode);
           const runDetailId = crypto.randomUUID();
           setAcrossMarketLastMessage(`Starting ${selectedCountryCode} branch with detailId ${runDetailId}…`);
-          const initPayload = await startMarketConfigurationBranch(contextRow, runDetailId);
+          const initPayload = await startMarketBranchFromCurrentConfig(contextRow, runDetailId, sourceDetailId);
           setAcrossMarketLastMessage(`Replaying baseline for ${selectedCountryCode}…`);
-          const replayed = await replayBaselineSelectionsIntoSession(initPayload.parsed, selectedOptionsSnapshot, contextOverride);
+          const replayed = await replayBaselineIntoMarketSession(initPayload.parsed, selectedOptionsSnapshot, contextOverride);
           const nextState = replayed.nextState;
           const latestRaw = replayed.latestRaw ?? initPayload.rawResponse;
           const latestDetailId = replayed.latestDetailId ?? initPayload.parsed.detailId ?? runDetailId;
+          const hasReplayConflict = replayed.outcomes.some((item) => item.status === 'conflict' || item.status === 'unavailable');
+          const diff = computeBaselineDiff(selectedOptionsSnapshot, nextState);
+          const hasRemap = replayed.outcomes.some((item) => item.status === 'remapped');
+          const finalSignature = signatureFromSelections(diff.finalSelections);
+          const exactMatch = diff.exactMatch && !hasReplayConflict;
+          const status: MarketRunStatus = hasReplayConflict
+            ? 'conflict-not-exact'
+            : exactMatch
+              ? 'exact-match'
+              : hasRemap
+                ? 'remapped-close'
+                : 'conflict-not-exact';
 
-          setAcrossMarketLastMessage(`Saving ${selectedCountryCode}…`);
-          const saved = await saveCurrentConfiguration({
-            source: 'traversal',
-            nextState,
-            sourceTag: 'across-market-save',
-            changedFeatureId: 'across-market-run',
-            changedOptionId: 'across-market-run',
-            changedOptionValue: selectedCountryCode,
-            detailIdOverride: latestDetailId,
-            rawSnippetOverride: extractRawSnippet(latestRaw),
-            contextOverride,
-          });
-          if (saved) setAcrossMarketSavedCount((prev) => prev + 1);
-          else setAcrossMarketDuplicateCount((prev) => prev + 1);
-          setAcrossMarketLastMessage(`Processed ${selectedCountryCode}.`);
+          let saveStatus: MarketRunReport['saveStatus'] = 'not-saved';
+          if (exactMatch) {
+            setAcrossMarketLastMessage(`Saving ${selectedCountryCode}…`);
+            const saved = await saveCurrentConfiguration({
+              source: 'traversal',
+              nextState,
+              sourceTag: 'across-market-save',
+              changedFeatureId: 'across-market-run',
+              changedOptionId: 'across-market-run',
+              changedOptionValue: selectedCountryCode,
+              detailIdOverride: latestDetailId,
+              rawSnippetOverride: extractRawSnippet(latestRaw),
+              contextOverride,
+            });
+            if (saved) {
+              setAcrossMarketSavedCount((prev) => prev + 1);
+              saveStatus = 'saved';
+            } else {
+              setAcrossMarketDuplicateCount((prev) => prev + 1);
+              saveStatus = 'duplicate';
+            }
+          }
+
+          const report: MarketRunReport = {
+            marketCode: selectedCountryCode,
+            branchDetailId: latestDetailId,
+            sourceDetailId,
+            status,
+            saveStatus,
+            exactMatch,
+            replayMode: 'strict',
+            replayOutcomes: replayed.outcomes,
+            baselineSignature,
+            finalSignature,
+            diffSummary: diff.diffSummary,
+            message: exactMatch
+              ? 'Baseline matched exactly.'
+              : 'Baseline mismatch detected; strict mode blocked equivalent-save semantics.',
+          };
+          setAcrossMarketReports((prev) => [...prev, report]);
+          setAcrossMarketLastMessage(`Processed ${selectedCountryCode}: ${status}.`);
         } catch (error) {
           setAcrossMarketStatus('failed');
           setAcrossMarketLastMessage(`${selectedCountryCode} failed: ${error instanceof Error ? error.message : String(error)}`);
           setAcrossMarketCurrentCountry(selectedCountryCode);
+          setAcrossMarketReports((prev) => [
+            ...prev,
+            {
+              marketCode: selectedCountryCode,
+              branchDetailId: '-',
+              sourceDetailId,
+              status: 'failed',
+              saveStatus: 'failed',
+              exactMatch: false,
+              replayMode: 'strict',
+              replayOutcomes: [],
+              baselineSignature,
+              diffSummary: { missingFeatures: [], changedSelections: [], extraSelections: [] },
+              message: error instanceof Error ? error.message : String(error),
+            },
+          ]);
           return;
         } finally {
           setAcrossMarketProcessedCount(index + 1);
@@ -1466,8 +1698,27 @@ const captureCurrentBaselineSelections = (sourceState: NormalizedBikeBuilderStat
               <span style={styles.badge}>processed: {acrossMarketProcessedCount}</span>
               <span style={styles.badge}>saved: {acrossMarketSavedCount}</span>
               <span style={styles.badge}>duplicates skipped: {acrossMarketDuplicateCount}</span>
+              <span style={styles.badge}>strict replay: on</span>
               <span style={styles.badge}>current country: {acrossMarketCurrentCountry}</span>
               <span style={styles.badge}>last message: {acrossMarketLastMessage}</span>
+            </div>
+            <div style={styles.summaryCard}>
+              <strong>Per-market fidelity report</strong>
+              {!acrossMarketReports.length && <span style={styles.muted}>No run report yet.</span>}
+              {acrossMarketReports.map((report) => (
+                <details key={`${report.marketCode}-${report.branchDetailId}-${report.status}`}>
+                  <summary>
+                    {report.marketCode} · status: {report.status} · save: {report.saveStatus} · exact match: {report.exactMatch ? 'yes' : 'no'}
+                  </summary>
+                  <div style={styles.tinyMuted}>source detail: {report.sourceDetailId}</div>
+                  <div style={styles.tinyMuted}>branch detail: {report.branchDetailId}</div>
+                  <div style={styles.tinyMuted}>baseline signature: {report.baselineSignature}</div>
+                  <div style={styles.tinyMuted}>final signature: {report.finalSignature ?? '-'}</div>
+                  <div style={styles.tinyMuted}>message: {report.message}</div>
+                  <pre style={styles.pre}>{JSON.stringify(report.diffSummary, null, 2)}</pre>
+                  <pre style={styles.pre}>{JSON.stringify(report.replayOutcomes, null, 2)}</pre>
+                </details>
+              ))}
             </div>
           </section>
         )}

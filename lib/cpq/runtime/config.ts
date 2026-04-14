@@ -39,10 +39,13 @@ export type StartConfigurationOverrides = {
   profile?: string;
   instance?: string;
   accountCode?: string;
+  company?: string;
+  accountType?: string;
   customerId?: string;
   currency?: string;
   language?: string;
   countryCode?: string;
+  customerLocation?: string;
 };
 
 const requireEnv = (key: string): string => {
@@ -91,10 +94,13 @@ export const buildStartConfigurationPayload = (overrides?: StartConfigurationOve
   const profile = overrides?.profile ?? defaults.profile;
   const instance = overrides?.instance ?? defaults.instance;
   const accountCode = overrides?.accountCode ?? defaults.company;
+  const company = overrides?.company ?? accountCode;
+  const accountType = overrides?.accountType ?? defaults.accountType;
   const customerId = overrides?.customerId;
   const currency = overrides?.currency ?? defaults.currency;
   const language = overrides?.language;
   const countryCode = overrides?.countryCode ?? defaults.customerLocation;
+  const customerLocation = overrides?.customerLocation ?? countryCode;
 
   return {
     inputParameters: {
@@ -118,13 +124,13 @@ export const buildStartConfigurationPayload = (overrides?: StartConfigurationOve
         detailId: sourceDetailId,
       },
       integrationParameters: [
-        { name: 'AccountType', simpleValue: defaults.accountType, isNull: false, type: 'string' },
+        { name: 'AccountType', simpleValue: accountType, isNull: false, type: 'string' },
         { name: 'CurrencyCode', simpleValue: currency, isNull: false, type: 'string' },
-        { name: 'Company', simpleValue: accountCode, isNull: false, type: 'string' },
+        { name: 'Company', simpleValue: company, isNull: false, type: 'string' },
         { name: 'AccountCode', simpleValue: accountCode, isNull: false, type: 'string' },
         ...(customerId ? [{ name: 'CustomerId', simpleValue: customerId, isNull: false as const, type: 'string' as const }] : []),
         ...(language ? [{ name: 'LanguageCode', simpleValue: language, isNull: false as const, type: 'string' as const }] : []),
-        { name: 'CustomerLocation', simpleValue: countryCode, isNull: false, type: 'string' },
+        { name: 'CustomerLocation', simpleValue: customerLocation, isNull: false, type: 'string' },
       ],
       rapidOptions: null,
     },
