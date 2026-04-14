@@ -13,15 +13,21 @@
   - supports traversal and manual save
 - **CPQ for a bike across market**:
   - uses current selected bike configuration (no traversal through all combinations)
-  - captures canonical baseline selections from live UI `state.features` (visible configurator dropdown order) **before** market loop starts
+  - captures/keeps canonical source identity for loaded bike:
+    - `sourceHeaderId`
+    - `sourceDetailId`
+    - `ruleset`
+    - `namespace`
+    - optional `configurationReference`
   - country checkbox source: active `CPQ_setup_account_context` rows (unique `country_code`)
   - per selected market:
     1. generate a new `detailId` (new configuration identity for this market branch)
-    2. initialize with that market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`) using `POST /api/cpq/init`
-    3. use the fresh `sessionId` returned by init and replay baseline selections via incremental `POST /api/cpq/configure` calls (one change at a time)
-    4. save through `POST /api/cpq/sampler-result` using the latest market run state and market run `detailId`
+    2. initialize with coherent market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`, `Company`, `CustomerLocation`, `AccountType`) and canonical `sourceHeaderDetail` using `POST /api/cpq/init`
+    3. use fresh `sessionId` returned by init and run a configure hydration pass to force session evaluation in market context
+    4. save through `POST /api/cpq/sampler-result` using the rebuilt market run state and rebuilt market `detailId`
     5. wait 5000ms before next market
   - shows status for selected count, processed count, saved count, duplicates skipped, current country, last message
+  - per-market run reports explicit outcome: `started`, `rebuilt`, `saved`, `duplicate-skipped`, `incompatible-failed`
 
 ## 2) Configuration traversal process (single workflow)
 - Triggered from `/cpq` using **Start configuration traversal**.
@@ -47,7 +53,7 @@
 - Runtime identity split:
   - `sessionId`: runtime CPQ session state used by `/configure`.
   - `detailId`: configuration identity passed at init/start of a branch.
-- Across-market mode generates a fresh `detailId` per market branch before replaying baseline selections.
+- Across-market mode generates a fresh target `detailId` per market branch while still using canonical source identity (`sourceHeaderDetail`) for retrieve semantics.
 - Save actions use current live `detailId` in priority order:
   1. explicit override (across-market run)
   2. current normalized state detailId
