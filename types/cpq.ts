@@ -1,9 +1,12 @@
 export type BikeBuilderContext = {
   accountCode: string;
+  company?: string;
+  accountType?: string;
   customerId?: string;
   currency?: string;
   language?: string;
   countryCode?: string;
+  customerLocation?: string;
 };
 
 export type BikeBuilderOptionMetadata = {

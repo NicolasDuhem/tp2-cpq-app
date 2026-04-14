@@ -209,10 +209,13 @@ export const startConfiguration = async (
     profile: request.profile,
     instance: request.instance,
     accountCode: request.context?.accountCode,
+    company: request.context?.company,
+    accountType: request.context?.accountType,
     customerId: request.context?.customerId,
     currency: request.context?.currency,
     language: request.context?.language,
     countryCode: request.context?.countryCode,
+    customerLocation: request.context?.customerLocation,
   });
 
   if (!result.ok) {
