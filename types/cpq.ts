@@ -63,6 +63,10 @@ export type CpqParsingDebug = {
 export type NormalizedBikeBuilderState = {
   sessionId: string;
   detailId?: string;
+  sourceHeaderId?: string;
+  sourceDetailId?: string;
+  configurationReference?: string;
+  namespace?: string;
   ruleset: string;
   pages: Record<string, unknown>[];
   screens: Record<string, unknown>[];

@@ -37,3 +37,19 @@
 - Persistence uniqueness is enforced by `(ipn_code, country_code)`:
   - `country_code` comes from selected account context (`CPQ_setup_account_context`).
   - first discovered tuple is kept; later duplicates are skipped.
+
+## Across-market retrieve/rebuild design
+- Across-market mode uses CPQ retrieve semantics, not visible-dropdown replay.
+- Canonical source identity for the currently loaded bike is tracked in runtime state:
+  - `sourceHeaderId`
+  - `sourceDetailId`
+  - `ruleset`
+  - `namespace`
+  - optional `configurationReference`
+- Per selected country, the app:
+  1. builds a coherent market context from one `CPQ_setup_account_context` row
+  2. generates a new target detailId
+  3. calls StartConfiguration with `sourceHeaderDetail` pointing to canonical source identity
+  4. hydrates/evaluates the new session with configure
+  5. persists result with dedupe `(ipn_code, country_code)`
+  6. waits 5000 ms before the next country

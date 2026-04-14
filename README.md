@@ -55,16 +55,17 @@ npm run dev
 ### CPQ for a bike across market
 - Keeps same main layout (**Configurator / Bike preview / Summary**).
 - Adds market checkbox list sourced from active `CPQ_setup_account_context` rows (unique `country_code` values).
-- Runs the current selected bike configuration across selected markets:
-  1. capture baseline selections from the **current live UI state** (`state.features`) in visible configurator order
+- Runs the current bike across selected markets using **retrieve/rebuild semantics**:
+  1. determine the canonical source identity for the loaded bike (`sourceHeaderId`, `sourceDetailId`, `ruleset`, `namespace`, optional `configurationReference`)
   2. for each selected market, create a fresh branch with a **new detailId** and market context (`account_code`, `customer_id`, `currency`, `language`, `country_code`) via `POST /api/cpq/init`
-  3. use the returned **fresh sessionId** and replay baseline selections incrementally via `POST /api/cpq/configure`
-  4. save through the existing persistence path (`POST /api/cpq/sampler-result`) with the market run's current detailId/session state
-  5. skip duplicates by `(ipn_code, country_code)` and wait 5000ms between markets
+  3. include `sourceHeaderDetail` in StartConfiguration (`sourceHeaderId` + `sourceDetailId`) so CPQ branches from the canonical source, not UI replay
+  4. run a post-start `POST /api/cpq/configure` hydration step in the new session (CPQ session evaluation continuity)
+  5. save through `POST /api/cpq/sampler-result` using the country-specific rebuilt state (`detailId`/`sessionId` from the rebuilt response)
+  6. skip duplicates by `(ipn_code, country_code)` and wait 5000ms between markets
 - Runtime identity model:
   - `sessionId` = live CPQ runtime state for incremental `/configure` calls.
-  - `detailId` = configuration identity; across-market mode generates a new detailId per market branch before replaying baseline selections.
-- Progress shows selected/processed/saved/duplicate counts, current country, and last message.
+  - `detailId` = configuration identity; across-market mode generates a new target detailId per market branch while preserving canonical source detailId for retrieve.
+- Progress/reporting shows per-country status (`started`, `rebuilt`, `saved`, `duplicate-skipped`, `incompatible-failed`) plus message details.
 
 ## Traversal behavior (Bike Builder page)
 - In **CPQ for a market** mode, the `/cpq` page has one traversal action: **Start configuration traversal**.
