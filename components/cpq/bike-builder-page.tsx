@@ -69,6 +69,31 @@ type DebugEntry = {
   error?: string;
 };
 
+type CombinationFeatureColumn = {
+  stableFeatureKey: string;
+  featureLabel: string;
+  currentSessionFeatureId: string;
+};
+
+type CombinationCell = CombinationFeatureColumn & {
+  optionId: string;
+  optionValue: string;
+  optionLabel: string;
+};
+
+type CombinationRow = {
+  id: string;
+  selected: boolean;
+  cellsByFeatureKey: Record<string, CombinationCell>;
+};
+
+type CombinationDataset = {
+  generatedAt: string;
+  sessionId: string;
+  rows: CombinationRow[];
+  columns: CombinationFeatureColumn[];
+};
+
 const fallbackRuleset = {
   cpq_ruleset: 'BBLV6_G-LineMY26',
   namespace: 'Default',
@@ -99,6 +124,8 @@ export default function BikeBuilderPage() {
 
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
+  const [combinationDataset, setCombinationDataset] = useState<CombinationDataset | null>(null);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const manualSessionClosedRef = useRef(false);
 
   const selectedRuleset = useMemo(
@@ -244,6 +271,124 @@ export default function BikeBuilderPage() {
     void startConfiguration();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountCode, ruleset]);
+
+  useEffect(() => {
+    setCombinationDataset(null);
+    setColumnFilters({});
+  }, [state?.sessionId]);
+
+  const generateCombinations = () => {
+    if (!state?.sessionId || !state.features?.length) {
+      setCombinationDataset(null);
+      return;
+    }
+
+    const columns: CombinationFeatureColumn[] = state.features
+      .filter((feature) => feature.isVisible !== false)
+      .map((feature, featureIndex) => {
+        const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
+        const stableFeatureKey =
+          feature.featureName?.trim() ||
+          firstOptionMetadata?.FeatureQuestion?.trim() ||
+          feature.featureLabel.trim() ||
+          `feature-${featureIndex + 1}`;
+
+        return {
+          stableFeatureKey,
+          featureLabel: feature.featureLabel,
+          currentSessionFeatureId: feature.featureId,
+        };
+      });
+
+    if (columns.length === 0) {
+      setCombinationDataset(null);
+      return;
+    }
+
+    const optionsByFeature = state.features
+      .filter((feature) => feature.isVisible !== false)
+      .map((feature, featureIndex) => {
+        const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
+        const stableFeatureKey =
+          feature.featureName?.trim() ||
+          firstOptionMetadata?.FeatureQuestion?.trim() ||
+          feature.featureLabel.trim() ||
+          `feature-${featureIndex + 1}`;
+
+        const availableOptions = feature.availableOptions.filter(
+          (option) => option.isVisible !== false && option.isEnabled !== false && option.isSelectable !== false,
+        );
+
+        return {
+          feature,
+          stableFeatureKey,
+          options: availableOptions,
+        };
+      });
+
+    if (optionsByFeature.some((entry) => entry.options.length === 0)) {
+      setCombinationDataset({
+        generatedAt: new Date().toISOString(),
+        sessionId: state.sessionId,
+        rows: [],
+        columns,
+      });
+      return;
+    }
+
+    let rows: CombinationRow[] = [{ id: 'row-0', selected: false, cellsByFeatureKey: {} }];
+
+    for (const featureEntry of optionsByFeature) {
+      const nextRows: CombinationRow[] = [];
+
+      for (const row of rows) {
+        for (const option of featureEntry.options) {
+          const optionValue = option.value ?? option.optionId;
+          const optionLabel = option.label;
+          nextRows.push({
+            id: `${row.id}::${featureEntry.stableFeatureKey}:${option.optionId}`,
+            selected: false,
+            cellsByFeatureKey: {
+              ...row.cellsByFeatureKey,
+              [featureEntry.stableFeatureKey]: {
+                stableFeatureKey: featureEntry.stableFeatureKey,
+                featureLabel: featureEntry.feature.featureLabel,
+                currentSessionFeatureId: featureEntry.feature.featureId,
+                optionId: option.optionId,
+                optionValue,
+                optionLabel,
+              },
+            },
+          });
+        }
+      }
+
+      rows = nextRows;
+    }
+
+    setCombinationDataset({
+      generatedAt: new Date().toISOString(),
+      sessionId: state.sessionId,
+      rows,
+      columns,
+    });
+    setColumnFilters({});
+  };
+
+  const filteredCombinationRows = useMemo(() => {
+    if (!combinationDataset) return [];
+
+    return combinationDataset.rows.filter((row) =>
+      combinationDataset.columns.every((column) => {
+        const filterValue = columnFilters[column.stableFeatureKey]?.trim().toLowerCase();
+        if (!filterValue) return true;
+        const cell = row.cellsByFeatureKey[column.stableFeatureKey];
+        if (!cell) return false;
+        const searchableValue = `${cell.optionLabel} ${cell.optionValue} ${cell.optionId}`.toLowerCase();
+        return searchableValue.includes(filterValue);
+      }),
+    );
+  }, [columnFilters, combinationDataset]);
 
   const configureOption = async (featureId: string, option: BikeBuilderFeatureOption) => {
     if (!state?.sessionId || manualSessionClosedRef.current) {
@@ -459,6 +604,9 @@ export default function BikeBuilderPage() {
           <button style={styles.button} onClick={() => void saveConfiguration()} disabled={saveStatus === 'saving' || !state}>
             {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
           </button>
+          <button style={styles.button} onClick={generateCombinations} disabled={requestState.loading || !state?.features?.length}>
+            Generate configuration combinations
+          </button>
         </div>
 
         <div style={styles.referenceRow}>
@@ -544,6 +692,123 @@ export default function BikeBuilderPage() {
           </details>
         </section>
       )}
+
+      <section style={styles.combinationsPanel}>
+        <h2>Generated combinations</h2>
+        {!combinationDataset ? (
+          <p style={styles.muted}>Generate combinations from the active configurator state to see all available option combinations.</p>
+        ) : (
+          <>
+            <div style={styles.combinationMeta}>
+              <div>Session: {combinationDataset.sessionId}</div>
+              <div>Generated at: {new Date(combinationDataset.generatedAt).toLocaleString()}</div>
+              <div>
+                Rows: {filteredCombinationRows.length} filtered / {combinationDataset.rows.length} total
+              </div>
+            </div>
+            <div style={styles.row}>
+              <button
+                style={styles.button}
+                onClick={() =>
+                  setCombinationDataset((current) =>
+                    current
+                      ? {
+                          ...current,
+                          rows: current.rows.map((row) => (filteredCombinationRows.some((entry) => entry.id === row.id) ? { ...row, selected: true } : row)),
+                        }
+                      : current,
+                  )
+                }
+                disabled={filteredCombinationRows.length === 0}
+              >
+                Tick filtered rows
+              </button>
+              <button
+                style={styles.buttonSecondary}
+                onClick={() =>
+                  setCombinationDataset((current) =>
+                    current
+                      ? {
+                          ...current,
+                          rows: current.rows.map((row) => ({ ...row, selected: false })),
+                        }
+                      : current,
+                  )
+                }
+                disabled={combinationDataset.rows.length === 0}
+              >
+                Untick all
+              </button>
+            </div>
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.tableHeader}>Select</th>
+                    {combinationDataset.columns.map((column) => (
+                      <th key={`header-${column.stableFeatureKey}`} style={styles.tableHeader}>
+                        <div>{column.featureLabel}</div>
+                        <input
+                          value={columnFilters[column.stableFeatureKey] ?? ''}
+                          onChange={(event) =>
+                            setColumnFilters((prev) => ({
+                              ...prev,
+                              [column.stableFeatureKey]: event.target.value,
+                            }))
+                          }
+                          placeholder="Filter"
+                          style={styles.filterInput}
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCombinationRows.map((row) => (
+                    <tr key={row.id}>
+                      <td style={styles.tableCell}>
+                        <input
+                          type="checkbox"
+                          checked={row.selected}
+                          onChange={(event) =>
+                            setCombinationDataset((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    rows: current.rows.map((entry) =>
+                                      entry.id === row.id ? { ...entry, selected: event.target.checked } : entry,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </td>
+                      {combinationDataset.columns.map((column) => {
+                        const cell = row.cellsByFeatureKey[column.stableFeatureKey];
+                        return (
+                          <td key={`${row.id}-${column.stableFeatureKey}`} style={styles.tableCell}>
+                            <div>{cell?.optionLabel ?? '-'}</div>
+                            <div style={styles.cellMeta}>configure value: {cell?.optionValue ?? '-'}</div>
+                            <div style={styles.cellMeta}>optionId: {cell?.optionId ?? '-'}</div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  {filteredCombinationRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={combinationDataset.columns.length + 1} style={styles.emptyCell}>
+                        No rows match current filters.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
     </main>
   );
 }
@@ -660,5 +925,72 @@ const styles: Record<string, CSSProperties> = {
   },
   error: {
     color: '#b91c1c',
+  },
+  combinationsPanel: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 12,
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.75rem',
+    background: '#fff',
+  },
+  combinationMeta: {
+    display: 'grid',
+    gap: '0.2rem',
+    fontSize: '0.9rem',
+  },
+  tableWrap: {
+    overflowX: 'auto',
+    border: '1px solid #d4d4d8',
+    borderRadius: 8,
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    minWidth: 720,
+  },
+  tableHeader: {
+    borderBottom: '1px solid #d4d4d8',
+    borderRight: '1px solid #e4e4e7',
+    padding: '0.5rem',
+    verticalAlign: 'top',
+    textAlign: 'left',
+    background: '#fafafa',
+    fontSize: '0.85rem',
+    minWidth: 170,
+  },
+  tableCell: {
+    borderBottom: '1px solid #f1f5f9',
+    borderRight: '1px solid #f1f5f9',
+    padding: '0.45rem 0.5rem',
+    verticalAlign: 'top',
+    fontSize: '0.85rem',
+  },
+  cellMeta: {
+    color: '#52525b',
+    fontSize: '0.78rem',
+  },
+  emptyCell: {
+    padding: '0.8rem',
+    color: '#52525b',
+    textAlign: 'center',
+  },
+  filterInput: {
+    marginTop: '0.35rem',
+    width: '100%',
+    minHeight: 30,
+    borderRadius: 6,
+    border: '1px solid #a1a1aa',
+    padding: '0.2rem 0.35rem',
+    fontSize: '0.8rem',
+  },
+  buttonSecondary: {
+    minHeight: 34,
+    borderRadius: 8,
+    border: '1px solid #3f3f46',
+    padding: '0.35rem 0.75rem',
+    background: '#fff',
+    color: '#18181b',
+    cursor: 'pointer',
   },
 };
