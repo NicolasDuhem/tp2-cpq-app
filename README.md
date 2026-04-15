@@ -29,9 +29,12 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 
 ## What changed
 - `/cpq` now prioritizes one clean manual process.
-- Traversal/sampler-based save behavior is removed from the primary `/cpq` flow.
 - Canonical manual save/retrieve now uses `cpq_configuration_references`.
-- `CPQ_sampler_result` remains as historical/output support and is not the canonical manual save registry.
+- `CPQ_sampler_result` is now a **secondary manual support flow**:
+  - `/cpq` can manually save the latest active configurator state to sampler results.
+  - This sampler save uses latest `Configure` response; if none exists yet, latest `StartConfiguration` response.
+  - Sampler save never uses `FinalizeConfiguration` as capture source.
+- `CPQ_sampler_result` is not the canonical manual save registry (that remains `cpq_configuration_references`).
 
 ## Routes
 - `/cpq` (primary manual CPQ page)
@@ -46,7 +49,9 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 - `POST /api/cpq/configuration-references`
 - `GET /api/cpq/configuration-references?configuration_reference=...`
 - `POST /api/cpq/retrieve-configuration`
+- `POST /api/cpq/sampler-result`
 - Setup APIs under `/api/cpq/setup/*`
+  - including `POST /api/cpq/setup/picture-management/sync`
 
 ## Quick start
 ```bash

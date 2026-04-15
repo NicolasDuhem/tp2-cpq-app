@@ -36,6 +36,59 @@
 ## Deprecated from primary process
 - Traversal/sampler-driven manual save behavior is removed from the `/cpq` primary flow.
 
+## Secondary process: manual sampler save (`CPQ_sampler_result`)
+
+### Trigger
+- User clicks **Save current configuration to sampler** on `/cpq`.
+
+### Source-state contract (legacy-compatible)
+- Capture from latest `Configure` response if available.
+- If no configure occurred yet in current flow, capture from latest `StartConfiguration` response.
+- Do **not** use `FinalizeConfiguration` response for this sampler capture path.
+
+### Persistence contract (`POST /api/cpq/sampler-result`)
+- Required: `ruleset`, `account_code` (trimmed + non-empty validation).
+- Optional text fields are trimmed; empty string persisted as `null`.
+- `json_result` is stored as jsonb; defaults to `{}` if missing.
+- New rows start with `processed_for_image_sync = false`.
+
+### Captured `json_result` shape
+- `cpqContext`: ruleset, namespace, headerId, detailId, sessionId, sourceHeaderId, sourceDetailId.
+- `bikeSummary`: description, ipn, price.
+- `selectedOptions[]` (critical for sync), each entry includes:
+  - `featureLabel`
+  - `featureId`
+  - `optionLabel`
+  - `optionId`
+  - `optionValue`
+- optional debugging payloads (`debug`, `raw`).
+
+## Secondary process: sync from sampler results (`cpq_image_management`)
+
+### Trigger
+- Setup page button **Sync from sampler results** → `POST /api/cpq/setup/picture-management/sync`.
+
+### Batch behavior
+1. Select source rows from `CPQ_sampler_result` where `processed_for_image_sync = false`, ordered by `id`.
+2. For each row:
+   - Parse `json_result.selectedOptions` array (if present).
+   - Trim and extract `featureLabel`, `optionLabel`, `optionValue`.
+   - Skip entries missing any of these fields.
+   - De-duplicate in-run via key `featureLabel + '\0' + optionLabel + '\0' + optionValue`.
+   - Mark current sampler row processed (`processed_for_image_sync = true`, `processed_for_image_sync_at = now()`).
+3. Insert distinct combinations into `cpq_image_management` with `ON CONFLICT DO NOTHING`.
+4. Continue after per-row errors; aggregate them in `syncErrors`.
+5. Return summary:
+   - `sourceRowsScanned`
+   - `selectedOptionsScanned`
+   - `distinctCombinationsFound`
+   - `inserted`
+   - `skippedExisting`
+   - `samplerRowsMarkedProcessed`
+   - `syncErrors`
+   - `unprocessedRowsRemaining`
+   - `total`
+
 ## Bulk "Configure all ticked items" process data
 
 ### Trigger and row scope

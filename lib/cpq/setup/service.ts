@@ -261,7 +261,8 @@ export async function syncImageManagementFromSampler() {
       const processed = (await sql`
         update CPQ_sampler_result
         set processed_for_image_sync = true,
-            processed_for_image_sync_at = now()
+            processed_for_image_sync_at = now(),
+            updated_at = now()
         where id = ${row.id}
           and processed_for_image_sync = false
         returning id
