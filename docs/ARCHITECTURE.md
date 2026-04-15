@@ -1,97 +1,110 @@
-# ARCHITECTURE (manual CPQ lifecycle)
+# Architecture (current implementation)
 
-## Primary route
-- `/cpq` is the main business workflow.
-- `/bike-builder` is an alias to `/cpq`.
+## 1) Application scope
+This app is a CPQ-focused Next.js application with four primary user-facing areas:
 
-## Lifecycle model
-1. `POST /api/cpq/init` → StartConfiguration.
-2. `POST /api/cpq/configure` → apply manual option changes.
-3. `POST /api/cpq/finalize` → FinalizeConfiguration on save.
-4. `POST /api/cpq/configuration-references` → persist canonical save row from latest source state (`configure` preferred, fallback `startconfiguration`).
-5. `POST /api/cpq/sampler-result` → auto-persist secondary sampler row only after canonical save succeeds (same source-state rule).
-6. `POST /api/cpq/retrieve-configuration` → resolve saved row and start a fresh session from it.
+- `/cpq` — core Bike Builder manual lifecycle page.
+- `/cpq/setup` — setup/admin page for account contexts, rulesets, and picture management.
+- `/cpq/results` — sampler results matrix/pivot exploration page.
+- `/cpq/ui-docs` — internal UI label/code/data mapping reference.
 
-## Bulk combinations execution model (additive)
-- Source data: generated combinations table on `/cpq`.
-- Trigger: **Configure all ticked items**.
-- Processing contract per selected row:
-  1. Start a new session via `POST /api/cpq/init`.
-  2. Re-map target features using stable feature identity from combination generation (`featureName` / feature-question metadata / `featureLabel`) to resolve the **current** session `featureId`.
-  3. Resolve target option only inside the mapped feature’s `availableOptions`.
-  4. Skip entire features marked `ignore_during_configure = true` in setup picture management.
-  5. Skip `/api/cpq/configure` when option is already selected in current state.
-  6. After each configure call, replace row working state with response-parsed state before next feature.
-  7. Finalize with `POST /api/cpq/finalize` payload `{ "sessionID": "<row session>" }`.
-  8. Save canonical row in `cpq_configuration_references` from row working state (not finalize payload body).
-  9. Auto-save secondary sampler row in `CPQ_sampler_result` using same source state.
-- Sessions are never reused across selected rows.
-- Debug timeline records all automated API calls (`Bulk:StartConfiguration`, `Bulk:Configure`, `Bulk:FinalizeConfiguration`, `Bulk:SaveConfigurationReference`).
-- Row-local diagnostics are tracked separately from global timeline and exposed from the table via **Inspect failure**.
-- Post-run cleanup keeps only originally selected rows visible in the combinations table.
+Additional route aliases:
+- `/` redirects to `/cpq`.
+- `/bike-builder` redirects to `/cpq`.
 
-## Session management rules
-- Active session is scoped by `(ruleset, account_code)`.
-- Changing either `ruleset` or `account_code` triggers a new StartConfiguration.
-- Save triggers FinalizeConfiguration, which ends the active session.
-- Further edits require a new StartConfiguration (new session).
+## 2) Page/component architecture
 
-## Save architecture
-- Save does **not** use traversal/sampler persistence.
-- Save path is deterministic:
-  - Finalize live session
-  - Capture finalized `detailId`
-  - Select save source state: latest `configure`, else latest `startconfiguration`
-  - Persist canonical row in `cpq_configuration_references` from selected source
-  - Persist secondary sampler row in `CPQ_sampler_result` from selected source
-  - Keep finalize response only as finalize metadata/audit (`finalize_response_json`)
+### `/cpq`
+- Route file: `app/cpq/page.tsx` (thin wrapper).
+- Main component: `components/cpq/bike-builder-page.tsx`.
+- Responsibilities:
+  - Manual CPQ lifecycle (`StartConfiguration` → `Configure` → `FinalizeConfiguration` → canonical save).
+  - Manual sampler save support action.
+  - Configuration reference retrieval.
+  - Layered preview resolution/download.
+  - Combination generation + bulk configure orchestration.
+  - In-page debug timeline and per-row failure diagnostics.
 
-## Secondary sampler capture architecture
-- `/cpq` also exposes **Save current configuration to sampler** (secondary/manual support flow).
-- Capture source is strictly:
-  1. latest `POST /api/cpq/configure` response, or
-  2. if no configure yet, latest `POST /api/cpq/init` response.
-- Capture source explicitly excludes `POST /api/cpq/finalize`.
-- `POST /api/cpq/sampler-result` persists one row into `CPQ_sampler_result`.
-- Captured `json_result` includes CPQ context, bike summary, selected options, and debug/raw snippets.
+### `/cpq/setup`
+- Route file: `app/cpq/setup/page.tsx`.
+- Main component: `components/setup/cpq-setup-page.tsx`.
+- Responsibilities:
+  - Account context CRUD (`cpq_setup_account_context`).
+  - Ruleset CRUD (`cpq_setup_ruleset`).
+  - Feature-tabbed picture management and modal editing (`cpq_image_management`).
+  - Feature-level `ignore_during_configure` toggling.
+  - Sync from sampler results into picture management.
 
-## Layered product preview architecture (`/cpq`)
-- UI component: `components/cpq/bike-builder-page.tsx` renders an additive **Layered Product Preview** section.
-- Source state: current parsed configurator state (`NormalizedBikeBuilderState.features`) from the active session.
-- Selection extraction contract:
-  - For each feature with a selected option, extract:
-    - `featureLabel`
-    - selected `optionLabel`
-    - selected `optionValue` (prefers option `value`, fallback selected/current value)
-  - Preserve feature traversal order from current configuration state.
-- Resolution API: `POST /api/cpq/image-layers`.
-  - Server uses `resolveImageLayersForSelectedOptions` in `lib/cpq/setup/service.ts`.
-  - Matching is exact (`feature_label`, `option_label`, `option_value`) against `cpq_image_management` with `is_active = true`.
-  - Empty picture links are filtered out.
-- Layer ordering rule (current implementation):
-  1. order selected options exactly as they appear in current CPQ state
-  2. within each matched row, append `picture_link_1`, then `2`, then `3`, then `4`
-- Download flow:
-  - Triggered only by **Download current preview** click.
-  - Client loads resolved layer URLs, draws them into one canvas in current order, and downloads PNG.
-  - Filename format: `cpq-preview-<ruleset>-<configurationReference|ipn|timestamp>.png`.
-- This feature is visual/additive and does not modify core manual or bulk lifecycle APIs.
+### `/cpq/results`
+- Route file: `app/cpq/results/page.tsx`.
+- Main components:
+  - server: `components/cpq/cpq-results-page.tsx`
+  - client table/filter: `components/cpq/cpq-results-matrix.client.tsx`
+- Responsibilities:
+  - Build a matrix from `CPQ_sampler_result` + ruleset lookup metadata.
+  - Group rows by `(sku_code + ruleset + selected feature signature)`.
+  - Pivot `detail_id` values across country columns.
 
-## Retrieve architecture
-- Retrieve is deterministic and reference-driven:
-  - Resolve one row from `cpq_configuration_references`
-  - Build StartConfiguration request from saved row data + configured instance
-  - Start a new session and hydrate UI from returned configuration state
+### `/cpq/ui-docs`
+- Route file: `app/cpq/ui-docs/page.tsx`.
+- Main component: `components/docs/ui-docs-page.tsx`.
+- Responsibility:
+  - Human-readable mapping of visible labels to owning code and backing data sources.
 
-## Deprecated from primary flow
-- Full legacy traversal UI is retired from `/cpq` manual save/retrieve.
-- Sampler persistence remains available only as a manual secondary flow + image-management feeder.
+## 3) API route architecture
 
+### Runtime CPQ routes
+- `POST /api/cpq/init` → StartConfiguration.
+- `POST /api/cpq/configure` → Configure.
+- `POST /api/cpq/finalize` → FinalizeConfiguration.
+- `POST /api/cpq/retrieve-configuration` → resolve saved reference + StartConfiguration.
+- `POST /api/cpq/image-layers` → resolve stacked preview layers from `cpq_image_management`.
 
-## Setup UX architecture
-- `/cpq/setup` Picture management is feature-tabbed (tabs generated from `cpq_image_management.feature_label`).
-- Each feature has one feature-level toggle: **Ignore during /configure** (writes to `cpq_image_management.ignore_during_configure` for all rows sharing that feature label).
-- Each selected feature view shows summary metrics: total, missing (0/4), with pictures (1+), completion %, and fully complete (4/4).
-- Option/value mappings are edited through tile cards and a modal editor that saves via existing `PUT /api/cpq/setup/picture-management/:id`.
-- Sync flow remains `POST /api/cpq/setup/picture-management/sync` and continues to seed `cpq_image_management` from `CPQ_sampler_result`.
-- Internal UI ownership map is exposed at `/cpq/ui-docs`; UI label/data/code mapping should be updated with every UI change.
+### Persistence routes
+- `POST /api/cpq/configuration-references` → canonical save to `cpq_configuration_references`.
+- `GET /api/cpq/configuration-references?configuration_reference=...` → resolve canonical row.
+- `POST /api/cpq/sampler-result` → persist support/manual sampler snapshot to `CPQ_sampler_result`.
+
+### Setup routes
+- `GET/POST /api/cpq/setup/account-context`
+- `PUT/DELETE /api/cpq/setup/account-context/[id]`
+- `GET/POST /api/cpq/setup/rulesets`
+- `PUT/DELETE /api/cpq/setup/rulesets/[id]`
+- `GET /api/cpq/setup/picture-management`
+- `PUT /api/cpq/setup/picture-management/[id]`
+- `POST /api/cpq/setup/picture-management/sync`
+- `PUT /api/cpq/setup/picture-management/feature-flags`
+- `GET /api/cpq/setup/picture-management/ignored-features`
+
+## 4) Runtime boundaries and modules
+
+- `lib/cpq/runtime/*`
+  - CPQ request building/client calls.
+  - response normalization/mapping to `NormalizedBikeBuilderState`.
+  - debug trace helpers.
+  - canonical reference persistence adapter.
+  - sampler persistence adapter.
+- `lib/cpq/setup/service.ts`
+  - setup CRUD data services.
+  - sampler-to-picture sync.
+  - image layer resolution query.
+- `lib/cpq/results/service.ts`
+  - results matrix read-model for `/cpq/results`.
+- `lib/db/client.ts`
+  - Neon SQL client wrapper.
+
+## 5) Lifecycle design rules (high level)
+
+- Canonical save registry is `cpq_configuration_references`.
+- Canonical save source snapshot rule is strictly:
+  1. latest Configure snapshot,
+  2. otherwise latest StartConfiguration snapshot.
+- Finalize response is **not** used as canonical save snapshot source (stored only as finalize metadata).
+- After canonical save succeeds, one support row is auto-saved to `CPQ_sampler_result` from the same source snapshot.
+- Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
+
+## 6) Debug visibility
+
+- API and CPQ/client layers emit structured logs using trace IDs (`x-cpq-trace-id` propagation).
+- `/cpq` maintains a local debug timeline of recent calls when `NEXT_PUBLIC_CPQ_DEBUG=true`.
+- Bulk run failures keep row-local diagnostics (stage, error, last requests/responses) shown via **Inspect failure** modal.

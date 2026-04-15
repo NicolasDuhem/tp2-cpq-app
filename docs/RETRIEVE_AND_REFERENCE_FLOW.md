@@ -1,30 +1,40 @@
-# Retrieve and Reference Flow
+# Retrieve and configuration-reference flow
 
-## Identity split
-- **Runtime working identity**: current `sessionId` + working `detailId` used for live `/api/cpq/configure` calls.
-- **Canonical retrievable identity**: persisted `canonical_header_id` + `canonical_detail_id` + `configuration_reference` in `cpq_configuration_references`.
+## 1) Save side (reference creation/update)
 
-## Save configuration reference
-1. User loads/builds a bike in `/cpq`.
-2. User clicks **Save configuration reference**.
-3. Backend generates a new canonical `targetDetailId`.
-4. Backend calls ProductConfigurator `CopyConfiguration` (or equivalent configured endpoint) with:
-   - `sourceHeaderId`, `sourceDetailId`
-   - `targetHeaderId`, `targetDetailId`
-   - `deleteSource=false`, `overwriteTarget=false`
-5. Only if copy succeeds does the app persist one row in `cpq_configuration_references` through `POST /api/cpq/configuration-references`.
-6. Returned `configuration_reference` is shown and can be reused later.
+- API: `POST /api/cpq/configuration-references`
+- Persistence target: `cpq_configuration_references`
+- Key behavior:
+  - validates required canonical fields,
+  - normalizes nullable text fields,
+  - stores `finalize_response_json` and `json_snapshot` as JSONB,
+  - upserts on `configuration_reference`.
 
-## Retrieve configuration
-1. User enters `configuration_reference` and clicks **Retrieve configuration**.
-2. App resolves the canonical row through `POST /api/cpq/retrieve-configuration`.
-3. App creates a **new working detailId**.
-4. App calls StartConfiguration via `/api/cpq/init` with:
-   - `headerDetail.detailId = new working detailId`
-   - `sourceHeaderDetail.headerId = canonical_header_id`
-   - `sourceHeaderDetail.detailId = canonical_detail_id`
-5. App runs a Configure hydration step and rebuilds the visible bike state from CPQ responses.
+`configuration_reference` is unique and is the external key users reuse for retrieval.
 
-## Current integration gap vs legacy copy semantics
-- The app now supports canonical copy-backed save, but only when copy endpoint configuration is present (`CPQ_COPY_CONFIGURATION_URL`).
-- If copy capability is missing, save returns explicit capability error (HTTP 501) and does not pretend canonical save succeeded.
+## 2) Resolve side
+
+- API: `GET /api/cpq/configuration-references?configuration_reference=...`
+- Returns latest active row for the reference.
+- Resolution filters on `is_active=true`.
+
+## 3) Retrieve side (new working session)
+
+- API: `POST /api/cpq/retrieve-configuration`
+
+Sequence:
+1. resolve canonical row by reference,
+2. build StartConfiguration input from canonical row values,
+3. call CPQ StartConfiguration,
+4. return parsed state + new session ID to UI.
+
+### Retrieve input composition rules
+- `ruleset` and `namespace` come from resolved row.
+- `headerId` prefers `canonical_header_id` then `header_id` then `'Simulator'`.
+- `detailId` prefers `canonical_detail_id` then `finalized_detail_id`.
+- `sourceHeaderId` prefers `source_header_id` then canonical/header fallback.
+- `sourceDetailId` prefers `source_detail_id` then `canonical_detail_id`.
+- account context fields (account/customer/currency/language/country/company/type) are restored when present.
+
+## 4) Important clarification
+No active CopyConfiguration call is part of this retrieve/reference flow in the current code path.
