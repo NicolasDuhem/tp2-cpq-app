@@ -380,6 +380,7 @@ export default function BikeBuilderPage() {
         return {
           feature,
           stableFeatureKey,
+          stableFeatureIdentity,
           options: availableOptions,
         };
       });
@@ -413,6 +414,7 @@ export default function BikeBuilderPage() {
                 stableFeatureKey: featureEntry.stableFeatureKey,
                 featureLabel: featureEntry.feature.featureLabel,
                 currentSessionFeatureId: featureEntry.feature.featureId,
+                stableFeatureIdentity: featureEntry.stableFeatureIdentity,
                 optionId: option.optionId,
                 optionValue,
                 optionLabel,
