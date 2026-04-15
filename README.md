@@ -31,6 +31,10 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 
 ## What changed
 - `/cpq` now prioritizes one clean manual process.
+- `/cpq` now includes a **Layered Product Preview** card that resolves image layers from `cpq_image_management` using the current selected options in the active CPQ state.
+- Preview matching uses exact `(feature_label, option_label, option_value)` with `is_active = true`; empty picture links are ignored.
+- Current layer order is deterministic: selected-option traversal order from current configuration, then `picture_link_1..4` slot order per matched row.
+- Users can click **Download current preview** to export the layered composition as a PNG (user action only, no auto-download).
 - Canonical manual save/retrieve now uses `cpq_configuration_references`.
 - `CPQ_sampler_result` is now a **secondary manual support flow**:
   - `/cpq` can manually save the latest active configurator state to sampler results.
@@ -54,6 +58,7 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 - `GET /api/cpq/configuration-references?configuration_reference=...`
 - `POST /api/cpq/retrieve-configuration`
 - `POST /api/cpq/sampler-result`
+- `POST /api/cpq/image-layers`
 - Setup APIs under `/api/cpq/setup/*`
   - including `POST /api/cpq/setup/picture-management/sync`
 

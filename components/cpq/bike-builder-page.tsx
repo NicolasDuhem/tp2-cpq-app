@@ -40,6 +40,26 @@ type SamplerSelectedOption = {
   optionValue: string;
 };
 
+type PreviewSelectedOption = {
+  featureLabel: string;
+  optionLabel: string;
+  optionValue: string;
+};
+
+type ImageLayer = {
+  featureLabel: string;
+  optionLabel: string;
+  optionValue: string;
+  slot: 1 | 2 | 3 | 4;
+  pictureLink: string;
+};
+
+type ImageLayerResolution = {
+  layers: ImageLayer[];
+  matchedSelections: PreviewSelectedOption[];
+  unmatchedSelections: PreviewSelectedOption[];
+};
+
 type RulesetRecord = {
   id: number;
   cpq_ruleset: string;
@@ -158,6 +178,28 @@ const buildStableFeatureKey = (
   return `${baseKey}::${featureIndex + 1}`;
 };
 
+const buildPreviewSelectedOptions = (parsed: NormalizedBikeBuilderState): PreviewSelectedOption[] =>
+  parsed.features
+    .map((feature) => {
+      const selectedOptionId = (feature.selectedOptionId ?? '').trim();
+      if (!selectedOptionId) return null;
+      const selectedOption =
+        feature.availableOptions.find((option) => option.optionId === selectedOptionId) ??
+        feature.availableOptions.find((option) => option.selected) ??
+        null;
+      const optionLabel = (selectedOption?.label ?? selectedOptionId).trim();
+      const optionValue = (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? '').trim();
+      const featureLabel = feature.featureLabel.trim();
+      if (!featureLabel || !optionLabel || !optionValue) return null;
+
+      return {
+        featureLabel,
+        optionLabel,
+        optionValue,
+      };
+    })
+    .filter((entry): entry is PreviewSelectedOption => Boolean(entry));
+
 export default function BikeBuilderPage() {
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
   const [rulesets, setRulesets] = useState<RulesetRecord[]>([]);
@@ -201,6 +243,16 @@ export default function BikeBuilderPage() {
     message: 'Idle',
   });
   const manualSessionClosedRef = useRef(false);
+  const [imageLayerResolution, setImageLayerResolution] = useState<ImageLayerResolution>({
+    layers: [],
+    matchedSelections: [],
+    unmatchedSelections: [],
+  });
+  const [imageLayerStatus, setImageLayerStatus] = useState<RequestState>({ loading: false });
+  const [downloadStatus, setDownloadStatus] = useState<{ type: 'idle' | 'success' | 'error'; message: string }>({
+    type: 'idle',
+    message: '',
+  });
 
   const selectedRuleset = useMemo(
     () => rulesets.find((entry) => entry.cpq_ruleset === ruleset) ?? null,
@@ -211,6 +263,7 @@ export default function BikeBuilderPage() {
     () => accountContexts.find((entry) => entry.account_code === accountCode) ?? null,
     [accountCode, accountContexts],
   );
+  const previewSelectedOptions = useMemo(() => (state ? buildPreviewSelectedOptions(state) : []), [state]);
 
   const appendDebugEntry = (entry: DebugEntry) => {
     if (!isDebugEnabled) return;
@@ -376,6 +429,52 @@ export default function BikeBuilderPage() {
       message: 'Idle',
     });
   }, [state?.sessionId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadImageLayers = async () => {
+      if (!state || previewSelectedOptions.length === 0) {
+        setImageLayerResolution({ layers: [], matchedSelections: [], unmatchedSelections: [] });
+        setImageLayerStatus({ loading: false });
+        return;
+      }
+
+      setImageLayerStatus({ loading: true });
+      setDownloadStatus({ type: 'idle', message: '' });
+
+      try {
+        const response = await fetch('/api/cpq/image-layers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selectedOptions: previewSelectedOptions }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => ({}))) as ImageLayerResolution & { error?: string };
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to resolve image layers');
+        }
+
+        setImageLayerResolution({
+          layers: Array.isArray(payload.layers) ? payload.layers : [],
+          matchedSelections: Array.isArray(payload.matchedSelections) ? payload.matchedSelections : [],
+          unmatchedSelections: Array.isArray(payload.unmatchedSelections) ? payload.unmatchedSelections : [],
+        });
+        setImageLayerStatus({ loading: false });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setImageLayerResolution({ layers: [], matchedSelections: [], unmatchedSelections: [] });
+        setImageLayerStatus({
+          loading: false,
+          error: error instanceof Error ? error.message : 'Failed to resolve image layers',
+        });
+      }
+    };
+
+    void loadImageLayers();
+    return () => controller.abort();
+  }, [previewSelectedOptions, state]);
 
   const generateCombinations = () => {
     if (!state?.sessionId || !state.features?.length) {
@@ -1161,6 +1260,73 @@ export default function BikeBuilderPage() {
     }));
   };
 
+  const orderedPreviewLayers = imageLayerResolution.layers.map((layer, index) => ({
+    ...layer,
+    order: index + 1,
+  }));
+
+  const handleDownloadCurrentPreview = async () => {
+    if (orderedPreviewLayers.length === 0) {
+      setDownloadStatus({ type: 'error', message: 'No image layers available for download.' });
+      return;
+    }
+
+    setDownloadStatus({ type: 'idle', message: '' });
+
+    try {
+      const loadedImages = await Promise.all(
+        orderedPreviewLayers.map(
+          (layer) =>
+            new Promise<{ layer: (typeof orderedPreviewLayers)[number]; image: HTMLImageElement }>((resolve, reject) => {
+              const image = new Image();
+              image.crossOrigin = 'anonymous';
+              image.onload = () => resolve({ layer, image });
+              image.onerror = () => reject(new Error(`Failed to load layer image: ${layer.pictureLink}`));
+              image.src = layer.pictureLink;
+            }),
+        ),
+      );
+
+      const width = Math.max(...loadedImages.map((entry) => entry.image.naturalWidth), 1200);
+      const height = Math.max(...loadedImages.map((entry) => entry.image.naturalHeight), 900);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas rendering is unavailable in this browser.');
+
+      context.clearRect(0, 0, width, height);
+      for (const { image } of loadedImages) {
+        const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+        const drawWidth = image.naturalWidth * scale;
+        const drawHeight = image.naturalHeight * scale;
+        const x = (width - drawWidth) / 2;
+        const y = (height - drawHeight) / 2;
+        context.drawImage(image, x, y, drawWidth, drawHeight);
+      }
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('Could not export preview image.'))), 'image/png');
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const safeRuleset = (ruleset || 'ruleset').replace(/[^a-zA-Z0-9-_]/g, '_');
+      const identityToken = state?.configurationReference || state?.ipnCode || new Date().toISOString().replace(/[:.]/g, '-');
+      anchor.href = objectUrl;
+      anchor.download = `cpq-preview-${safeRuleset}-${identityToken}.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+      setDownloadStatus({ type: 'success', message: 'Preview downloaded as PNG.' });
+    } catch (error) {
+      setDownloadStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Preview download failed.',
+      });
+    }
+  };
+
   return (
     <main style={styles.page}>
       <section style={styles.controls}>
@@ -1285,6 +1451,67 @@ export default function BikeBuilderPage() {
             </select>
           </label>
         ))}
+      </section>
+
+      <section style={styles.previewCard}>
+        <div style={styles.previewHeaderRow}>
+          <div>
+            <h2 style={styles.previewTitle}>Layered Product Preview</h2>
+            <p style={styles.previewSubtitle}>
+              Live composition from current selected options matched against picture management mappings.
+            </p>
+          </div>
+          <button
+            style={styles.button}
+            onClick={() => void handleDownloadCurrentPreview()}
+            disabled={orderedPreviewLayers.length === 0 || imageLayerStatus.loading}
+          >
+            Download current preview
+          </button>
+        </div>
+
+        <div style={styles.previewMetaRow}>
+          <span style={styles.previewChip}>Layers: {orderedPreviewLayers.length}</span>
+          <span style={styles.previewChip}>Matched mappings: {imageLayerResolution.matchedSelections.length}</span>
+          <span style={styles.previewChip}>Unmatched selections: {imageLayerResolution.unmatchedSelections.length}</span>
+        </div>
+
+        <div style={styles.previewViewport}>
+          {imageLayerStatus.loading ? <div style={styles.previewEmpty}>Loading layered preview…</div> : null}
+          {!imageLayerStatus.loading && orderedPreviewLayers.length === 0 ? (
+            <div style={styles.previewEmpty}>No image layers available.</div>
+          ) : null}
+          {!imageLayerStatus.loading &&
+            orderedPreviewLayers.map((layer) => (
+              <img
+                key={`${layer.featureLabel}-${layer.optionLabel}-${layer.optionValue}-${layer.slot}-${layer.order}`}
+                src={layer.pictureLink}
+                alt={`${layer.featureLabel} - ${layer.optionLabel} (${layer.optionValue})`}
+                style={styles.previewLayerImage}
+                loading="lazy"
+              />
+            ))}
+        </div>
+
+        <details style={styles.previewDetails}>
+          <summary>Preview matching details</summary>
+          <div style={styles.previewDetailsBody}>
+            <div>Layer ordering rule: selected option order from current configuration, then picture link slot 1 → 4.</div>
+            <div>
+              Matched rows:
+              {imageLayerResolution.matchedSelections.length === 0
+                ? ' none'
+                : ` ${imageLayerResolution.matchedSelections
+                    .map((entry) => `${entry.featureLabel} / ${entry.optionLabel} / ${entry.optionValue}`)
+                    .join('; ')}`}
+            </div>
+          </div>
+        </details>
+
+        {downloadStatus.message ? (
+          <div style={downloadStatus.type === 'error' ? styles.error : styles.previewDownloadSuccess}>{downloadStatus.message}</div>
+        ) : null}
+        {imageLayerStatus.error ? <div style={styles.error}>Preview error: {imageLayerStatus.error}</div> : null}
       </section>
 
       {lastSavedReference && (
@@ -1627,5 +1854,86 @@ const styles: Record<string, CSSProperties> = {
     background: '#fff',
     color: '#18181b',
     cursor: 'pointer',
+  },
+  previewCard: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 12,
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.75rem',
+    background: '#fff',
+  },
+  previewHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '0.75rem',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  previewTitle: {
+    margin: 0,
+  },
+  previewSubtitle: {
+    margin: '0.25rem 0 0',
+    color: '#52525b',
+    fontSize: '0.9rem',
+  },
+  previewMetaRow: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+  },
+  previewChip: {
+    display: 'inline-flex',
+    border: '1px solid #d4d4d8',
+    borderRadius: 999,
+    padding: '0.2rem 0.55rem',
+    fontSize: '0.82rem',
+    color: '#27272a',
+    background: '#fafafa',
+  },
+  previewViewport: {
+    position: 'relative',
+    height: 'min(56vw, 460px)',
+    minHeight: 320,
+    maxHeight: 460,
+    borderRadius: 14,
+    border: '1px solid #d4d4d8',
+    background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+    overflow: 'hidden',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewLayerImage: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    objectPosition: 'center',
+    pointerEvents: 'none',
+  },
+  previewEmpty: {
+    color: '#52525b',
+    fontSize: '0.95rem',
+  },
+  previewDetails: {
+    border: '1px solid #e4e4e7',
+    borderRadius: 8,
+    padding: '0.45rem 0.6rem',
+    background: '#fafafa',
+    fontSize: '0.82rem',
+    color: '#3f3f46',
+  },
+  previewDetailsBody: {
+    marginTop: '0.45rem',
+    display: 'grid',
+    gap: '0.35rem',
+    lineHeight: 1.45,
+  },
+  previewDownloadSuccess: {
+    color: '#166534',
+    fontSize: '0.9rem',
   },
 };

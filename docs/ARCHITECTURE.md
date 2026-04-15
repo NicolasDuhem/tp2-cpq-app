@@ -52,6 +52,28 @@
 - `POST /api/cpq/sampler-result` persists one row into `CPQ_sampler_result`.
 - Captured `json_result` includes CPQ context, bike summary, selected options, and debug/raw snippets.
 
+## Layered product preview architecture (`/cpq`)
+- UI component: `components/cpq/bike-builder-page.tsx` renders an additive **Layered Product Preview** section.
+- Source state: current parsed configurator state (`NormalizedBikeBuilderState.features`) from the active session.
+- Selection extraction contract:
+  - For each feature with a selected option, extract:
+    - `featureLabel`
+    - selected `optionLabel`
+    - selected `optionValue` (prefers option `value`, fallback selected/current value)
+  - Preserve feature traversal order from current configuration state.
+- Resolution API: `POST /api/cpq/image-layers`.
+  - Server uses `resolveImageLayersForSelectedOptions` in `lib/cpq/setup/service.ts`.
+  - Matching is exact (`feature_label`, `option_label`, `option_value`) against `cpq_image_management` with `is_active = true`.
+  - Empty picture links are filtered out.
+- Layer ordering rule (current implementation):
+  1. order selected options exactly as they appear in current CPQ state
+  2. within each matched row, append `picture_link_1`, then `2`, then `3`, then `4`
+- Download flow:
+  - Triggered only by **Download current preview** click.
+  - Client loads resolved layer URLs, draws them into one canvas in current order, and downloads PNG.
+  - Filename format: `cpq-preview-<ruleset>-<configurationReference|ipn|timestamp>.png`.
+- This feature is visual/additive and does not modify core manual or bulk lifecycle APIs.
+
 ## Retrieve architecture
 - Retrieve is deterministic and reference-driven:
   - Resolve one row from `cpq_configuration_references`
