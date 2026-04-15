@@ -6,8 +6,9 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 1. **StartConfiguration** opens a live session for `(ruleset + account_code)`.
 2. **Configure** updates options in that same active session.
 3. **FinalizeConfiguration** is called when the user clicks **Save Configuration**.
-4. The finalized state is persisted to `cpq_configuration_references`.
-5. **Retrieve Configuration** resolves one `configuration_reference` and starts a fresh session from the saved reference data.
+4. Finalize is executed to close/confirm/lock the final `detailId`, then canonical save is written to `cpq_configuration_references` using the latest Configure snapshot (fallback: StartConfiguration snapshot).
+5. After canonical save succeeds, one automatic support row is written to `CPQ_sampler_result` using the same source-state rule (Configure > Start).
+6. **Retrieve Configuration** resolves one `configuration_reference` and starts a fresh session from the saved reference data.
 
 ## Bulk workflow from combinations table
 - Generate combinations from the current active session and tick one or more rows.
@@ -17,7 +18,8 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
   3. Resolve option matches **inside the mapped feature scope only** (no global option matching).
   4. Call `/configure` only when the target option is not already selected.
   5. Finalize with `{ "sessionID": "<active row session>" }`.
-  6. Save into `cpq_configuration_references`.
+  6. Save into `cpq_configuration_references` from latest Configure/Start snapshot (not finalize payload).
+  7. Auto-write one sampler support row into `CPQ_sampler_result` from same source snapshot.
 - Every selected row runs in a brand-new session and appears in the debug timeline with `Bulk:*` actions.
 
 ## Session rules
@@ -32,6 +34,7 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 - Canonical manual save/retrieve now uses `cpq_configuration_references`.
 - `CPQ_sampler_result` is now a **secondary manual support flow**:
   - `/cpq` can manually save the latest active configurator state to sampler results.
+  - `/cpq` also auto-saves one sampler row after each successful canonical save.
   - This sampler save uses latest `Configure` response; if none exists yet, latest `StartConfiguration` response.
   - Sampler save never uses `FinalizeConfiguration` as capture source.
 - `CPQ_sampler_result` is not the canonical manual save registry (that remains `cpq_configuration_references`).

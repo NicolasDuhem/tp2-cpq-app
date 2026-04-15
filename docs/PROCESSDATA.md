@@ -20,10 +20,19 @@
 
 ### 4) Save finalized configuration
 - After finalize succeeds, app writes one row to `cpq_configuration_references`.
+- Save payload source-of-truth is **not** finalize response body:
+  - preferred source: latest `Configure` response/state
+  - fallback source: latest `StartConfiguration` response/state
+  - finalize response is retained for lifecycle/audit metadata only.
 - A unique `configuration_reference` is always generated server-side if not provided.
 - Saved data includes retrieval context (ruleset/namespace/header/detail/account/application) and JSON snapshots.
 
-### 5) Retrieve configuration
+### 5) Automatic secondary sampler write after canonical save
+- If canonical save succeeds, app immediately writes one support row into `CPQ_sampler_result`.
+- Auto sampler row uses the same source-state contract (latest Configure else latest StartConfiguration).
+- Finalize response body is not used as sampler snapshot source.
+
+### 6) Retrieve configuration
 - User provides `configuration_reference`.
 - App resolves row from `cpq_configuration_references`.
 - App starts a fresh StartConfiguration using saved row values.
