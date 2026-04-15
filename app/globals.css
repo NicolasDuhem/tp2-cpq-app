@@ -196,6 +196,32 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 .pictureCardGrid label { display:grid; gap:6px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; min-width:0; }
 .pictureCardActions { display:flex; gap:8px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
 
+.pictureSearchField { display:grid; gap:4px; min-width:260px; font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); }
+.pictureFeatureTabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+.pictureFeatureTabs button { background:#f4f7ff; border-color:#d8e1fa; color:#2b3d6b; }
+.pictureSummaryGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-bottom:10px; }
+.pictureSummaryCard { border:1px solid var(--line); border-radius:12px; padding:10px; background:#fff; display:grid; gap:4px; }
+.pictureSummaryCard span { font-size:11px; text-transform:uppercase; font-weight:700; color:var(--muted); }
+.pictureSummaryCard strong { font-size:22px; color:#1f2f54; }
+.pictureSummaryCardDanger { border-color:#f0b0b0; background:#fff5f5; }
+.pictureSummaryCardDanger strong { color:#a52323; }
+.pictureSummaryCardSuccess { border-color:#a5d9b6; background:#f3fbf6; }
+.pictureSummaryCardSuccess strong { color:#17613a; }
+.pictureTileGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:8px; }
+.pictureTile { text-align:left; border:1px solid var(--line); border-radius:12px; background:#fff; padding:10px; display:grid; gap:8px; color:inherit; box-shadow:0 4px 12px rgba(20,33,61,.05); }
+.pictureTile:hover { border-color:#99afdf; box-shadow:0 8px 16px rgba(20,33,61,.08); }
+.pictureTileHeader { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.pictureTileHeader strong { font-size:14px; color:#20335f; }
+.pictureTileValue { color:#44557c; font-size:13px; overflow-wrap:anywhere; }
+.pictureTileMeta { display:flex; justify-content:space-between; gap:8px; color:#617091; font-size:12px; font-weight:700; }
+.pictureStatusDot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.pictureStatusDot.isMissing { background:#d03131; }
+.pictureStatusDot.isComplete { background:#1f9a4c; }
+.pictureModalCard { width:min(760px, 95vw); }
+.pictureModalMeta { display:grid; gap:4px; margin-bottom:10px; color:#34405f; }
+.pictureModalGrid { display:grid; grid-template-columns:repeat(2,minmax(220px,1fr)); gap:8px; }
+.pictureModalGrid label { display:grid; gap:6px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; }
+
 @media (max-width: 1100px) {
   .addRuleGrid { grid-template-columns:repeat(2,minmax(200px,1fr)); }
   .addRuleGrid .wideField { grid-column:span 2; }
@@ -210,6 +236,7 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
   .modalGrid { grid-template-columns:1fr; }
   .usersFormGrid { grid-template-columns:1fr; }
   .roleAccessGrid { grid-template-columns:1fr; }
+  .pictureModalGrid { grid-template-columns:1fr; }
 }
 @media (max-width: 680px) {
   .addRuleGrid { grid-template-columns:1fr; }

@@ -61,3 +61,11 @@
 ## Deprecated from primary flow
 - Full legacy traversal UI is retired from `/cpq` manual save/retrieve.
 - Sampler persistence remains available only as a manual secondary flow + image-management feeder.
+
+
+## Setup UX architecture
+- `/cpq/setup` Picture management is feature-tabbed (tabs generated from `cpq_image_management.feature_label`).
+- Each selected feature view shows summary metrics: total, missing (0/4), with pictures (1+), completion %, and fully complete (4/4).
+- Option/value mappings are edited through tile cards and a modal editor that saves via existing `PUT /api/cpq/setup/picture-management/:id`.
+- Sync flow remains `POST /api/cpq/setup/picture-management/sync` and continues to seed `cpq_image_management` from `CPQ_sampler_result`.
+- Internal UI ownership map is exposed at `/cpq/ui-docs`; UI label/data/code mapping should be updated with every UI change.

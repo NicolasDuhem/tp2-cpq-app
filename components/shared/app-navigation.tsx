@@ -9,6 +9,7 @@ const links: NavLink[] = [
   { href: '/cpq', label: 'CPQ - Bike Builder' },
   { href: '/cpq/setup', label: 'CPQ - Setup' },
   { href: '/cpq/results', label: 'CPQ - Sampler Results' },
+  { href: '/cpq/ui-docs', label: 'CPQ - UI Docs' },
 ];
 
 export default function AppNavigation() {
