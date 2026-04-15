@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { finalizeConfiguration } from '@/lib/cpq/runtime/client';
 import { mapCpqToNormalizedState } from '@/lib/cpq/runtime/mappers';
 import { createTraceId, errorToLog, logTrace, sanitizeForLog } from '@/lib/cpq/runtime/debug';
+import { FinalizeConfigurationRequest } from '@/types/cpq';
 
 export async function POST(req: NextRequest) {
   const traceId = req.headers.get('x-cpq-trace-id') ?? createTraceId();
   const start = Date.now();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const sessionId = String(body.sessionId ?? body.sessionID ?? '').trim();
-  const ruleset = String(body.ruleset ?? process.env.CPQ_PART_NAME ?? 'BBLV6_G-LineMY26').trim();
+  const body = (await req.json().catch(() => ({}))) as Partial<FinalizeConfigurationRequest>;
+  const sessionId = String(body.sessionID ?? '').trim();
+  const ruleset = String(process.env.CPQ_PART_NAME ?? 'BBLV6_G-LineMY26').trim();
+  const finalizePayload: FinalizeConfigurationRequest = { sessionID: sessionId };
 
   logTrace({
     timestamp: new Date().toISOString(),
@@ -16,7 +18,7 @@ export async function POST(req: NextRequest) {
     action: 'FinalizeConfiguration',
     route: '/api/cpq/finalize',
     source: 'api',
-    request: body,
+    request: finalizePayload,
   });
 
   if (!sessionId) {
