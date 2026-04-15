@@ -95,6 +95,7 @@ create table if not exists cpq_image_management (
   feature_label text not null,
   option_label text not null,
   option_value text not null,
+  ignore_during_configure boolean not null default false,
   picture_link_1 text,
   picture_link_2 text,
   picture_link_3 text,
@@ -108,3 +109,6 @@ create table if not exists cpq_image_management (
 create index if not exists cpq_image_management_lookup_idx
   on cpq_image_management (feature_label, option_label, option_value)
   where is_active = true;
+
+alter table if exists cpq_image_management
+  add column if not exists ignore_during_configure boolean not null default false;

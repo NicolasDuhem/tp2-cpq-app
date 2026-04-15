@@ -19,13 +19,16 @@
   1. Start a new session via `POST /api/cpq/init`.
   2. Re-map target features using stable feature identity from combination generation (`featureName` / feature-question metadata / `featureLabel`) to resolve the **current** session `featureId`.
   3. Resolve target option only inside the mapped feature’s `availableOptions`.
-  4. Skip `/api/cpq/configure` when option is already selected in current state.
-  5. After each configure call, replace row working state with response-parsed state before next feature.
-  6. Finalize with `POST /api/cpq/finalize` payload `{ "sessionID": "<row session>" }`.
-  7. Save canonical row in `cpq_configuration_references` from row working state (not finalize payload body).
-  8. Auto-save secondary sampler row in `CPQ_sampler_result` using same source state.
+  4. Skip entire features marked `ignore_during_configure = true` in setup picture management.
+  5. Skip `/api/cpq/configure` when option is already selected in current state.
+  6. After each configure call, replace row working state with response-parsed state before next feature.
+  7. Finalize with `POST /api/cpq/finalize` payload `{ "sessionID": "<row session>" }`.
+  8. Save canonical row in `cpq_configuration_references` from row working state (not finalize payload body).
+  9. Auto-save secondary sampler row in `CPQ_sampler_result` using same source state.
 - Sessions are never reused across selected rows.
 - Debug timeline records all automated API calls (`Bulk:StartConfiguration`, `Bulk:Configure`, `Bulk:FinalizeConfiguration`, `Bulk:SaveConfigurationReference`).
+- Row-local diagnostics are tracked separately from global timeline and exposed from the table via **Inspect failure**.
+- Post-run cleanup keeps only originally selected rows visible in the combinations table.
 
 ## Session management rules
 - Active session is scoped by `(ruleset, account_code)`.
@@ -87,6 +90,7 @@
 
 ## Setup UX architecture
 - `/cpq/setup` Picture management is feature-tabbed (tabs generated from `cpq_image_management.feature_label`).
+- Each feature has one feature-level toggle: **Ignore during /configure** (writes to `cpq_image_management.ignore_during_configure` for all rows sharing that feature label).
 - Each selected feature view shows summary metrics: total, missing (0/4), with pictures (1+), completion %, and fully complete (4/4).
 - Option/value mappings are edited through tile cards and a modal editor that saves via existing `PUT /api/cpq/setup/picture-management/:id`.
 - Sync flow remains `POST /api/cpq/setup/picture-management/sync` and continues to seed `cpq_image_management` from `CPQ_sampler_result`.

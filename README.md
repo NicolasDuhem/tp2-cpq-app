@@ -16,11 +16,14 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
   1. Start a **fresh** session for the row (`StartConfiguration`).
   2. Re-map each target feature against the fresh session model (never reuse old `featureId`).
   3. Resolve option matches **inside the mapped feature scope only** (no global option matching).
-  4. Call `/configure` only when the target option is not already selected.
-  5. Finalize with `{ "sessionID": "<active row session>" }`.
-  6. Save into `cpq_configuration_references` from latest Configure/Start snapshot (not finalize payload).
-  7. Auto-write one sampler support row into `CPQ_sampler_result` from same source snapshot.
+  4. Skip `/configure` completely for features flagged **Ignore during /configure** in setup.
+  5. Call `/configure` only when the target option is not already selected.
+  6. Finalize with `{ "sessionID": "<active row session>" }`.
+  7. Save into `cpq_configuration_references` from latest Configure/Start snapshot (not finalize payload).
+  8. Auto-write one sampler support row into `CPQ_sampler_result` from same source snapshot.
 - Every selected row runs in a brand-new session and appears in the debug timeline with `Bulk:*` actions.
+- Failed rows are now explicit in-table (`failed` + error summary) with an **Inspect failure** modal showing stage, summary, trace/session, and the last 2 requests/responses.
+- After a bulk run finishes, the combinations table is reduced to the originally ticked rows only.
 
 ## Session rules
 - Same `sessionId` stays active while `ruleset` and `account_code` stay unchanged.
@@ -83,5 +86,6 @@ npm run dev
 
 ## UI governance
 - Picture management on `/cpq/setup` now uses dynamic feature tabs, feature summary metrics, tile navigation, and modal editing for picture links.
+- Picture management also supports feature-level **Ignore during /configure** persistence on `cpq_image_management.ignore_during_configure`.
 - Internal UI mapping documentation lives at `/cpq/ui-docs`.
 - Standard: every UI change should include an update to the `/cpq/ui-docs` mapping table in the same PR.

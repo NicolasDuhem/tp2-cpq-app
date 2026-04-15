@@ -28,6 +28,7 @@ type ImageManagementRow = {
   feature_label: string;
   option_label: string;
   option_value: string;
+  ignore_during_configure: boolean;
   picture_link_1: string | null;
   picture_link_2: string | null;
   picture_link_3: string | null;
@@ -54,6 +55,7 @@ type PictureDraft = {
   feature_label: string;
   option_label: string;
   option_value: string;
+  ignore_during_configure: boolean;
   picture_link_1: string;
   picture_link_2: string;
   picture_link_3: string;
@@ -177,6 +179,10 @@ export default function CpqSetupPage() {
     () => visiblePictureRows.filter((row) => row.feature_label === selectedFeature),
     [visiblePictureRows, selectedFeature],
   );
+  const featureIgnoreDuringConfigure = useMemo(
+    () => featureRows.some((row) => row.ignore_during_configure),
+    [featureRows],
+  );
 
   const featureSummary = useMemo(() => {
     const total = featureRows.length;
@@ -282,7 +288,9 @@ export default function CpqSetupPage() {
 
   const savePictureRow = async (
     id: number,
-    patch: Partial<Pick<ImageManagementRow, 'picture_link_1' | 'picture_link_2' | 'picture_link_3' | 'picture_link_4' | 'is_active'>>,
+    patch: Partial<
+      Pick<ImageManagementRow, 'picture_link_1' | 'picture_link_2' | 'picture_link_3' | 'picture_link_4' | 'is_active' | 'ignore_during_configure'>
+    >,
   ) => {
     setSavingImageId(id);
     const res = await fetch(`/api/cpq/setup/picture-management/${id}`, {
@@ -301,6 +309,34 @@ export default function CpqSetupPage() {
     setStatus('Picture mapping updated.');
     setSavingImageId(null);
     setPictureDraft(null);
+  };
+
+  const setFeatureIgnoreFlag = async (featureLabel: string, ignoreDuringConfigure: boolean) => {
+    const res = await fetch('/api/cpq/setup/picture-management/feature-flags', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feature_label: featureLabel,
+        ignore_during_configure: ignoreDuringConfigure,
+      }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(payload.error || 'Failed to update feature ignore flag');
+      return;
+    }
+
+    setImageRows((curr) =>
+      curr.map((row) => (row.feature_label === featureLabel ? { ...row, ignore_during_configure: ignoreDuringConfigure } : row)),
+    );
+    setStatus(
+      ignoreDuringConfigure
+        ? `Feature "${featureLabel}" will be ignored during Configure all ticked items.`
+        : `Feature "${featureLabel}" will be included during Configure all ticked items.`,
+    );
+    setPictureDraft((current) =>
+      current && current.feature_label === featureLabel ? { ...current, ignore_during_configure: ignoreDuringConfigure } : current,
+    );
   };
 
   const syncPictures = async () => {
@@ -510,6 +546,24 @@ export default function CpqSetupPage() {
               </article>
             </div>
           )}
+          {selectedFeature && (
+            <div className="note compactNote" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <strong>{selectedFeature}</strong> bulk configure behavior
+                <div style={{ fontSize: 12, color: '#475569' }}>
+                  When enabled, this entire feature is skipped during <code>Configure all ticked items</code>.
+                </div>
+              </div>
+              <label className="inlineCheck" style={{ marginBottom: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={featureIgnoreDuringConfigure}
+                  onChange={(event) => void setFeatureIgnoreFlag(selectedFeature, event.target.checked)}
+                />
+                Ignore during /configure
+              </label>
+            </div>
+          )}
 
           <div className="tableWrap" style={{ maxHeight: 620, padding: 10 }}>
             <div className="pictureTileGrid">
@@ -525,6 +579,7 @@ export default function CpqSetupPage() {
                       feature_label: row.feature_label,
                       option_label: row.option_label,
                       option_value: row.option_value,
+                      ignore_during_configure: row.ignore_during_configure,
                       picture_link_1: row.picture_link_1 ?? '',
                       picture_link_2: row.picture_link_2 ?? '',
                       picture_link_3: row.picture_link_3 ?? '',
@@ -587,6 +642,7 @@ export default function CpqSetupPage() {
                       picture_link_3: pictureDraft.picture_link_3,
                       picture_link_4: pictureDraft.picture_link_4,
                       is_active: pictureDraft.is_active,
+                      ignore_during_configure: pictureDraft.ignore_during_configure,
                     })}
                   >
                     {savingImageId === pictureDraft.id ? 'Saving…' : 'Save'}
