@@ -1,0 +1,6 @@
+"table_schema","table_name"
+"public","cpq_configuration_references"
+"public","cpq_image_management"
+"public","cpq_sampler_result"
+"public","cpq_setup_account_context"
+"public","cpq_setup_ruleset"

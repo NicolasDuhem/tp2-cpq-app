@@ -1,0 +1,61 @@
+"table_schema","table_name","constraint_name","constraint_type","key_ordinal_position","column_name","foreign_table_schema","foreign_table_name","foreign_column_name","check_clause"
+"public","cpq_configuration_references","2200_139265_12_not_null","CHECK",,,,,,"json_snapshot IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_13_not_null","CHECK",,,,,,"is_active IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_14_not_null","CHECK",,,,,,"created_at IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_15_not_null","CHECK",,,,,,"updated_at IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_1_not_null","CHECK",,,,,,"id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_2_not_null","CHECK",,,,,,"configuration_reference IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_30_not_null","CHECK",,,,,,"finalize_response_json IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_3_not_null","CHECK",,,,,,"canonical_header_id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_4_not_null","CHECK",,,,,,"canonical_detail_id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_5_not_null","CHECK",,,,,,"ruleset IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_6_not_null","CHECK",,,,,,"namespace IS NOT NULL"
+"public","cpq_configuration_references","cpq_configuration_references_pkey","PRIMARY KEY",1,"id","public","cpq_configuration_references","id",
+"public","cpq_configuration_references","cpq_configuration_references_configuration_reference_key","UNIQUE",1,"configuration_reference","public","cpq_configuration_references","configuration_reference",
+"public","cpq_image_management","2200_16559_10_not_null","CHECK",,,,,,"created_at IS NOT NULL"
+"public","cpq_image_management","2200_16559_11_not_null","CHECK",,,,,,"updated_at IS NOT NULL"
+"public","cpq_image_management","2200_16559_12_not_null","CHECK",,,,,,"ignore_during_configure IS NOT NULL"
+"public","cpq_image_management","2200_16559_1_not_null","CHECK",,,,,,"id IS NOT NULL"
+"public","cpq_image_management","2200_16559_2_not_null","CHECK",,,,,,"feature_label IS NOT NULL"
+"public","cpq_image_management","2200_16559_3_not_null","CHECK",,,,,,"option_label IS NOT NULL"
+"public","cpq_image_management","2200_16559_4_not_null","CHECK",,,,,,"option_value IS NOT NULL"
+"public","cpq_image_management","2200_16559_9_not_null","CHECK",,,,,,"is_active IS NOT NULL"
+"public","cpq_image_management","cpq_image_management_pkey","PRIMARY KEY",1,"id","public","cpq_image_management","id",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",1,"feature_label","public","cpq_image_management","option_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",1,"feature_label","public","cpq_image_management","feature_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",1,"feature_label","public","cpq_image_management","option_value",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",2,"option_label","public","cpq_image_management","option_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",2,"option_label","public","cpq_image_management","feature_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",2,"option_label","public","cpq_image_management","option_value",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",3,"option_value","public","cpq_image_management","option_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",3,"option_value","public","cpq_image_management","feature_label",
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE",3,"option_value","public","cpq_image_management","option_value",
+"public","cpq_sampler_result","2200_16544_13_not_null","CHECK",,,,,,"json_result IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_14_not_null","CHECK",,,,,,"processed_for_image_sync IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_16_not_null","CHECK",,,,,,"created_at IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_1_not_null","CHECK",,,,,,"id IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_3_not_null","CHECK",,,,,,"ruleset IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_4_not_null","CHECK",,,,,,"account_code IS NOT NULL"
+"public","cpq_sampler_result","cpq_sampler_result_pkey","PRIMARY KEY",1,"id","public","cpq_sampler_result","id",
+"public","cpq_setup_account_context","2200_16512_1_not_null","CHECK",,,,,,"id IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_2_not_null","CHECK",,,,,,"account_code IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_3_not_null","CHECK",,,,,,"customer_id IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_4_not_null","CHECK",,,,,,"currency IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_5_not_null","CHECK",,,,,,"language IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_6_not_null","CHECK",,,,,,"country_code IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_7_not_null","CHECK",,,,,,"is_active IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_8_not_null","CHECK",,,,,,"created_at IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_9_not_null","CHECK",,,,,,"updated_at IS NOT NULL"
+"public","cpq_setup_account_context","cpq_setup_account_context_country_code_chk","CHECK",,,"public","cpq_setup_account_context","country_code","(country_code ~ '^[A-Z]{2}$'::text)"
+"public","cpq_setup_account_context","cpq_setup_account_context_pkey","PRIMARY KEY",1,"id","public","cpq_setup_account_context","id",
+"public","cpq_setup_account_context","cpq_setup_account_context_account_code_key","UNIQUE",1,"account_code","public","cpq_setup_account_context","account_code",
+"public","cpq_setup_ruleset","2200_16527_10_not_null","CHECK",,,,,,"updated_at IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_1_not_null","CHECK",,,,,,"id IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_2_not_null","CHECK",,,,,,"cpq_ruleset IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_5_not_null","CHECK",,,,,,"namespace IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_6_not_null","CHECK",,,,,,"header_id IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_7_not_null","CHECK",,,,,,"is_active IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_8_not_null","CHECK",,,,,,"sort_order IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_9_not_null","CHECK",,,,,,"created_at IS NOT NULL"
+"public","cpq_setup_ruleset","cpq_setup_ruleset_pkey","PRIMARY KEY",1,"id","public","cpq_setup_ruleset","id",
+"public","cpq_setup_ruleset","cpq_setup_ruleset_cpq_ruleset_key","UNIQUE",1,"cpq_ruleset","public","cpq_setup_ruleset","cpq_ruleset",
