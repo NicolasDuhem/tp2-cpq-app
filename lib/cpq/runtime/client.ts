@@ -1,5 +1,6 @@
 import { buildStartConfigurationPayload, readCpqConfig, StartConfigurationOverrides } from './config';
 import { ConfigureConfiguratorRequest, CpqApiEnvelope, InitConfiguratorRequest } from '@/types/cpq';
+import { createTraceId, errorToLog, logTrace, sanitizeForLog } from './debug';
 
 type CpqRequestResult = {
   status: number;
@@ -50,7 +51,11 @@ export type CpqSmokeDebugResult = {
   configDebug: CpqConfigDebug;
 };
 
-const getBodySnippet = (text: string): string => text.replace(/\s+/g, ' ').slice(0, 400);
+type CpqClientRequestOptions = {
+  traceId?: string;
+  route?: string;
+  action?: string;
+};
 
 const maskApiKey = (apiKey: string): string => {
   if (!apiKey) return 'ApiKey ****';
@@ -77,15 +82,31 @@ const buildConfigDebug = (overrides?: StartConfigurationOverrides): CpqConfigDeb
   };
 };
 
-const post = async (path: string, body: unknown, logPrefix: string): Promise<CpqRequestResult> => {
+const post = async (path: string, body: unknown, logPrefix: string, options?: CpqClientRequestOptions): Promise<CpqRequestResult> => {
   const config = readCpqConfig();
   const endpoint = `${config.baseUrl}/${path.replace(/^\//, '')}`;
   const apiKeyPresent = Boolean(config.apiKey);
+  const traceId = options?.traceId ?? createTraceId();
+  const action = options?.action ?? path;
+  const route = options?.route ?? `cpq:${path}`;
 
-  console.log(`${logPrefix} request`, {
-    url: endpoint,
-    apiKeyPresent,
-    apiKeyPreview: apiKeyPresent ? `${config.apiKey.slice(0, 4)}...` : undefined,
+  const start = Date.now();
+  logTrace({
+    timestamp: new Date().toISOString(),
+    traceId,
+    action,
+    route,
+    source: 'cpq',
+    request: {
+      url: endpoint,
+      method: 'POST',
+      headers: {
+        Authorization: apiKeyPresent ? '[REDACTED]' : 'missing',
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body,
+    },
   });
 
   const controller = new AbortController();
@@ -104,18 +125,42 @@ const post = async (path: string, body: unknown, logPrefix: string): Promise<Cpq
     });
 
     const responseText = await response.text();
-    console.log(`${logPrefix} response`, {
+
+    let parsed: CpqApiEnvelope | undefined;
+    try {
+      parsed = JSON.parse(responseText) as CpqApiEnvelope;
+    } catch {
+      parsed = undefined;
+    }
+
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action,
+      route,
+      source: 'cpq',
       status: response.status,
-      bodySnippet: getBodySnippet(responseText),
+      success: response.ok,
+      durationMs: Date.now() - start,
+      response: {
+        ok: response.ok,
+        statusText: response.statusText,
+        data: parsed ?? sanitizeForLog(responseText),
+      },
     });
 
-    try {
-      const parsed = JSON.parse(responseText) as CpqApiEnvelope;
-      return { status: response.status, ok: response.ok, data: parsed, text: responseText };
-    } catch {
-      return { status: response.status, ok: response.ok, text: responseText };
-    }
+    return { status: response.status, ok: response.ok, data: parsed, text: responseText };
   } catch (error) {
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action,
+      route,
+      source: 'cpq',
+      success: false,
+      durationMs: Date.now() - start,
+      error: errorToLog(error),
+    });
     console.error(`${logPrefix} fetch failed`, {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -125,9 +170,15 @@ const post = async (path: string, body: unknown, logPrefix: string): Promise<Cpq
   }
 };
 
-export const startConfigurationRaw = async (overrides?: StartConfigurationOverrides): Promise<CpqRequestResult> => {
+export const startConfigurationRaw = async (
+  overrides?: StartConfigurationOverrides,
+  options?: CpqClientRequestOptions,
+): Promise<CpqRequestResult> => {
   const payload = buildStartConfigurationPayload(overrides);
-  return post('StartConfiguration', payload, '[cpq/start]');
+  return post('StartConfiguration', payload, '[cpq/start]', {
+    ...options,
+    action: options?.action ?? 'StartConfiguration',
+  });
 };
 
 export const startConfigurationSmokeDebug = async (overrides?: StartConfigurationOverrides): Promise<CpqSmokeDebugResult> => {
@@ -197,27 +248,36 @@ export const startConfigurationSmokeDebug = async (overrides?: StartConfiguratio
 
 export const startConfiguration = async (
   request: InitConfiguratorRequest,
-  _context?: Record<string, unknown>,
+  context?: Record<string, unknown>,
+  options?: CpqClientRequestOptions,
 ): Promise<CpqApiEnvelope> => {
-  const result = await startConfigurationRaw({
-    namespace: request.namespace,
-    partName: request.partName || request.ruleset,
-    headerId: request.headerId,
-    detailId: request.detailId,
-    sourceHeaderId: request.sourceHeaderId,
-    sourceDetailId: request.sourceDetailId,
-    profile: request.profile,
-    instance: request.instance,
-    accountCode: request.context?.accountCode,
-    company: request.context?.company,
-    accountType: request.context?.accountType,
-    customerId: request.context?.customerId,
-    currency: request.context?.currency,
-    language: request.context?.language,
-    countryCode: request.context?.countryCode,
-    customerLocation: request.context?.customerLocation,
-  });
+  const result = await startConfigurationRaw(
+    {
+      namespace: request.namespace,
+      partName: request.partName || request.ruleset,
+      headerId: request.headerId,
+      detailId: request.detailId,
+      sourceHeaderId: request.sourceHeaderId,
+      sourceDetailId: request.sourceDetailId,
+      profile: request.profile,
+      instance: request.instance,
+      accountCode: request.context?.accountCode,
+      company: request.context?.company,
+      accountType: request.context?.accountType,
+      customerId: request.context?.customerId,
+      currency: request.context?.currency,
+      language: request.context?.language,
+      countryCode: request.context?.countryCode,
+      customerLocation: request.context?.customerLocation,
+    },
+    {
+      traceId: options?.traceId,
+      route: options?.route,
+      action: 'StartConfiguration',
+    },
+  );
 
+  void context;
   if (!result.ok) {
     throw new Error(
       `CPQ StartConfiguration failed (${result.status}): ${
@@ -236,6 +296,7 @@ export const startConfiguration = async (
 export const configureConfiguration = async (
   request: ConfigureConfiguratorRequest,
   context: Record<string, unknown>,
+  options?: CpqClientRequestOptions,
 ): Promise<CpqApiEnvelope> => {
   const body = {
     sessionID: request.sessionId,
@@ -248,7 +309,11 @@ export const configureConfiguration = async (
   };
 
   void context;
-  const result = await post('configure', body, '[cpq/configure]');
+  const result = await post('configure', body, '[cpq/configure]', {
+    traceId: options?.traceId,
+    route: options?.route,
+    action: 'Configure',
+  });
 
   if (!result.ok || !result.data) {
     throw new Error(
@@ -259,8 +324,7 @@ export const configureConfiguration = async (
   return result.data;
 };
 
-
-export const finalizeConfiguration = async (sessionId: string): Promise<CpqApiEnvelope> => {
+export const finalizeConfiguration = async (sessionId: string, options?: CpqClientRequestOptions): Promise<CpqApiEnvelope> => {
   const trimmedSessionId = String(sessionId ?? '').trim();
   if (!trimmedSessionId) {
     throw new Error('sessionId is required');
@@ -270,7 +334,11 @@ export const finalizeConfiguration = async (sessionId: string): Promise<CpqApiEn
     sessionID: trimmedSessionId,
   };
 
-  const result = await post('FinalizeConfiguration', body, '[cpq/finalize]');
+  const result = await post('FinalizeConfiguration', body, '[cpq/finalize]', {
+    traceId: options?.traceId,
+    route: options?.route,
+    action: 'FinalizeConfiguration',
+  });
 
   if (!result.ok || !result.data) {
     throw new Error(
