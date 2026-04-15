@@ -25,6 +25,13 @@ type CpqRouteResponse = {
   details?: string;
 };
 
+type SamplerSourceSnapshot = {
+  source: 'startconfiguration' | 'configure';
+  capturedAt: string;
+  parsed: NormalizedBikeBuilderState;
+  rawResponse: unknown;
+};
+
 type RulesetRecord = {
   id: number;
   cpq_ruleset: string;
@@ -160,6 +167,10 @@ export default function BikeBuilderPage() {
   const [retrieveStatus, setRetrieveStatus] = useState<PersistenceStatus>('idle');
   const [retrieveMessage, setRetrieveMessage] = useState('-');
   const [lastSavedReference, setLastSavedReference] = useState<ConfigurationReferenceRow | null>(null);
+  const [samplerSaveStatus, setSamplerSaveStatus] = useState<PersistenceStatus>('idle');
+  const [samplerSaveMessage, setSamplerSaveMessage] = useState('-');
+  const [samplerSaveDetail, setSamplerSaveDetail] = useState<string | null>(null);
+  const [lastSamplerSource, setLastSamplerSource] = useState<SamplerSourceSnapshot | null>(null);
 
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
@@ -255,6 +266,9 @@ export default function BikeBuilderPage() {
     setSaveStatus('idle');
     setSaveMessage('-');
     setSaveTechnicalDetail(null);
+    setSamplerSaveStatus('idle');
+    setSamplerSaveMessage('-');
+    setSamplerSaveDetail(null);
 
     try {
       const payload = {
@@ -283,6 +297,12 @@ export default function BikeBuilderPage() {
       }
 
       setState(responsePayload.parsed);
+      setLastSamplerSource({
+        source: 'startconfiguration',
+        capturedAt: new Date().toISOString(),
+        parsed: responsePayload.parsed,
+        rawResponse: responsePayload.rawResponse,
+      });
       manualSessionClosedRef.current = false;
       setRequestState({ loading: false });
     } catch (error) {
@@ -488,11 +508,125 @@ export default function BikeBuilderPage() {
       }
 
       setState(payload.parsed);
+      setLastSamplerSource({
+        source: 'configure',
+        capturedAt: new Date().toISOString(),
+        parsed: payload.parsed,
+        rawResponse: payload.rawResponse,
+      });
       setRequestState({ loading: false });
     } catch (error) {
       setRequestState({ loading: false, error: error instanceof Error ? error.message : 'Configure failed' });
     } finally {
       setActiveFeatureId(null);
+    }
+  };
+
+  const buildSamplerSelectedOptions = (parsed: NormalizedBikeBuilderState) =>
+    parsed.features
+      .map((feature) => {
+        const selectedOption =
+          feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId) ??
+          feature.availableOptions.find((option) => option.selected) ??
+          null;
+        const optionId = (selectedOption?.optionId ?? feature.selectedOptionId ?? '').trim();
+        const optionLabel = (selectedOption?.label ?? '').trim();
+        const optionValue = (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? optionId ?? '').trim();
+
+        return {
+          featureLabel: feature.featureLabel.trim(),
+          featureId: feature.featureId.trim(),
+          optionLabel,
+          optionId,
+          optionValue,
+        };
+      })
+      .filter((entry) => entry.featureLabel && entry.featureId && entry.optionLabel && entry.optionValue);
+
+  const buildCapturedSamplerPayload = (snapshot: SamplerSourceSnapshot) => {
+    const parsed = snapshot.parsed;
+    const selectedOptions = buildSamplerSelectedOptions(parsed);
+
+    return {
+      capturedAt: new Date().toISOString(),
+      capturedFrom: snapshot.source,
+      capturedFromAt: snapshot.capturedAt,
+      cpqContext: {
+        ruleset: parsed.ruleset,
+        namespace: parsed.namespace ?? selectedRuleset?.namespace ?? fallbackRuleset.namespace,
+        headerId: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+        detailId: parsed.detailId ?? null,
+        sessionId: parsed.sessionId,
+        sourceHeaderId: parsed.sourceHeaderId ?? null,
+        sourceDetailId: parsed.sourceDetailId ?? null,
+      },
+      bikeSummary: {
+        description: parsed.productDescription ?? null,
+        ipn: parsed.ipnCode ?? null,
+        price: parsed.configuredPrice ?? null,
+      },
+      selectedOptions,
+      debug: parsed.debug ?? null,
+      raw: snapshot.rawResponse ?? parsed.raw ?? null,
+    };
+  };
+
+  const saveCurrentConfigurationToSampler = async () => {
+    if (!selectedAccount) {
+      setSamplerSaveStatus('error');
+      setSamplerSaveMessage('Select an account before saving to sampler.');
+      setSamplerSaveDetail('Account context is required for sampler persistence.');
+      return;
+    }
+
+    if (!lastSamplerSource) {
+      setSamplerSaveStatus('error');
+      setSamplerSaveMessage('No Start/Configure response available to capture.');
+      setSamplerSaveDetail('Sampler save only uses the latest StartConfiguration/Configure state, never Finalize.');
+      return;
+    }
+
+    setSamplerSaveStatus('saving');
+    setSamplerSaveMessage('Saving active configuration to CPQ_sampler_result...');
+    setSamplerSaveDetail(null);
+
+    try {
+      const capturedPayload = buildCapturedSamplerPayload(lastSamplerSource);
+      const response = await fetch('/api/cpq/sampler-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ipn_code: capturedPayload.bikeSummary.ipn,
+          ruleset: lastSamplerSource.parsed.ruleset || ruleset,
+          account_code: selectedAccount.account_code,
+          customer_id: selectedAccount.customer_id,
+          currency: selectedAccount.currency,
+          language: selectedAccount.language,
+          country_code: selectedAccount.country_code,
+          namespace: capturedPayload.cpqContext.namespace,
+          header_id: capturedPayload.cpqContext.headerId,
+          detail_id: capturedPayload.cpqContext.detailId,
+          session_id: capturedPayload.cpqContext.sessionId,
+          json_result: capturedPayload,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        row?: { id: number; created_at: string };
+      };
+
+      if (!response.ok || !payload.row) {
+        throw new Error(payload.error ?? 'Sampler save failed');
+      }
+
+      setSamplerSaveStatus('saved');
+      setSamplerSaveMessage(
+        `Sampler row ${payload.row.id} saved from ${lastSamplerSource.source} (${capturedPayload.selectedOptions.length} selected options).`,
+      );
+    } catch (error) {
+      setSamplerSaveStatus('error');
+      setSamplerSaveMessage('Failed to save current configuration to sampler.');
+      setSamplerSaveDetail(error instanceof Error ? error.message : 'Sampler save failed');
     }
   };
 
@@ -959,6 +1093,13 @@ export default function BikeBuilderPage() {
           </button>
           <button
             style={styles.button}
+            onClick={() => void saveCurrentConfigurationToSampler()}
+            disabled={samplerSaveStatus === 'saving' || !lastSamplerSource || bulkProgress.running}
+          >
+            {samplerSaveStatus === 'saving' ? 'Saving sampler row…' : 'Save current configuration to sampler'}
+          </button>
+          <button
+            style={styles.button}
             onClick={generateCombinations}
             disabled={requestState.loading || !state?.features?.length || bulkProgress.running}
           >
@@ -983,6 +1124,11 @@ export default function BikeBuilderPage() {
           <div>DetailId: {state?.detailId ?? '-'}</div>
           <div>IPN: {state?.ipnCode ?? '-'}</div>
           <div>Save status: {saveMessage}</div>
+          <div>
+            Sampler save status: {samplerSaveMessage}
+            {lastSamplerSource ? ` (source: ${lastSamplerSource.source})` : ''}
+          </div>
+          {samplerSaveDetail ? <div>Sampler detail: {samplerSaveDetail}</div> : null}
           {isDebugEnabled && saveTechnicalDetail ? (
             <details>
               <summary>Save technical detail</summary>

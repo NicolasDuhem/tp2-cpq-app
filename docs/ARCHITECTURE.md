@@ -38,6 +38,15 @@
   - Capture finalized `detailId`
   - Persist in `cpq_configuration_references`
 
+## Secondary sampler capture architecture
+- `/cpq` also exposes **Save current configuration to sampler** (secondary/manual support flow).
+- Capture source is strictly:
+  1. latest `POST /api/cpq/configure` response, or
+  2. if no configure yet, latest `POST /api/cpq/init` response.
+- Capture source explicitly excludes `POST /api/cpq/finalize`.
+- `POST /api/cpq/sampler-result` persists one row into `CPQ_sampler_result`.
+- Captured `json_result` includes CPQ context, bike summary, selected options, and debug/raw snippets.
+
 ## Retrieve architecture
 - Retrieve is deterministic and reference-driven:
   - Resolve one row from `cpq_configuration_references`
@@ -45,5 +54,5 @@
   - Start a new session and hydrate UI from returned configuration state
 
 ## Deprecated from primary flow
-- Traversal/sampler behaviors are retired from `/cpq` manual save/retrieve.
-- `CPQ_sampler_result` remains for historical/result uses only.
+- Full legacy traversal UI is retired from `/cpq` manual save/retrieve.
+- Sampler persistence remains available only as a manual secondary flow + image-management feeder.

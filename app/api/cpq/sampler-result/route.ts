@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       session_id: body.session_id as string | null | undefined,
       json_result: body.json_result,
     });
-    return NextResponse.json(result, { status: result.status === 'inserted' ? 201 : 200 });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to persist sampler result' },

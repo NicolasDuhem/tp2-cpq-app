@@ -21,8 +21,8 @@ type PersistedSamplerResultRow = {
 };
 
 export type PersistSamplerResultOutcome = {
-  status: 'inserted' | 'duplicate';
-  row?: PersistedSamplerResultRow;
+  status: 'inserted';
+  row: PersistedSamplerResultRow;
 };
 
 const asOptionalText = (value: unknown) => {
@@ -37,8 +37,6 @@ const asRequiredText = (value: unknown, field: string) => {
 };
 
 export async function persistSamplerResult(input: PersistedSamplerResultInput) {
-  const ipnCode = asOptionalText(input.ipn_code);
-  const countryCode = asOptionalText(input.country_code);
   const rows = (await sql`
     insert into CPQ_sampler_result (
       ipn_code,
@@ -55,37 +53,25 @@ export async function persistSamplerResult(input: PersistedSamplerResultInput) {
       json_result
     )
     values (
-      ${ipnCode},
+      ${asOptionalText(input.ipn_code)},
       ${asRequiredText(input.ruleset, 'ruleset')},
       ${asRequiredText(input.account_code, 'account_code')},
       ${asOptionalText(input.customer_id)},
       ${asOptionalText(input.currency)},
       ${asOptionalText(input.language)},
-      ${countryCode},
+      ${asOptionalText(input.country_code)},
       ${asOptionalText(input.namespace)},
       ${asOptionalText(input.header_id)},
       ${asOptionalText(input.detail_id)},
       ${asOptionalText(input.session_id)},
       ${JSON.stringify(input.json_result ?? {})}::jsonb
     )
-    on conflict do nothing
     returning id, created_at
   `) as PersistedSamplerResultRow[];
 
-  if (rows[0]) {
-    return { status: 'inserted', row: rows[0] } satisfies PersistSamplerResultOutcome;
+  if (!rows[0]) {
+    throw new Error('Failed to insert sampler result');
   }
 
-  if (ipnCode && countryCode) {
-    const existingRows = (await sql`
-      select id, created_at
-      from CPQ_sampler_result
-      where ipn_code = ${ipnCode} and country_code = ${countryCode}
-      order by created_at asc, id asc
-      limit 1
-    `) as PersistedSamplerResultRow[];
-    return { status: 'duplicate', row: existingRows[0] } satisfies PersistSamplerResultOutcome;
-  }
-
-  return { status: 'duplicate' } satisfies PersistSamplerResultOutcome;
+  return { status: 'inserted', row: rows[0] } satisfies PersistSamplerResultOutcome;
 }

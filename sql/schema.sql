@@ -42,16 +42,14 @@ create table if not exists CPQ_sampler_result (
   json_result jsonb not null default '{}'::jsonb,
   processed_for_image_sync boolean not null default false,
   processed_for_image_sync_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create index if not exists cpq_sampler_result_ipn_created_idx
   on CPQ_sampler_result (ipn_code, created_at desc, id desc);
 create index if not exists cpq_sampler_result_filter_idx
   on CPQ_sampler_result (ruleset, account_code, country_code);
-create unique index if not exists cpq_sampler_result_ipn_country_unique_idx
-  on CPQ_sampler_result (ipn_code, country_code)
-  where ipn_code is not null and country_code is not null;
 create index if not exists cpq_sampler_result_unprocessed_idx
   on CPQ_sampler_result (processed_for_image_sync)
   where processed_for_image_sync = false;
