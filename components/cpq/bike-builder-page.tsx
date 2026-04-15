@@ -8,54 +8,20 @@ type RequestState = {
   error?: string;
 };
 
-type SelectedOptionLookup = {
-  featureLabel: string;
-  optionLabel: string;
-  optionValue: string;
-};
-
-type ResolvedImageLayer = SelectedOptionLookup & {
-  slot: 1 | 2 | 3 | 4;
-  pictureLink: string;
-};
-
-type ImageLayerResolution = {
-  layers: ResolvedImageLayer[];
-  matchedSelections: SelectedOptionLookup[];
-  unmatchedSelections: SelectedOptionLookup[];
-};
-
-type CallType = 'StartConfiguration' | 'Configure';
-type TraversalStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
-type EstimateMode = 'lower-bound-adaptive';
+type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 type CpqRouteResponse = {
   sessionId: string;
   parsed: NormalizedBikeBuilderState;
   rawResponse: unknown;
-  requestBody?: unknown;
-  downstreamRequestBody?: unknown;
-  downstreamResponseBody?: unknown;
-  callType?: CallType;
   error?: string;
-  details?: string;
 };
 
-type DebugTraceEntry = {
-  action: string;
-  endpoint: string;
-  route: string;
-  timestamp: string;
-  payload: unknown;
-  title?: string;
-};
-
-type RulesetTarget = {
-  label: string;
-  ruleset: string;
+type RulesetRecord = {
+  id: number;
+  cpq_ruleset: string;
   namespace: string;
-  partName: string;
-  headerId: string;
+  header_id: string;
 };
 
 type AccountContextRecord = {
@@ -67,200 +33,112 @@ type AccountContextRecord = {
   country_code: string;
 };
 
-type CanonicalSourceIdentity = {
-  canonicalHeaderId: string;
-  canonicalDetailId: string;
+type ConfigurationReferenceRow = {
+  configuration_reference: string;
   ruleset: string;
-  namespace: string;
-  configurationReference?: string;
-};
-
-type RulesetRecord = {
-  id: number;
-  cpq_ruleset: string;
   namespace: string;
   header_id: string;
-  description?: string | null;
+  finalized_detail_id: string;
+  account_code: string | null;
+  customer_id: string | null;
+  currency: string | null;
+  language: string | null;
+  country_code: string | null;
+  final_ipn_code: string | null;
+  product_description: string | null;
 };
 
-type CapturedOption = {
-  featureLabel: string;
-  featureId: string;
-  optionLabel: string;
-  optionId: string;
-  optionValue?: string;
-};
-
-type CapturedConfiguration = {
-  sequence: number;
-  timestamp: string;
-  traversalLevel: number;
-  traversalPath: TraversalStep[];
-  traversalPathKey: string;
-  parentPathKey: string;
-  changedFeatureId: string;
-  changedOptionId: string;
-  changedOptionValue?: string;
-  ruleset: string;
-  namespace: string;
-  headerId: string;
-  detailId: string;
-  sessionId: string;
-  baseDetailId: string;
-  sourceHeaderId: string;
-  sourceDetailId: string;
-  configurationReference?: string;
-  branchDetailId: string;
-  samplerMode: 'configuration-traversal';
-  description?: string;
-  ipn?: string;
-  price?: number;
-  selectedOptions: CapturedOption[];
-  dropdownOrderSnapshot: {
-    level: number;
-    featureId: string;
-    featureLabel: string;
-    selectedOptionId?: string;
-    selectedOptionLabel?: string;
-    selectedOptionValue?: string;
-  }[];
-  signature: string;
-  rawSnippet?: unknown;
-};
-
-type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
-type BuilderMode = 'market' | 'bike-across-market';
-
-type TraversalStep = {
-  featureLabel: string;
-  featureId: string;
-  optionLabel: string;
-  optionId: string;
-  optionValue?: string;
-};
-
-type MarketRunStatus = 'started' | 'rebuilt' | 'saved' | 'duplicate-skipped' | 'incompatible-failed';
-
-type MarketRunReport = {
-  marketCode: string;
-  runDetailId: string;
-  sourceDetailId: string;
-  sourceHeaderId: string;
-  status: MarketRunStatus;
-  saveStatus: 'saved' | 'duplicate' | 'not-saved' | 'failed';
-  rebuilt: boolean;
-  sessionId?: string;
-  ipnCode?: string;
-  detailIdUsedForSave?: string;
-  message: string;
-};
-
-type VisibleConfiguratorDropdown = {
-  featureId: string;
-  featureLabel: string;
-  selectedOptionId?: string;
-  selectedValue?: string;
-  options: BikeBuilderFeatureOption[];
-};
-
-const fallbackTarget: RulesetTarget = {
-  label: 'Fallback',
-  ruleset: 'BROMPTON_BIKE_BUILDER',
+const fallbackRuleset = {
+  cpq_ruleset: 'BBLV6_G-LineMY26',
   namespace: 'Default',
-  partName: 'BROMPTON_BIKE_BUILDER',
-  headerId: 'Simulator',
+  header_id: 'Simulator',
 };
 
 export default function BikeBuilderPage() {
-  const [builderMode, setBuilderMode] = useState<BuilderMode>('market');
-  const [target, setTarget] = useState<RulesetTarget>(fallbackTarget);
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
   const [rulesets, setRulesets] = useState<RulesetRecord[]>([]);
-  const [accountCode, setAccountCode] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [currency, setCurrency] = useState('');
-  const [language, setLanguage] = useState('');
-  const [countryCode, setCountryCode] = useState('');
-  const [detailId, setDetailId] = useState(() => crypto.randomUUID());
-  const [state, setState] = useState<NormalizedBikeBuilderState | null>(null);
-  const [canonicalSourceIdentity, setCanonicalSourceIdentity] = useState<CanonicalSourceIdentity | null>(null);
-  const [configurationReferenceInput, setConfigurationReferenceInput] = useState('');
-  const [referenceSaveStatus, setReferenceSaveStatus] = useState<PersistenceStatus>('idle');
-  const [referenceSaveMessage, setReferenceSaveMessage] = useState('-');
-  const [referenceRetrieveStatus, setReferenceRetrieveStatus] = useState<PersistenceStatus>('idle');
-  const [referenceRetrieveMessage, setReferenceRetrieveMessage] = useState('-');
-  const [requestState, setRequestState] = useState<RequestState>({ loading: false });
-  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
-  const [debugOpen, setDebugOpen] = useState(false);
-  const [lastCallType, setLastCallType] = useState<CallType>('StartConfiguration');
-  const [lastChangedFeatureId, setLastChangedFeatureId] = useState<string>('');
-  const [lastChangedOptionId, setLastChangedOptionId] = useState<string>('');
-  const [lastChangedOptionValue, setLastChangedOptionValue] = useState<string>('');
-  const [lastSelectedBefore, setLastSelectedBefore] = useState<string>('');
-  const [lastSelectedAfter, setLastSelectedAfter] = useState<string>('');
-  const [lastSelectedMatchSource, setLastSelectedMatchSource] = useState<string>('');
-  const [lastRawRequest, setLastRawRequest] = useState<unknown>(null);
-  const [lastRawResponse, setLastRawResponse] = useState<unknown>(null);
-  const [lastSaveRequestDebug, setLastSaveRequestDebug] = useState<DebugTraceEntry | null>(null);
-  const [lastSaveResponseDebug, setLastSaveResponseDebug] = useState<DebugTraceEntry | null>(null);
-  const [lastConfigureRequestDebug, setLastConfigureRequestDebug] = useState<DebugTraceEntry | null>(null);
-  const [lastConfigureResponseDebug, setLastConfigureResponseDebug] = useState<DebugTraceEntry | null>(null);
-  const [lastConfigureUrl, setLastConfigureUrl] = useState<string>('');
-  const [lastConfigureSelectionCount, setLastConfigureSelectionCount] = useState<number>(0);
-  const [lastSessionIdSent, setLastSessionIdSent] = useState<string>('');
-  const [lastPreviousFeatureCurrentValue, setLastPreviousFeatureCurrentValue] = useState<string>('');
-  const [lastRequestedOptionValue, setLastRequestedOptionValue] = useState<string>('');
-  const [lastReturnedFeatureCurrentValue, setLastReturnedFeatureCurrentValue] = useState<string>('');
-  const [imageLayers, setImageLayers] = useState<ResolvedImageLayer[]>([]);
-  const [imageLayersLoading, setImageLayersLoading] = useState(false);
-  const [imageLayersError, setImageLayersError] = useState<string>('');
-  const [imageLayerDebug, setImageLayerDebug] = useState<Omit<ImageLayerResolution, 'layers'>>({
-    matchedSelections: [],
-    unmatchedSelections: [],
-  });
 
-  const [traversalStatus, setTraversalStatus] = useState<TraversalStatus>('idle');
-  const [currentFeatureLabel, setCurrentFeatureLabel] = useState('-');
-  const [currentOptionLabel, setCurrentOptionLabel] = useState('-');
-  const [currentTraversalLevel, setCurrentTraversalLevel] = useState(0);
-  const [currentTraversalPathLabel, setCurrentTraversalPathLabel] = useState('-');
-  const [currentTraversalBaseDetailId, setCurrentTraversalBaseDetailId] = useState('-');
-  const [currentTraversalSourceDetailId, setCurrentTraversalSourceDetailId] = useState('-');
-  const [currentTraversalDetailId, setCurrentTraversalDetailId] = useState('-');
-  const [currentTraversalSessionId, setCurrentTraversalSessionId] = useState('-');
-  const [currentTraversalCallType, setCurrentTraversalCallType] = useState<CallType | '-'>('-');
-  const [estimatedTotal, setEstimatedTotal] = useState(0);
-  const [processedCount, setProcessedCount] = useState(0);
-  const [duplicateSkippedCount, setDuplicateSkippedCount] = useState(0);
-  const [visitedStateCount, setVisitedStateCount] = useState(0);
-  const [results, setResults] = useState<CapturedConfiguration[]>([]);
-  const [delayMs, setDelayMs] = useState(5000);
-  const [maxResults, setMaxResults] = useState(150);
-  const [maxConfigureCalls, setMaxConfigureCalls] = useState(1000);
-  const [maxRuntimeMinutes, setMaxRuntimeMinutes] = useState(15);
-  const [configureCallCount, setConfigureCallCount] = useState(0);
-  const [includeSelectedOption, setIncludeSelectedOption] = useState(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [delayRemainingMs, setDelayRemainingMs] = useState(0);
-  const [expandedResultKeys, setExpandedResultKeys] = useState<Record<string, boolean>>({});
-  const [persistenceEnabled, setPersistenceEnabled] = useState(true);
-  const [savedToDatabaseCount, setSavedToDatabaseCount] = useState(0);
-  const [saveErrorCount, setSaveErrorCount] = useState(0);
-  const [lastSaveStatus, setLastSaveStatus] = useState<PersistenceStatus>('idle');
-  const [lastSaveMessage, setLastSaveMessage] = useState('-');
-  const [estimateMode] = useState<EstimateMode>('lower-bound-adaptive');
-  const [manualSaveStatus, setManualSaveStatus] = useState<PersistenceStatus>('idle');
-  const [manualSaveMessage, setManualSaveMessage] = useState('-');
-  const [manualSaveTimestamp, setManualSaveTimestamp] = useState<string | null>(null);
-  const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
-  const [selectedAcrossMarketCountryCodes, setSelectedAcrossMarketCountryCodes] = useState<string[]>([]);
-  const [acrossMarketStatus, setAcrossMarketStatus] = useState<TraversalStatus>('idle');
-  const [acrossMarketProcessedCount, setAcrossMarketProcessedCount] = useState(0);
-  const [acrossMarketSavedCount, setAcrossMarketSavedCount] = useState(0);
-  const [acrossMarketDuplicateCount, setAcrossMarketDuplicateCount] = useState(0);
-  const [acrossMarketCurrentCountry, setAcrossMarketCurrentCountry] = useState('-');
-  const [acrossMarketLastMessage, setAcrossMarketLastMessage] = useState('-');
-  const [acrossMarketReports, setAcrossMarketReports] = useState<MarketRunReport[]>([]);
+  const [accountCode, setAccountCode] = useState('');
+  const [ruleset, setRuleset] = useState(fallbackRuleset.cpq_ruleset);
+
+  const [state, setState] = useState<NormalizedBikeBuilderState | null>(null);
+  const [requestState, setRequestState] = useState<RequestState>({ loading: false });
+
+  const [configurationReferenceInput, setConfigurationReferenceInput] = useState('');
+  const [saveStatus, setSaveStatus] = useState<PersistenceStatus>('idle');
+  const [saveMessage, setSaveMessage] = useState('-');
+  const [retrieveStatus, setRetrieveStatus] = useState<PersistenceStatus>('idle');
+  const [retrieveMessage, setRetrieveMessage] = useState('-');
+  const [lastSavedReference, setLastSavedReference] = useState<ConfigurationReferenceRow | null>(null);
+
+  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
+  const manualSessionClosedRef = useRef(false);
+
+  const selectedRuleset = useMemo(
+    () => rulesets.find((entry) => entry.cpq_ruleset === ruleset) ?? null,
+    [ruleset, rulesets],
+  );
+
+  const selectedAccount = useMemo(
+    () => accountContexts.find((entry) => entry.account_code === accountCode) ?? null,
+    [accountCode, accountContexts],
+  );
+
+  const startConfiguration = async () => {
+    if (!selectedAccount) {
+      setRequestState({ loading: false, error: 'Select an account code to start configuration.' });
+      return;
+    }
+
+    const activeRuleset = selectedRuleset ?? {
+      ...fallbackRuleset,
+      cpq_ruleset: ruleset,
+    };
+
+    setRequestState({ loading: true });
+    setSaveStatus('idle');
+    setSaveMessage('-');
+
+    try {
+      const response = await fetch('/api/cpq/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ruleset: activeRuleset.cpq_ruleset,
+          partName: activeRuleset.cpq_ruleset,
+          namespace: activeRuleset.namespace,
+          headerId: activeRuleset.header_id,
+          detailId: crypto.randomUUID(),
+          sourceHeaderId: '',
+          sourceDetailId: '',
+          context: {
+            accountCode: selectedAccount.account_code,
+            company: selectedAccount.account_code,
+            accountType: 'Dealer',
+            customerId: selectedAccount.customer_id,
+            currency: selectedAccount.currency,
+            language: selectedAccount.language,
+            countryCode: selectedAccount.country_code,
+            customerLocation: selectedAccount.country_code,
+          } satisfies Partial<BikeBuilderContext>,
+        }),
+      });
+
+      const payload = (await response.json()) as CpqRouteResponse;
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'StartConfiguration failed');
+      }
+
+      setState(payload.parsed);
+      manualSessionClosedRef.current = false;
+      setRequestState({ loading: false });
+    } catch (error) {
+      setRequestState({
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to start configuration',
+      });
+    }
+  };
 
   useEffect(() => {
     const loadSetup = async () => {
@@ -277,1994 +155,374 @@ export default function BikeBuilderPage() {
         setAccountContexts(nextAccounts);
         setRulesets(nextRulesets);
 
-        const firstAccount = nextAccounts[0];
-        if (firstAccount) {
-          setAccountCode(firstAccount.account_code);
-          setCustomerId(firstAccount.customer_id);
-          setCurrency(firstAccount.currency);
-          setLanguage(firstAccount.language);
-          setCountryCode(firstAccount.country_code);
+        if (nextAccounts.length > 0) {
+          setAccountCode(nextAccounts[0].account_code);
         }
 
-        const firstRuleset = nextRulesets[0];
-        if (firstRuleset) {
-          setTarget({
-            label: firstRuleset.cpq_ruleset,
-            ruleset: firstRuleset.cpq_ruleset,
-            partName: firstRuleset.cpq_ruleset,
-            namespace: firstRuleset.namespace,
-            headerId: firstRuleset.header_id,
-          });
+        if (nextRulesets.length > 0) {
+          setRuleset(nextRulesets[0].cpq_ruleset);
         }
       } catch {
-        setRequestState({ loading: false, error: 'Failed to load CPQ setup data. Check /cpq/setup entries.' });
+        setRequestState({ loading: false, error: 'Failed to load account context and rulesets from setup.' });
       }
     };
 
     void loadSetup();
   }, []);
 
-  const currentDetailId = state?.detailId ?? detailId;
-  const traversalControlRef = useRef({ stop: false, pause: false });
-  const runStartRef = useRef<number | null>(null);
-  const configureCountRef = useRef(0);
-  const persistedTupleKeysRef = useRef<Set<string>>(new Set());
-  const currentDetailIdRef = useRef(currentDetailId);
-
-  const visibleFeatures = state?.features ?? [];
-  const hasFeatures = visibleFeatures.length > 0;
-  const uniqueCountryMarkets = useMemo(() => {
-    const seen = new Set<string>();
-    return accountContexts.filter((item) => {
-      if (!item.country_code || seen.has(item.country_code)) return false;
-      seen.add(item.country_code);
-      return true;
-    });
-  }, [accountContexts]);
-
   useEffect(() => {
-    if (!highlightedFeatureId) return;
-    const timeout = window.setTimeout(() => setHighlightedFeatureId(null), 1100);
-    return () => window.clearTimeout(timeout);
-  }, [highlightedFeatureId]);
+    if (!selectedAccount || !ruleset) return;
+    void startConfiguration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountCode, ruleset]);
 
-  useEffect(() => {
-    currentDetailIdRef.current = currentDetailId;
-  }, [currentDetailId]);
-  const selectedOptionsForImageLookup = useMemo<SelectedOptionLookup[]>(() => {
-    if (!state) return [];
-    return state.features
-      .filter((feature) => feature.selectedOptionId)
-      .map((feature) => {
-        const selected = feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId);
-        return {
-          featureLabel: String(feature.featureLabel ?? '').trim(),
-          optionLabel: String(selected?.label ?? feature.selectedOptionId ?? '').trim(),
-          optionValue: String(selected?.value ?? feature.selectedValue ?? '').trim(),
-        };
-      })
-      .filter((selection) => selection.featureLabel && selection.optionLabel && selection.optionValue);
-  }, [state]);
-  const selectedOptionsForImageLookupSignature = useMemo(
-    () => selectedOptionsForImageLookup.map((item) => `${item.featureLabel}|${item.optionLabel}|${item.optionValue}`).join('||'),
-    [selectedOptionsForImageLookup],
-  );
-
-  const summaryPrice = useMemo(() => {
-    if (state?.configuredPrice === undefined) return '-';
-    return state.configuredPrice.toLocaleString(undefined, { style: 'currency', currency: 'GBP' });
-  }, [state?.configuredPrice]);
-
-  useEffect(() => {
-    if (!state?.sessionId) {
-      setImageLayers([]);
-      setImageLayersError('');
-      setImageLayersLoading(false);
-      setImageLayerDebug({ matchedSelections: [], unmatchedSelections: [] });
+  const configureOption = async (featureId: string, option: BikeBuilderFeatureOption) => {
+    if (!state?.sessionId || manualSessionClosedRef.current) {
+      setRequestState({ loading: false, error: 'No active session. Start a new configuration session.' });
       return;
     }
 
-    const controller = new AbortController();
-    const resolveImageLayers = async () => {
-      setImageLayersLoading(true);
-      setImageLayersError('');
-      try {
-        const res = await fetch('/api/cpq/image-layers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ selectedOptions: selectedOptionsForImageLookup }),
-          signal: controller.signal,
-        });
-        const payload = (await res.json().catch(() => ({}))) as Partial<ImageLayerResolution> & { error?: string };
-        if (!res.ok) {
-          throw new Error(payload.error ?? 'Failed to resolve image layers');
-        }
-        setImageLayers(Array.isArray(payload.layers) ? payload.layers : []);
-        setImageLayerDebug({
-          matchedSelections: Array.isArray(payload.matchedSelections) ? payload.matchedSelections : [],
-          unmatchedSelections: Array.isArray(payload.unmatchedSelections) ? payload.unmatchedSelections : [],
-        });
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setImageLayers([]);
-        setImageLayerDebug({ matchedSelections: [], unmatchedSelections: [] });
-        setImageLayersError(error instanceof Error ? error.message : String(error));
-      } finally {
-        if (!controller.signal.aborted) setImageLayersLoading(false);
-      }
-    };
-
-    void resolveImageLayers();
-    return () => controller.abort();
-  }, [state?.sessionId, selectedOptionsForImageLookup, selectedOptionsForImageLookupSignature]);
-
-  const updateElapsed = () => {
-    if (!runStartRef.current) return;
-    setElapsedMs(Date.now() - runStartRef.current);
-  };
-
-  const hasExceededRunLimits = () => {
-    updateElapsed();
-    if (results.length >= maxResults) return true;
-    if (configureCountRef.current >= maxConfigureCalls) return true;
-    if (runStartRef.current && Date.now() - runStartRef.current >= maxRuntimeMinutes * 60 * 1000) return true;
-    return false;
-  };
-
-  const getVisibleConfiguratorDropdowns = (nextState: NormalizedBikeBuilderState): VisibleConfiguratorDropdown[] =>
-    (nextState.features ?? [])
-      .filter((feature) => feature.isVisible !== false)
-      .map((feature) => ({
-        featureId: feature.featureId,
-        featureLabel: feature.featureLabel,
-        selectedOptionId: feature.selectedOptionId,
-        selectedValue: feature.selectedValue,
-        options: feature.availableOptions,
-      }));
-
-  const getTraversableDropdowns = (nextState: NormalizedBikeBuilderState): VisibleConfiguratorDropdown[] =>
-    getVisibleConfiguratorDropdowns(nextState)
-      .filter((feature) => feature.options.length > 0 && feature.options.some((option) => isOptionTraversable(option)))
-      .map((feature) => ({
-        ...feature,
-        options: feature.options.filter((option) => {
-          if (!isOptionTraversable(option)) return false;
-          if (!includeSelectedOption && feature.selectedOptionId === option.optionId) return false;
-          return true;
-        }),
-      }))
-      .filter((feature) => feature.options.length > 0);
-
-  const getVisibleCombinationLowerBound = (nextState: NormalizedBikeBuilderState) => {
-    const features = getVisibleConfiguratorDropdowns(nextState)
-      .map((feature) => ({
-        ...feature,
-        options: feature.options.filter((option) => isOptionTraversable(option)),
-      }))
-      .filter((feature) => feature.options.length > 0);
-    const combinationCount = features.reduce((product, feature) => {
-      const selectableCount = feature.options.length;
-      return product * BigInt(Math.max(1, selectableCount));
-    }, 1n);
-    return Number(combinationCount > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : combinationCount);
-  };
-
-  const getSelectedOptions = (nextState: NormalizedBikeBuilderState) => {
-    const source = getVisibleConfiguratorDropdowns(nextState);
-    return source
-      .filter((feature) => feature.selectedOptionId)
-      .map((feature) => {
-        const selected = feature.options.find((opt) => opt.optionId === feature.selectedOptionId);
-        return {
-          featureLabel: feature.featureLabel,
-          featureId: feature.featureId,
-          optionLabel: selected?.label ?? feature.selectedOptionId ?? '(none)',
-          optionId: feature.selectedOptionId ?? '(none)',
-          optionValue: selected?.value ?? feature.selectedValue,
-        } satisfies CapturedOption;
-      })
-      .sort((a, b) => a.featureId.localeCompare(b.featureId));
-  };
-
-  const hydrateRebuiltConfiguration = async (
-    seedState: NormalizedBikeBuilderState,
-    contextOverride: Partial<BikeBuilderContext>,
-  ): Promise<{ nextState: NormalizedBikeBuilderState; latestRaw: unknown; latestDetailId: string }> => {
-    const firstSelectedFeature = seedState.features.find(
-      (feature) => feature.selectedOptionId && feature.selectedValue !== undefined,
-    );
-    if (!firstSelectedFeature || !firstSelectedFeature.selectedOptionId) {
-      return {
-        nextState: seedState,
-        latestRaw: seedState.raw,
-        latestDetailId: seedState.detailId ?? currentDetailIdRef.current ?? crypto.randomUUID(),
-      };
-    }
-
-    const configured = await changeOption(
-      firstSelectedFeature.featureId,
-      firstSelectedFeature.selectedOptionId,
-      firstSelectedFeature.selectedValue,
-      { sourceStateOverride: seedState, contextOverride },
-    );
-
-    if (!configured) {
-      throw new Error('Unable to run post-StartConfiguration Configure hydration step.');
-    }
-
-    return {
-      nextState: configured.parsed,
-      latestRaw: configured.rawResponse,
-      latestDetailId: configured.parsed.detailId ?? seedState.detailId ?? currentDetailIdRef.current ?? crypto.randomUUID(),
-    };
-  };
-
-  const signatureForState = (nextState: NormalizedBikeBuilderState) => {
-    const selected = getSelectedOptions(nextState)
-      .map((item) => `${item.featureId}:${item.optionId}:${item.optionValue ?? ''}`)
-      .sort();
-    return `${target.ruleset}::${selected.join('|')}`;
-  };
-
-  const pathToKey = (path: TraversalStep[]) => path.map((step) => `${step.featureId}:${step.optionId}:${step.optionValue ?? ''}`).join(' > ');
-
-  const snapshotDropdownOrder = (nextState: NormalizedBikeBuilderState) =>
-    getVisibleConfiguratorDropdowns(nextState).map((feature, index) => {
-      const selected = feature.options.find((option) => option.optionId === feature.selectedOptionId);
-      return {
-        level: index + 1,
-        featureId: feature.featureId,
-        featureLabel: feature.featureLabel,
-        selectedOptionId: feature.selectedOptionId,
-        selectedOptionLabel: selected?.label,
-        selectedOptionValue: selected?.value ?? feature.selectedValue,
-      };
-    });
-
-  const buildCapturedConfiguration = ({
-    nextState,
-    activeDetailId,
-    baseDetailId,
-    sourceHeaderId,
-    sourceDetailId,
-    rawSnippet,
-    traversalLevel,
-    traversalPath,
-    parentPathKey,
-    changedFeatureId,
-    changedOptionId,
-    changedOptionValue,
-    source,
-  }: {
-    nextState: NormalizedBikeBuilderState;
-    activeDetailId: string;
-    baseDetailId: string;
-    sourceHeaderId: string;
-    sourceDetailId: string;
-    rawSnippet?: unknown;
-    traversalLevel: number;
-    traversalPath: TraversalStep[];
-    parentPathKey: string;
-    changedFeatureId: string;
-    changedOptionId: string;
-    changedOptionValue?: string;
-    source?: string;
-  }): CapturedConfiguration & { source?: string } => {
-    const signature = signatureForState(nextState);
-    return {
-      sequence: results.length + 1,
-      timestamp: new Date().toISOString(),
-      traversalLevel,
-      traversalPath,
-      traversalPathKey: pathToKey(traversalPath),
-      parentPathKey,
-      changedFeatureId,
-      changedOptionId,
-      changedOptionValue,
-      ruleset: target.ruleset,
-      namespace: target.namespace,
-      headerId: target.headerId,
-      detailId: activeDetailId,
-      sessionId: nextState.sessionId,
-      baseDetailId,
-      sourceHeaderId,
-      sourceDetailId,
-      configurationReference: canonicalSourceIdentity?.configurationReference,
-      branchDetailId: activeDetailId,
-      samplerMode: 'configuration-traversal',
-      description: nextState.productDescription,
-      ipn: nextState.ipnCode,
-      price: nextState.configuredPrice,
-      selectedOptions: getSelectedOptions(nextState),
-      dropdownOrderSnapshot: snapshotDropdownOrder(nextState),
-      signature,
-      rawSnippet,
-      source,
-    };
-  };
-
-  const postSamplerResult = async (
-    captured: CapturedConfiguration,
-    contextOverride?: Partial<BikeBuilderContext>,
-  ) => {
-    const persistedCountryCode = contextOverride?.countryCode ?? countryCode;
-    const requestPayload = {
-      ipn_code: captured.ipn ?? null,
-      ruleset: captured.ruleset,
-      account_code: contextOverride?.accountCode ?? accountCode,
-      customer_id: (contextOverride?.customerId ?? customerId) || null,
-      currency: (contextOverride?.currency ?? currency) || null,
-      language: (contextOverride?.language ?? language) || null,
-      country_code: persistedCountryCode || null,
-      namespace: captured.namespace,
-      header_id: captured.headerId,
-      detail_id: captured.detailId,
-      session_id: captured.sessionId,
-      json_result: captured,
-    };
-    const res = await fetch('/api/cpq/sampler-result', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestPayload),
-    });
-
-    if (!res.ok) {
-      const payload = (await res.json().catch(() => ({ error: 'Unknown persistence error' }))) as { error?: string };
-      throw new Error(payload.error ?? 'Unknown persistence error');
-    }
-
-    const responsePayload = (await res.json().catch(() => ({}))) as { status?: 'inserted' | 'duplicate'; row?: { id?: number } };
-    return { requestPayload, responsePayload };
-  };
-
-  const persistCapturedResult = async (
-    captured: CapturedConfiguration,
-    options: { source: 'traversal' | 'manual'; contextOverride?: Partial<BikeBuilderContext> },
-  ) => {
-    const persistedCountryCode = options.contextOverride?.countryCode ?? countryCode;
-    if (options.source === 'traversal') {
-      setLastSaveStatus('saving');
-    } else {
-      setManualSaveStatus('saving');
-      setManualSaveMessage('Saving current configuration…');
-    }
-    const tupleKey = `${captured.ipn ?? ''}::${persistedCountryCode || ''}`;
-    if (captured.ipn && persistedCountryCode && persistedTupleKeysRef.current.has(tupleKey)) {
-      if (options.source === 'traversal') {
-        setDuplicateSkippedCount((prev) => prev + 1);
-        setLastSaveStatus('saved');
-        setLastSaveMessage(`duplicate skipped for ${captured.ipn} / ${persistedCountryCode}`);
-      } else {
-        setManualSaveStatus('saved');
-        setManualSaveMessage(`Duplicate skipped for ${captured.ipn} / ${persistedCountryCode}`);
-      }
-      return false;
-    }
+    setRequestState({ loading: true });
+    setActiveFeatureId(featureId);
 
     try {
-      const timestamp = new Date().toISOString();
-      const { requestPayload, responsePayload } = await postSamplerResult(captured, options.contextOverride);
-      setLastSaveRequestDebug({
-        action: options.source === 'manual' ? 'manual-save-button' : 'traversal-auto-save',
-        endpoint: '/api/cpq/sampler-result',
-        route: '/api/cpq/sampler-result',
-        timestamp,
-        payload: requestPayload,
-        title: `${captured.ipn ?? 'No IPN'} · ${captured.detailId}`,
-      });
-      setLastSaveResponseDebug({
-        action: options.source === 'manual' ? 'manual-save-button' : 'traversal-auto-save',
-        endpoint: '/api/cpq/sampler-result',
-        route: '/api/cpq/sampler-result',
-        timestamp,
-        payload: responsePayload,
-        title: extractDebugTitle(responsePayload),
-      });
-
-      if (responsePayload.status === 'duplicate') {
-        if (captured.ipn && persistedCountryCode) {
-          persistedTupleKeysRef.current.add(tupleKey);
-        }
-        if (options.source === 'traversal') {
-          setDuplicateSkippedCount((prev) => prev + 1);
-          setLastSaveStatus('saved');
-          setLastSaveMessage(
-            `duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${persistedCountryCode || 'unknown country'}`,
-          );
-        } else {
-          setManualSaveStatus('saved');
-          setManualSaveMessage(`Duplicate skipped for ${captured.ipn ?? 'unknown ipn'} / ${persistedCountryCode || 'unknown country'}`);
-        }
-        return false;
-      }
-
-      if (captured.ipn && persistedCountryCode) {
-        persistedTupleKeysRef.current.add(tupleKey);
-      }
-      if (options.source === 'traversal') {
-        setSavedToDatabaseCount((prev) => prev + 1);
-        setLastSaveStatus('saved');
-        setLastSaveMessage(`saved result #${captured.sequence}${responsePayload.row?.id ? ` (row ${responsePayload.row.id})` : ''}`);
-      } else {
-        const savedAt = new Date().toISOString();
-        setManualSaveStatus('saved');
-        setManualSaveTimestamp(savedAt);
-        setManualSaveMessage(
-          `Saved at ${new Date(savedAt).toLocaleString()}${responsePayload.row?.id ? ` (row ${responsePayload.row.id})` : ''}`,
-        );
-      }
-      return true;
-    } catch (error) {
-      if (options.source === 'traversal') {
-        setSaveErrorCount((prev) => prev + 1);
-        setLastSaveStatus('error');
-        setLastSaveMessage(error instanceof Error ? error.message : String(error));
-      } else {
-        setManualSaveStatus('error');
-        setManualSaveMessage(error instanceof Error ? error.message : String(error));
-      }
-      console.error('[cpq/sampler] persist failed', { captured, error });
-      return false;
-    }
-  };
-
-  const resolveCanonicalSourceIdentity = ({
-    payloadState,
-    nextTarget,
-    canonicalHeaderId,
-    canonicalDetailId,
-    configurationReference,
-  }: {
-    payloadState: NormalizedBikeBuilderState;
-    nextTarget: RulesetTarget;
-    canonicalHeaderId?: string;
-    canonicalDetailId?: string;
-    configurationReference?: string;
-  }): CanonicalSourceIdentity | null => {
-    const resolvedHeaderId =
-      canonicalHeaderId ?? payloadState.sourceHeaderId ?? canonicalSourceIdentity?.canonicalHeaderId ?? nextTarget.headerId;
-    const resolvedDetailId =
-      canonicalDetailId ?? payloadState.sourceDetailId ?? canonicalSourceIdentity?.canonicalDetailId ?? null;
-    if (!resolvedHeaderId || !resolvedDetailId) return null;
-    return {
-      canonicalHeaderId: resolvedHeaderId,
-      canonicalDetailId: resolvedDetailId,
-      ruleset: payloadState.ruleset ?? nextTarget.ruleset,
-      namespace: payloadState.namespace ?? nextTarget.namespace,
-      configurationReference: configurationReference ?? payloadState.configurationReference ?? canonicalSourceIdentity?.configurationReference,
-    };
-  };
-
-
-  const applyCpqResponseState = (nextState: NormalizedBikeBuilderState) => {
-    const priorState = state;
-    const refreshedDetailId = nextState.detailId ?? currentDetailIdRef.current;
-    const normalizedStateBase = {
-      ...nextState,
-      sourceHeaderId: nextState.sourceHeaderId ?? priorState?.sourceHeaderId,
-      sourceDetailId: nextState.sourceDetailId ?? priorState?.sourceDetailId,
-      configurationReference: nextState.configurationReference ?? priorState?.configurationReference,
-    };
-    const normalizedState =
-      refreshedDetailId && normalizedStateBase.detailId !== refreshedDetailId
-        ? { ...normalizedStateBase, detailId: refreshedDetailId }
-        : normalizedStateBase;
-
-    setState(normalizedState);
-    if (refreshedDetailId) {
-      setDetailId(refreshedDetailId);
-      setCurrentTraversalDetailId(refreshedDetailId);
-    }
-
-    return { normalizedState, refreshedDetailId };
-  };
-
-  const rebuildConfigurationFromCanonicalSource = async ({
-    canonicalIdentity,
-    contextOverride,
-    configurationReference,
-  }: {
-    canonicalIdentity: CanonicalSourceIdentity;
-    contextOverride?: Partial<BikeBuilderContext>;
-    configurationReference?: string;
-  }) => {
-    const newWorkingDetailId = crypto.randomUUID();
-    const startPayload = await startFreshConfiguration(
-      {
-        ...target,
-        headerId: canonicalIdentity.canonicalHeaderId,
-        ruleset: canonicalIdentity.ruleset,
-        namespace: canonicalIdentity.namespace,
-      },
-      newWorkingDetailId,
-      {
-        contextOverride,
-        sourceHeaderId: canonicalIdentity.canonicalHeaderId,
-        sourceDetailId: canonicalIdentity.canonicalDetailId,
-      },
-    );
-    const rebuilt = await hydrateRebuiltConfiguration(startPayload.parsed, contextOverride ?? {});
-    const refreshedState = {
-      ...rebuilt.nextState,
-      sourceHeaderId: canonicalIdentity.canonicalHeaderId,
-      sourceDetailId: canonicalIdentity.canonicalDetailId,
-      configurationReference,
-    };
-    const { normalizedState } = applyCpqResponseState(refreshedState);
-    setCanonicalSourceIdentity({
-      ...canonicalIdentity,
-      configurationReference,
-    });
-    return { normalizedState, latestRaw: rebuilt.latestRaw, latestDetailId: rebuilt.latestDetailId };
-  };
-
-  const saveConfigurationReference = async () => {
-    if (!state) {
-      setReferenceSaveStatus('error');
-      setReferenceSaveMessage('Load a configuration before saving a reference.');
-      return;
-    }
-
-    const canonicalIdentity =
-      resolveCanonicalSourceIdentity({ payloadState: state, nextTarget: target }) ??
-      ({
-        canonicalHeaderId: target.headerId,
-        canonicalDetailId: state.detailId ?? currentDetailIdRef.current ?? '',
-        ruleset: target.ruleset,
-        namespace: target.namespace,
-        configurationReference: undefined,
-      } satisfies CanonicalSourceIdentity);
-
-    if (!canonicalIdentity.canonicalDetailId) {
-      setReferenceSaveStatus('error');
-      setReferenceSaveMessage('Missing canonical detailId to persist reference.');
-      return;
-    }
-
-    setReferenceSaveStatus('saving');
-    setReferenceSaveMessage('Saving canonical retrievable reference…');
-    try {
-      const res = await fetch('/api/cpq/configuration-references', {
+      const response = await fetch('/api/cpq/configure', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          configuration_reference: configurationReferenceInput.trim() || undefined,
-          source_header_id: canonicalIdentity.canonicalHeaderId,
-          source_detail_id: canonicalIdentity.canonicalDetailId,
-          ruleset: canonicalIdentity.ruleset,
-          namespace: canonicalIdentity.namespace,
-          product_description: state.productDescription ?? null,
-          account_code: accountCode || null,
-          country_code: countryCode || null,
-          source_working_detail_id: state.detailId ?? null,
-          source_session_id: state.sessionId ?? null,
-          json_snapshot: {
-            ipnCode: state.ipnCode ?? null,
-            selectedOptionIds: state.selectedOptionIds ?? [],
+          sessionId: state.sessionId,
+          featureId,
+          optionId: option.optionId,
+          optionValue: option.value ?? option.optionId,
+          ruleset,
+          context: {
+            accountCode: selectedAccount?.account_code,
+            customerId: selectedAccount?.customer_id,
+            currency: selectedAccount?.currency,
+            language: selectedAccount?.language,
+            countryCode: selectedAccount?.country_code,
           },
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as {
-        row?: { configuration_reference: string };
-        canonicalCopy?: { target_header_id?: string; target_detail_id?: string };
-        error?: string;
-      };
-      if (!res.ok || !payload.row) {
-        throw new Error(payload.error ?? 'Failed to save canonical reference via ProductConfigurator CopyConfiguration.');
+
+      const payload = (await response.json()) as CpqRouteResponse;
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Configure failed');
       }
-      setConfigurationReferenceInput(payload.row.configuration_reference);
-      setReferenceSaveStatus('saved');
-      setReferenceSaveMessage(`Saved retrievable canonical reference ${payload.row.configuration_reference}.`);
-      setCanonicalSourceIdentity({
-        ...canonicalIdentity,
-        canonicalHeaderId: payload.canonicalCopy?.target_header_id ?? canonicalIdentity.canonicalHeaderId,
-        canonicalDetailId: payload.canonicalCopy?.target_detail_id ?? canonicalIdentity.canonicalDetailId,
-        configurationReference: payload.row.configuration_reference,
-      });
+
+      setState(payload.parsed);
+      setRequestState({ loading: false });
     } catch (error) {
-      setReferenceSaveStatus('error');
-      setReferenceSaveMessage(error instanceof Error ? error.message : String(error));
+      setRequestState({ loading: false, error: error instanceof Error ? error.message : 'Configure failed' });
+    } finally {
+      setActiveFeatureId(null);
     }
   };
 
-  const retrieveConfigurationReference = async () => {
-    const reference = configurationReferenceInput.trim();
-    if (!reference) {
-      setReferenceRetrieveStatus('error');
-      setReferenceRetrieveMessage('Enter a configuration reference first.');
+  const saveConfiguration = async () => {
+    if (!state?.sessionId || !selectedAccount) {
+      setSaveStatus('error');
+      setSaveMessage('No active session to finalize/save.');
       return;
     }
-    setReferenceRetrieveStatus('saving');
-    setReferenceRetrieveMessage('Resolving reference and rebuilding configuration…');
+
+    setSaveStatus('saving');
+    setSaveMessage('Finalizing configuration...');
+
     try {
-      const lookupRes = await fetch('/api/cpq/retrieve-configuration', {
+      const finalizeResponse = await fetch('/api/cpq/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: state.sessionId, ruleset }),
+      });
+      const finalizePayload = (await finalizeResponse.json()) as CpqRouteResponse;
+      if (!finalizeResponse.ok) {
+        throw new Error(finalizePayload.error ?? 'FinalizeConfiguration failed');
+      }
+
+      const finalizedState = finalizePayload.parsed;
+      const finalizedDetailId = finalizedState.detailId ?? '';
+      if (!finalizedDetailId) {
+        throw new Error('FinalizeConfiguration did not return a detailId.');
+      }
+
+      const saveResponse = await fetch('/api/cpq/configuration-references', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ruleset,
+          namespace: selectedRuleset?.namespace ?? fallbackRuleset.namespace,
+          header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          finalized_detail_id: finalizedDetailId,
+          source_header_id: finalizedState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          source_detail_id: finalizedState.sourceDetailId ?? null,
+          account_code: selectedAccount.account_code,
+          customer_id: selectedAccount.customer_id,
+          account_type: 'Dealer',
+          company: selectedAccount.account_code,
+          currency: selectedAccount.currency,
+          language: selectedAccount.language,
+          country_code: selectedAccount.country_code,
+          customer_location: selectedAccount.country_code,
+          application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
+          application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
+          finalized_session_id: state.sessionId,
+          final_ipn_code: finalizedState.ipnCode ?? null,
+          product_description: finalizedState.productDescription ?? null,
+          finalize_response_json: finalizePayload.rawResponse,
+          json_snapshot: {
+            parsed: finalizedState,
+            finalizeRawResponse: finalizePayload.rawResponse,
+            retrievedAt: new Date().toISOString(),
+          },
+        }),
+      });
+
+      const savePayload = (await saveResponse.json()) as { row?: ConfigurationReferenceRow; error?: string };
+      if (!saveResponse.ok || !savePayload.row) {
+        throw new Error(savePayload.error ?? 'Failed to persist configuration reference');
+      }
+
+      setLastSavedReference(savePayload.row);
+      setConfigurationReferenceInput(savePayload.row.configuration_reference);
+      setSaveStatus('saved');
+      setSaveMessage(`Saved ${savePayload.row.configuration_reference} with finalized detailId ${finalizedDetailId}.`);
+
+      manualSessionClosedRef.current = true;
+      setState(null);
+      setRequestState({ loading: false, error: undefined });
+    } catch (error) {
+      setSaveStatus('error');
+      setSaveMessage(error instanceof Error ? error.message : 'Save failed');
+    }
+  };
+
+  const retrieveConfiguration = async () => {
+    const reference = configurationReferenceInput.trim();
+    if (!reference) {
+      setRetrieveStatus('error');
+      setRetrieveMessage('configuration_reference is required.');
+      return;
+    }
+
+    setRetrieveStatus('saving');
+    setRetrieveMessage('Retrieving configuration...');
+
+    try {
+      const response = await fetch('/api/cpq/retrieve-configuration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ configuration_reference: reference }),
       });
-      const lookupPayload = (await lookupRes.json().catch(() => ({}))) as {
+      const payload = (await response.json()) as {
         error?: string;
-        resolved?: {
-          canonical_header_id: string;
-          canonical_detail_id: string;
-          ruleset: string;
-          namespace: string;
-        };
+        parsed?: NormalizedBikeBuilderState;
+        resolved?: ConfigurationReferenceRow;
       };
-      if (!lookupRes.ok || !lookupPayload.resolved) {
-        throw new Error(lookupPayload.error ?? 'Reference not found.');
+
+      if (!response.ok || !payload.parsed || !payload.resolved) {
+        throw new Error(payload.error ?? 'Retrieve failed');
       }
 
-      const canonicalIdentity: CanonicalSourceIdentity = {
-        canonicalHeaderId: lookupPayload.resolved.canonical_header_id,
-        canonicalDetailId: lookupPayload.resolved.canonical_detail_id,
-        ruleset: lookupPayload.resolved.ruleset,
-        namespace: lookupPayload.resolved.namespace,
-        configurationReference: reference,
-      };
-      const rebuilt = await rebuildConfigurationFromCanonicalSource({ canonicalIdentity, configurationReference: reference });
-      setReferenceRetrieveStatus('saved');
-      setReferenceRetrieveMessage(
-        `Retrieved ${reference}. New working detailId: ${rebuilt.latestDetailId} (canonical detailId unchanged).`,
-      );
+      setState(payload.parsed);
+      manualSessionClosedRef.current = false;
+      setRuleset(payload.resolved.ruleset);
+      if (payload.resolved.account_code) {
+        setAccountCode(payload.resolved.account_code);
+      }
+
+      setRetrieveStatus('saved');
+      setRetrieveMessage(`Retrieved ${payload.resolved.configuration_reference}. New session ${payload.parsed.sessionId}.`);
+      setLastSavedReference(payload.resolved);
     } catch (error) {
-      setReferenceRetrieveStatus('error');
-      setReferenceRetrieveMessage(error instanceof Error ? error.message : String(error));
+      setRetrieveStatus('error');
+      setRetrieveMessage(error instanceof Error ? error.message : 'Retrieve failed');
     }
   };
-
-  const saveCurrentConfiguration = async (
-    options?: {
-      source?: 'manual' | 'traversal';
-      nextState?: NormalizedBikeBuilderState;
-      traversalLevel?: number;
-      traversalPath?: TraversalStep[];
-      parentPathKey?: string;
-      changedFeatureId?: string;
-      changedOptionId?: string;
-      changedOptionValue?: string;
-      sourceTag?: string;
-      detailIdOverride?: string;
-      sourceDetailIdOverride?: string;
-      sourceHeaderIdOverride?: string;
-      rawSnippetOverride?: unknown;
-      contextOverride?: Partial<BikeBuilderContext>;
-    },
-  ) => {
-    const source = options?.source ?? 'manual';
-    const sourceState = options?.nextState ?? state;
-
-    if (!sourceState) {
-      setManualSaveStatus('error');
-      setManualSaveMessage('Load or build a configuration before saving.');
-      return undefined;
-    }
-
-    const activeDetailId = options?.detailIdOverride ?? sourceState.detailId ?? currentDetailIdRef.current ?? crypto.randomUUID();
-    const sourceDetailId = options?.sourceDetailIdOverride ?? activeDetailId;
-    const sourceHeaderId = options?.sourceHeaderIdOverride ?? canonicalSourceIdentity?.canonicalHeaderId ?? target.headerId;
-    const captured = buildCapturedConfiguration({
-      nextState: sourceState,
-      activeDetailId,
-      baseDetailId: sourceDetailId,
-      sourceHeaderId,
-      sourceDetailId,
-      rawSnippet: options?.rawSnippetOverride ?? extractRawSnippet(lastRawResponse),
-      traversalLevel: options?.traversalLevel ?? 0,
-      traversalPath: options?.traversalPath ?? [],
-      parentPathKey: options?.parentPathKey ?? 'manual-root',
-      changedFeatureId: options?.changedFeatureId ?? 'manual-save',
-      changedOptionId: options?.changedOptionId ?? 'manual-save',
-      changedOptionValue: options?.changedOptionValue ?? 'manual',
-      source: options?.sourceTag ?? (source === 'manual' ? 'manual-save' : 'traversal-auto-save'),
-    });
-
-    if (source === 'traversal') {
-      setResults((prev) => [...prev, { ...captured, sequence: prev.length + 1 }]);
-      if (!persistenceEnabled) return undefined;
-    }
-
-    return persistCapturedResult(captured, { source, contextOverride: options?.contextOverride });
-  };
-
-  const sleepWithControl = async (ms: number) => {
-    const chunk = 250;
-    let remaining = ms;
-
-    while (remaining > 0) {
-      if (traversalControlRef.current.stop) return false;
-      if (traversalControlRef.current.pause) {
-        setTraversalStatus('paused');
-        while (traversalControlRef.current.pause && !traversalControlRef.current.stop) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          updateElapsed();
-        }
-        if (traversalControlRef.current.stop) return false;
-        setTraversalStatus('running');
-      }
-
-      const waitFor = Math.min(chunk, remaining);
-      setDelayRemainingMs(remaining);
-      await new Promise((resolve) => setTimeout(resolve, waitFor));
-      remaining -= waitFor;
-      updateElapsed();
-    }
-
-    setDelayRemainingMs(0);
-    return !traversalControlRef.current.stop;
-  };
-
-  const startFreshConfiguration = async (
-    nextTarget = target,
-    freshDetailId = crypto.randomUUID(),
-    options?: {
-      clearState?: boolean;
-      sourceDetailId?: string;
-      sourceHeaderId?: string;
-      contextOverride?: Partial<BikeBuilderContext>;
-    },
-  ): Promise<CpqRouteResponse> => {
-    setRequestState({ loading: true });
-    setActiveFeatureId(null);
-    if (options?.clearState !== false) {
-      setState(null);
-    }
-    const requestBody = {
-      ruleset: nextTarget.ruleset,
-      namespace: nextTarget.namespace,
-      partName: nextTarget.partName,
-      headerId: nextTarget.headerId,
-      detailId: freshDetailId,
-      sourceHeaderId: options?.sourceHeaderId,
-      sourceDetailId: options?.sourceDetailId,
-      context: {
-        accountCode: options?.contextOverride?.accountCode ?? accountCode,
-        company: options?.contextOverride?.company ?? options?.contextOverride?.accountCode ?? accountCode,
-        accountType: options?.contextOverride?.accountType,
-        customerId: options?.contextOverride?.customerId ?? customerId,
-        currency: options?.contextOverride?.currency ?? currency,
-        language: options?.contextOverride?.language ?? language,
-        countryCode: options?.contextOverride?.countryCode ?? countryCode,
-        customerLocation: options?.contextOverride?.customerLocation ?? options?.contextOverride?.countryCode ?? countryCode,
-      },
-    };
-
-    const res = await fetch('/api/cpq/init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    const payload = (await res.json()) as CpqRouteResponse;
-    if (!res.ok) {
-      const message = payload.details ?? payload.error ?? 'Failed to initialize configuration';
-      setRequestState({ loading: false, error: message });
-      throw new Error(message);
-    }
-
-    const enrichedParsed: NormalizedBikeBuilderState = {
-      ...payload.parsed,
-      namespace: payload.parsed.namespace ?? nextTarget.namespace,
-      sourceHeaderId: options?.sourceHeaderId ?? payload.parsed.sourceHeaderId ?? nextTarget.headerId,
-      sourceDetailId: options?.sourceDetailId ?? payload.parsed.sourceDetailId,
-    };
-
-    const { normalizedState, refreshedDetailId } = applyCpqResponseState(enrichedParsed);
-    const canonicalIdentity = resolveCanonicalSourceIdentity({
-      payloadState: enrichedParsed,
-      nextTarget,
-      canonicalHeaderId: options?.sourceHeaderId,
-      canonicalDetailId: options?.sourceDetailId,
-    });
-    if (canonicalIdentity) {
-      setCanonicalSourceIdentity(canonicalIdentity);
-    }
-    if (!refreshedDetailId) {
-      setDetailId(freshDetailId);
-    }
-    setLastCallType('StartConfiguration');
-    setCurrentTraversalCallType('StartConfiguration');
-    setLastChangedFeatureId('');
-    setLastChangedOptionId('');
-    setLastChangedOptionValue('');
-    setLastSelectedBefore('');
-    setLastSelectedAfter('');
-    setLastSelectedMatchSource('');
-    setLastRawRequest(payload.requestBody ?? requestBody);
-    setLastRawResponse(payload.rawResponse);
-    setLastConfigureUrl('');
-    setLastConfigureSelectionCount(0);
-    setLastSessionIdSent('');
-    setLastPreviousFeatureCurrentValue('');
-    setLastRequestedOptionValue('');
-    setLastReturnedFeatureCurrentValue('');
-    setRequestState({ loading: false });
-    return { ...payload, parsed: normalizedState };
-  };
-
-  const onRulesetChange = async (nextRulesetId: string) => {
-    const picked = rulesets.find((item) => String(item.id) === nextRulesetId);
-    if (!picked) return;
-    const nextTarget = {
-      label: picked.cpq_ruleset,
-      ruleset: picked.cpq_ruleset,
-      partName: picked.cpq_ruleset,
-      namespace: picked.namespace,
-      headerId: picked.header_id,
-    };
-    setTarget(nextTarget);
-    try {
-      await startFreshConfiguration(nextTarget, crypto.randomUUID());
-    } catch {
-      // handled above
-    }
-  };
-
-  const onAccountCodeChange = (nextAccountCode: string) => {
-    const picked = accountContexts.find((item) => item.account_code === nextAccountCode);
-    setAccountCode(nextAccountCode);
-    if (!picked) return;
-    setCustomerId(picked.customer_id);
-    setCurrency(picked.currency);
-    setLanguage(picked.language);
-    setCountryCode(picked.country_code);
-  };
-
-  const configureSelection = async ({
-    sourceState,
-    featureId,
-    optionId,
-    optionValue,
-    respectTraversalDelay = false,
-    contextOverride,
-  }: {
-    sourceState: NormalizedBikeBuilderState;
-    featureId: string;
-    optionId: string;
-    optionValue?: string;
-    respectTraversalDelay?: boolean;
-    contextOverride?: Partial<BikeBuilderContext>;
-  }): Promise<CpqRouteResponse> => {
-    if (respectTraversalDelay && configureCountRef.current > 0 && delayMs > 0) {
-      const keepGoing = await sleepWithControl(delayMs);
-      if (!keepGoing) {
-        throw new Error('Traversal stopped before configure call.');
-      }
-    }
-    setRequestState({ loading: true });
-    setActiveFeatureId(featureId);
-    const sourceFeature = sourceState.features.find((feature) => feature.featureId === featureId);
-    const selectedBefore = sourceFeature?.availableOptions.find((option) => option.optionId === sourceFeature.selectedOptionId);
-
-    const requestBody = {
-      sessionId: sourceState.sessionId,
-      ruleset: target.ruleset,
-      featureId,
-      optionId,
-      optionValue,
-      context: {
-        accountCode: contextOverride?.accountCode ?? accountCode,
-        customerId: contextOverride?.customerId ?? customerId,
-        currency: contextOverride?.currency ?? currency,
-        language: contextOverride?.language ?? language,
-        countryCode: contextOverride?.countryCode ?? countryCode,
-      },
-    };
-    const configureTimestamp = new Date().toISOString();
-    setLastConfigureRequestDebug({
-      action: 'manual-option-change',
-      endpoint: '/api/cpq/configure',
-      route: '/api/cpq/configure',
-      timestamp: configureTimestamp,
-      payload: requestBody,
-      title: `${featureId} -> ${optionId}`,
-    });
-
-    const res = await fetch('/api/cpq/configure', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    const payload = (await res.json()) as CpqRouteResponse;
-    if (!res.ok) {
-      const message = payload.details ?? payload.error ?? 'Failed to configure selection';
-      setRequestState({ loading: false, error: message });
-      setActiveFeatureId(null);
-      throw new Error(message);
-    }
-
-    configureCountRef.current += 1;
-    setConfigureCallCount(configureCountRef.current);
-    const { normalizedState } = applyCpqResponseState(payload.parsed);
-    setLastCallType('Configure');
-    setCurrentTraversalCallType('Configure');
-    setLastChangedFeatureId(featureId);
-    setHighlightedFeatureId(featureId);
-    setLastChangedOptionId(optionId);
-    setLastChangedOptionValue(optionValue ?? '');
-    setLastSelectedBefore(selectedBefore?.label ?? sourceFeature?.selectedOptionId ?? '');
-    const updatedFeature = normalizedState.features.find((feature) => feature.featureId === featureId);
-    const selectedAfter = updatedFeature?.availableOptions.find((option) => option.optionId === updatedFeature.selectedOptionId);
-    setLastSelectedAfter(selectedAfter?.label ?? updatedFeature?.selectedOptionId ?? '');
-    setLastSelectedMatchSource(updatedFeature?.selectedMatchSource ?? '');
-    setLastRawRequest(payload.requestBody ?? requestBody);
-    setLastRawResponse(payload.rawResponse);
-    const debugRequest = payload.requestBody as { finalConfigureUrl?: string; sessionID?: string; selections?: unknown[] } | undefined;
-    setLastConfigureUrl(debugRequest?.finalConfigureUrl ?? '');
-    setLastSessionIdSent(debugRequest?.sessionID ?? '');
-    setLastConfigureSelectionCount(Array.isArray(debugRequest?.selections) ? debugRequest.selections.length : 0);
-    setLastPreviousFeatureCurrentValue(sourceFeature?.currentValue ?? '');
-    setLastRequestedOptionValue(optionValue ?? '');
-    setLastReturnedFeatureCurrentValue(updatedFeature?.currentValue ?? '');
-    setLastConfigureResponseDebug({
-      action: 'manual-option-change',
-      endpoint: debugRequest?.finalConfigureUrl ?? '/api/cpq/configure',
-      route: '/api/cpq/configure',
-      timestamp: configureTimestamp,
-      payload: {
-        appRouteResponse: payload,
-        downstreamRequestBody: payload.downstreamRequestBody ?? payload.requestBody,
-        downstreamResponseBody: payload.downstreamResponseBody ?? payload.rawResponse,
-      },
-      title: extractDebugTitle(payload.downstreamResponseBody ?? payload.rawResponse),
-    });
-    setRequestState({ loading: false });
-    setActiveFeatureId(null);
-
-    return { ...payload, parsed: normalizedState };
-  };
-
-  const applyUiOptionChange = async ({
-    featureId,
-    optionId,
-    optionValue,
-    sourceStateOverride,
-    respectTraversalDelay = false,
-    contextOverride,
-  }: {
-    featureId: string;
-    optionId: string;
-    optionValue?: string;
-    sourceStateOverride?: NormalizedBikeBuilderState;
-    respectTraversalDelay?: boolean;
-    contextOverride?: Partial<BikeBuilderContext>;
-  }) => {
-    const sourceState = sourceStateOverride ?? state;
-    if (!sourceState?.sessionId) {
-      throw new Error('No active session to configure.');
-    }
-    return configureSelection({ sourceState, featureId, optionId, optionValue, respectTraversalDelay, contextOverride });
-  };
-
-  const changeOption = async (
-    featureId: string,
-    optionId: string,
-    optionValue?: string,
-    options?: {
-      suppressError?: boolean;
-      sourceStateOverride?: NormalizedBikeBuilderState;
-      respectTraversalDelay?: boolean;
-      contextOverride?: Partial<BikeBuilderContext>;
-    },
-  ) => {
-    try {
-      return await applyUiOptionChange({
-        featureId,
-        optionId,
-        optionValue,
-        sourceStateOverride: options?.sourceStateOverride,
-        respectTraversalDelay: options?.respectTraversalDelay,
-        contextOverride: options?.contextOverride,
-      });
-    } catch (error) {
-      if (!options?.suppressError) throw error;
-      // UI error state already set.
-    }
-    return undefined;
-  };
-
-  const runConfigurationTraversal = async (seedState: NormalizedBikeBuilderState) => {
-    let processedConfigurations = 0;
-    const visitedSignatures = new Set<string>([signatureForState(seedState)]);
-
-    setVisitedStateCount(visitedSignatures.size);
-    setEstimatedTotal(Math.max(1, getVisibleCombinationLowerBound(seedState)));
-
-    const traverseFromLevel = async (
-      sourceState: NormalizedBikeBuilderState,
-      level: number,
-      traversalPath: TraversalStep[],
-    ): Promise<void> => {
-      if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-
-      const dropdowns = getTraversableDropdowns(sourceState);
-      setEstimatedTotal((prev) => Math.max(prev, getVisibleCombinationLowerBound(sourceState)));
-      if (level >= dropdowns.length) return;
-
-      const feature = dropdowns[level];
-      for (const option of feature.options) {
-        if (traversalControlRef.current.stop || hasExceededRunLimits()) return;
-
-        const nextStep = {
-          featureId: feature.featureId,
-          featureLabel: feature.featureLabel,
-          optionId: option.optionId,
-          optionLabel: option.label,
-          optionValue: option.value,
-        } satisfies TraversalStep;
-        const nextPath = [...traversalPath, nextStep];
-
-        setCurrentTraversalLevel(level + 1);
-        setCurrentFeatureLabel(feature.featureLabel);
-        setCurrentOptionLabel(option.label);
-        setCurrentTraversalPathLabel(pathToKey(nextPath));
-        setCurrentTraversalSourceDetailId(sourceState.detailId ?? currentDetailIdRef.current ?? '-');
-        setCurrentTraversalDetailId(sourceState.detailId ?? currentDetailIdRef.current ?? '-');
-        setCurrentTraversalSessionId(sourceState.sessionId ?? '-');
-
-        const payload = await changeOption(feature.featureId, option.optionId, option.value, {
-          suppressError: false,
-          sourceStateOverride: sourceState,
-          respectTraversalDelay: true,
-        });
-
-        if (!payload) continue;
-        const nextState = payload.parsed;
-
-        const stateSignature = signatureForState(nextState);
-        if (!visitedSignatures.has(stateSignature)) {
-          visitedSignatures.add(stateSignature);
-          setVisitedStateCount(visitedSignatures.size);
-        }
-
-        processedConfigurations += 1;
-        setProcessedCount(processedConfigurations);
-
-        await saveCurrentConfiguration({
-          source: 'traversal',
-          nextState,
-          traversalLevel: level + 1,
-          traversalPath: nextPath,
-          parentPathKey: pathToKey(nextPath.slice(0, -1)) || 'root',
-          changedFeatureId: feature.featureId,
-          changedOptionId: option.optionId,
-          changedOptionValue: option.value,
-        });
-
-        await traverseFromLevel(nextState, level + 1, nextPath);
-      }
-    };
-
-    await traverseFromLevel(seedState, 0, []);
-  };
-
-  const startTraversal = async () => {
-    if (!state) {
-      setRequestState({ loading: false, error: 'Load a configuration before traversal.' });
-      return;
-    }
-
-    traversalControlRef.current.stop = false;
-    traversalControlRef.current.pause = false;
-    runStartRef.current = Date.now();
-    configureCountRef.current = 0;
-    setConfigureCallCount(0);
-    setElapsedMs(0);
-    setDelayRemainingMs(0);
-    setCurrentFeatureLabel('-');
-    setCurrentOptionLabel('-');
-    setCurrentTraversalBaseDetailId('-');
-    setCurrentTraversalSourceDetailId('-');
-    setCurrentTraversalDetailId('-');
-    setCurrentTraversalSessionId('-');
-    setCurrentTraversalCallType('-');
-    setProcessedCount(0);
-    setEstimatedTotal(0);
-    setVisitedStateCount(0);
-    setDuplicateSkippedCount(0);
-    persistedTupleKeysRef.current = new Set();
-    setTraversalStatus('running');
-    setCurrentTraversalBaseDetailId(currentDetailIdRef.current ?? '-');
-    setRequestState({ loading: false });
-    setSavedToDatabaseCount(0);
-    setSaveErrorCount(0);
-    setLastSaveStatus('idle');
-    setLastSaveMessage('-');
-    setResults([]);
-    setExpandedResultKeys({});
-
-    try {
-      await runConfigurationTraversal(state);
-
-      if (traversalControlRef.current.stop) {
-        setTraversalStatus('stopped');
-      } else if (hasExceededRunLimits()) {
-        setTraversalStatus('completed');
-      } else {
-        setTraversalStatus('completed');
-      }
-    } catch (error) {
-      setTraversalStatus('failed');
-      setRequestState({ loading: false, error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      updateElapsed();
-      setCurrentFeatureLabel('-');
-      setCurrentOptionLabel('-');
-      setCurrentTraversalLevel(0);
-      setCurrentTraversalPathLabel('-');
-      setCurrentTraversalBaseDetailId('-');
-      setCurrentTraversalSourceDetailId('-');
-      setCurrentTraversalDetailId('-');
-      setCurrentTraversalSessionId('-');
-      setCurrentTraversalCallType('-');
-      setDelayRemainingMs(0);
-    }
-  };
-
-  const pauseTraversal = () => {
-    traversalControlRef.current.pause = true;
-    setTraversalStatus('paused');
-  };
-
-  const resumeTraversal = () => {
-    traversalControlRef.current.pause = false;
-    setTraversalStatus('running');
-  };
-
-  const stopTraversal = () => {
-    traversalControlRef.current.stop = true;
-    traversalControlRef.current.pause = false;
-    setTraversalStatus('stopped');
-  };
-
-  const clearResults = () => {
-    setResults([]);
-    setExpandedResultKeys({});
-  };
-
-  const exportResults = () => {
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `cpq-traversal-results-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const toggleAcrossMarketCountry = (country: string) => {
-    setSelectedAcrossMarketCountryCodes((prev) =>
-      prev.includes(country) ? prev.filter((item) => item !== country) : [...prev, country],
-    );
-  };
-
-  const runAcrossSelectedMarkets = async () => {
-    if (!state) {
-      setAcrossMarketStatus('failed');
-      setAcrossMarketLastMessage('Load a configuration before running across markets.');
-      return;
-    }
-    if (!selectedAcrossMarketCountryCodes.length) {
-      setAcrossMarketStatus('failed');
-      setAcrossMarketLastMessage('Select at least one country code.');
-      return;
-    }
-
-    const baselineStateSnapshot = state;
-    const baselineDetailIdSnapshot = currentDetailIdRef.current;
-    const sourceIdentity =
-      canonicalSourceIdentity ??
-      resolveCanonicalSourceIdentity({
-        payloadState: baselineStateSnapshot,
-        nextTarget: target,
-      });
-
-    if (!sourceIdentity) {
-      setAcrossMarketStatus('failed');
-      setAcrossMarketLastMessage('Canonical source identity is missing (canonicalHeaderId/canonicalDetailId).');
-      return;
-    }
-
-    setAcrossMarketStatus('running');
-    setAcrossMarketProcessedCount(0);
-    setAcrossMarketSavedCount(0);
-    setAcrossMarketDuplicateCount(0);
-    setAcrossMarketCurrentCountry('-');
-    setAcrossMarketLastMessage('Starting across-market run…');
-    setAcrossMarketReports([]);
-
-    try {
-      for (let index = 0; index < selectedAcrossMarketCountryCodes.length; index += 1) {
-        const selectedCountryCode = selectedAcrossMarketCountryCodes[index];
-        const contextRow = uniqueCountryMarkets.find((row) => row.country_code === selectedCountryCode);
-        if (!contextRow) {
-          setAcrossMarketProcessedCount(index + 1);
-          setAcrossMarketLastMessage(`No account context found for country ${selectedCountryCode}.`);
-          setAcrossMarketReports((prev) => [
-            ...prev,
-            {
-              marketCode: selectedCountryCode,
-              runDetailId: '-',
-              sourceHeaderId: sourceIdentity.canonicalHeaderId,
-              sourceDetailId: sourceIdentity.canonicalDetailId,
-              status: 'incompatible-failed',
-              saveStatus: 'failed',
-              rebuilt: false,
-              message: 'No account context row available for country.',
-            },
-          ]);
-          continue;
-        }
-
-        const contextOverride: Partial<BikeBuilderContext> = {
-          accountCode: contextRow.account_code,
-          company: contextRow.account_code,
-          accountType: 'Dealer',
-          customerId: contextRow.customer_id,
-          currency: contextRow.currency,
-          language: contextRow.language,
-          countryCode: contextRow.country_code,
-          customerLocation: contextRow.country_code,
-        };
-
-        try {
-          setAcrossMarketCurrentCountry(selectedCountryCode);
-          const runDetailId = crypto.randomUUID();
-          setAcrossMarketReports((prev) => [
-            ...prev,
-            {
-              marketCode: selectedCountryCode,
-              runDetailId,
-              sourceHeaderId: sourceIdentity.canonicalHeaderId,
-              sourceDetailId: sourceIdentity.canonicalDetailId,
-              status: 'started',
-              saveStatus: 'not-saved',
-              rebuilt: false,
-              message: 'StartConfiguration request started.',
-            },
-          ]);
-          setAcrossMarketLastMessage(`Starting ${selectedCountryCode} retrieve from canonical reference…`);
-          const rebuilt = await rebuildConfigurationFromCanonicalSource({
-            canonicalIdentity: sourceIdentity,
-            contextOverride,
-            configurationReference: sourceIdentity.configurationReference,
-          });
-          const nextState = rebuilt.normalizedState;
-          const latestRaw = rebuilt.latestRaw;
-          const latestDetailId = rebuilt.latestDetailId;
-          const rebuiltSuccessfully = Boolean(nextState.sessionId && latestDetailId);
-          const ipnCode = nextState.ipnCode;
-
-          let saveStatus: MarketRunReport['saveStatus'] = 'not-saved';
-          let finalStatus: MarketRunStatus = rebuiltSuccessfully ? 'rebuilt' : 'incompatible-failed';
-          if (rebuiltSuccessfully) {
-            setAcrossMarketLastMessage(`Saving ${selectedCountryCode}…`);
-            const saved = await saveCurrentConfiguration({
-              source: 'traversal',
-              nextState,
-              sourceTag: 'across-market-save',
-              changedFeatureId: 'across-market-run',
-              changedOptionId: 'across-market-run',
-              changedOptionValue: selectedCountryCode,
-              detailIdOverride: latestDetailId,
-              sourceHeaderIdOverride: sourceIdentity.canonicalHeaderId,
-              sourceDetailIdOverride: sourceIdentity.canonicalDetailId,
-              rawSnippetOverride: extractRawSnippet(latestRaw),
-              contextOverride,
-            });
-            if (saved) {
-              setAcrossMarketSavedCount((prev) => prev + 1);
-              saveStatus = 'saved';
-              finalStatus = 'saved';
-            } else {
-              setAcrossMarketDuplicateCount((prev) => prev + 1);
-              saveStatus = 'duplicate';
-              finalStatus = 'duplicate-skipped';
-            }
-          }
-
-          const report: MarketRunReport = {
-            marketCode: selectedCountryCode,
-            runDetailId: latestDetailId,
-            sourceHeaderId: sourceIdentity.canonicalHeaderId,
-            sourceDetailId: sourceIdentity.canonicalDetailId,
-            status: finalStatus,
-            saveStatus,
-            rebuilt: rebuiltSuccessfully,
-            sessionId: nextState.sessionId,
-            ipnCode,
-            detailIdUsedForSave: latestDetailId,
-            message: rebuiltSuccessfully
-              ? saveStatus === 'saved'
-                ? 'Retrieve/rebuild completed and saved.'
-                : 'Retrieve/rebuild completed; duplicate skipped.'
-              : 'Retrieve/rebuild did not return a valid session/detail identity.',
-          };
-          setAcrossMarketReports((prev) => [...prev.filter((item) => !(item.marketCode === selectedCountryCode && item.status === 'started')), report]);
-          setAcrossMarketLastMessage(`Processed ${selectedCountryCode}: ${finalStatus}.`);
-        } catch (error) {
-          setAcrossMarketLastMessage(`${selectedCountryCode} failed: ${error instanceof Error ? error.message : String(error)}`);
-          setAcrossMarketCurrentCountry(selectedCountryCode);
-          setAcrossMarketReports((prev) => [
-            ...prev.filter((item) => !(item.marketCode === selectedCountryCode && item.status === 'started')),
-            {
-              marketCode: selectedCountryCode,
-              runDetailId: '-',
-              sourceHeaderId: sourceIdentity.canonicalHeaderId,
-              sourceDetailId: sourceIdentity.canonicalDetailId,
-              status: 'incompatible-failed',
-              saveStatus: 'failed',
-              rebuilt: false,
-              message: error instanceof Error ? error.message : String(error),
-            },
-          ]);
-        } finally {
-          setAcrossMarketProcessedCount(index + 1);
-        }
-
-        if (index < selectedAcrossMarketCountryCodes.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-        }
-      }
-      setAcrossMarketStatus('completed');
-      setAcrossMarketCurrentCountry('-');
-      setAcrossMarketLastMessage('Across-market run completed.');
-    } finally {
-      setState(baselineStateSnapshot);
-      if (baselineDetailIdSnapshot) setDetailId(baselineDetailIdSnapshot);
-    }
-  };
-
-  const renderTraceSection = (title: string, trace: DebugTraceEntry | null) => (
-    <details style={styles.traceSection} open>
-      <summary>{title}</summary>
-      {!trace ? (
-        <div style={styles.tinyMuted}>No data captured yet.</div>
-      ) : (
-        <div style={styles.traceBody}>
-          <div>
-            <strong>Front-end action:</strong> {trace.action}
-          </div>
-          <div>
-            <strong>App route:</strong> {trace.route}
-          </div>
-          <div>
-            <strong>Endpoint:</strong> {trace.endpoint}
-          </div>
-          <div>
-            <strong>Timestamp:</strong> {new Date(trace.timestamp).toLocaleString()}
-          </div>
-          {trace.title ? (
-            <div>
-              <strong>Extracted label:</strong> {trace.title}
-            </div>
-          ) : null}
-          <pre style={styles.pre}>{JSON.stringify(trace.payload, null, 2)}</pre>
-        </div>
-      )}
-    </details>
-  );
 
   return (
     <main style={styles.page}>
-      <div style={styles.container}>
-        <h1 style={styles.heading}>Bike Builder CPQ Playground</h1>
+      <section style={styles.controls}>
+        <h1>CPQ Manual Configuration Lifecycle</h1>
+        <p style={styles.muted}>StartConfiguration → Configure → FinalizeConfiguration → Save reference → Retrieve by reference.</p>
 
-        <section style={styles.topBar}>
-          <div style={styles.modeSwitchRow}>
-            <label style={styles.label}>
-              CPQ Bike Builder mode
-              <select value={builderMode} onChange={(e) => setBuilderMode(e.target.value as BuilderMode)} style={styles.select}>
-                <option value="market">CPQ for a market</option>
-                <option value="bike-across-market">CPQ for a bike across market</option>
-              </select>
-            </label>
-          </div>
-          <div style={styles.topGrid}>
-            {builderMode === 'market' && (
-              <label style={styles.label}>
-                Account code
-                <select value={accountCode} onChange={(e) => onAccountCodeChange(e.target.value)} style={styles.select}>
-                  {!accountContexts.length && <option value="">No active accounts</option>}
-                  {accountContexts.map((item) => (
-                    <option key={item.id} value={item.account_code}>
-                      {item.account_code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label style={styles.label}>
-              Ruleset
-              <select
-                value={String(rulesets.find((item) => item.cpq_ruleset === target.ruleset)?.id ?? '')}
-                onChange={(e) => void onRulesetChange(e.target.value)}
-                style={styles.select}
-              >
-                {!rulesets.length && <option value="">No active rulesets</option>}
-                {rulesets.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.cpq_ruleset}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={styles.label}>
-              Namespace
-              <input value={target.namespace} onChange={(e) => setTarget({ ...target, namespace: e.target.value })} style={styles.input} />
-            </label>
-            <label style={styles.label}>
-              Header ID
-              <input value={target.headerId} onChange={(e) => setTarget({ ...target, headerId: e.target.value })} style={styles.input} />
-            </label>
-          </div>
-          <div style={styles.topActions}>
-            <button style={styles.button} onClick={() => void startFreshConfiguration()} disabled={requestState.loading}>
-              {requestState.loading ? 'Loading…' : 'Load / Restart'}
-            </button>
-            <button style={styles.secondaryButton} onClick={() => void startFreshConfiguration(target, crypto.randomUUID())} disabled={requestState.loading}>
-              Restart with fresh detailId
-            </button>
-            <button style={styles.secondaryButton} onClick={() => setDebugOpen((v) => !v)}>
-              {debugOpen ? 'Hide debug' : 'Show debug'}
-            </button>
-            <span style={styles.badge}>{state?.sessionId ? `session ${state.sessionId}` : 'no session'}</span>
-          </div>
-        </section>
-
-        {builderMode === 'market' && <section style={styles.controlPanel}>
-          <div style={styles.controlActions}>
-            <button style={styles.button} onClick={() => void startTraversal()} disabled={!state || traversalStatus === 'running'}>
-              Start configuration traversal
-            </button>
-            <button style={styles.secondaryButton} onClick={pauseTraversal} disabled={traversalStatus !== 'running'}>
-              Pause
-            </button>
-            <button style={styles.secondaryButton} onClick={resumeTraversal} disabled={traversalStatus !== 'paused'}>
-              Resume
-            </button>
-            <button style={styles.secondaryButton} onClick={stopTraversal} disabled={traversalStatus !== 'running' && traversalStatus !== 'paused'}>
-              Stop
-            </button>
-            <button style={styles.secondaryButton} onClick={exportResults} disabled={!results.length}>
-              Export results JSON
-            </button>
-            <button style={styles.secondaryButton} onClick={clearResults}>
-              Clear results
-            </button>
-          </div>
-          <div style={styles.controlGrid}>
-            <label style={styles.label}>
-              Delay (ms)
-              <input type="number" min={0} value={delayMs} onChange={(e) => setDelayMs(Number(e.target.value) || 0)} style={styles.input} />
-            </label>
-            <label style={styles.label}>
-              Max results
-              <input type="number" min={1} value={maxResults} onChange={(e) => setMaxResults(Math.max(1, Number(e.target.value) || 1))} style={styles.input} />
-            </label>
-            <label style={styles.label}>
-              Max Configure calls
-              <input
-                type="number"
-                min={1}
-                value={maxConfigureCalls}
-                onChange={(e) => setMaxConfigureCalls(Math.max(1, Number(e.target.value) || 1))}
-                style={styles.input}
-              />
-            </label>
-            <label style={styles.label}>
-              Max runtime (minutes)
-              <input
-                type="number"
-                min={1}
-                value={maxRuntimeMinutes}
-                onChange={(e) => setMaxRuntimeMinutes(Math.max(1, Number(e.target.value) || 1))}
-                style={styles.input}
-              />
-            </label>
-            <label style={styles.checkboxLabel}>
-              <input type="checkbox" checked={persistenceEnabled} onChange={(e) => setPersistenceEnabled(e.target.checked)} />
-              Save discovered configurations to database
-            </label>
-            <span style={styles.tinyMuted}>When enabled, each discovered state is saved into CPQ_sampler_result (deduped by IPN + country).</span>
-          </div>
-          <div style={styles.progressWrap}>
-            <div style={styles.progressLabel}>
-              Estimated progress: {processedCount}/{Math.max(estimatedTotal, processedCount, 1)}
-            </div>
-            <progress
-              value={Math.min(processedCount, Math.max(estimatedTotal, 1))}
-              max={Math.max(estimatedTotal, 1)}
-              style={styles.progressBar}
-            />
-            <div style={styles.tinyMuted}>
-              Estimate mode: {estimateMode} (visible selectable options define a lower bound; estimate grows as new states are discovered).
-            </div>
-          </div>
-          <div style={styles.statusRow}>
-            <span style={styles.badge}>status: {traversalStatus}</span>
-            <span style={styles.badge}>country context: {countryCode || '-'}</span>
-            <span style={styles.badge}>estimated total: {Math.max(estimatedTotal, processedCount)}</span>
-            <span style={styles.badge}>processed: {processedCount}</span>
-            <span style={styles.badge}>level: {currentTraversalLevel || '-'}</span>
-            <span style={styles.badge}>feature: {currentFeatureLabel}</span>
-            <span style={styles.badge}>option: {currentOptionLabel}</span>
-            <span style={styles.badge}>path: {currentTraversalPathLabel}</span>
-            <span style={styles.badge}>baseDetailId: {currentTraversalBaseDetailId}</span>
-            <span style={styles.badge}>sourceDetailId: {currentTraversalSourceDetailId}</span>
-            <span style={styles.badge}>visited states: {visitedStateCount}</span>
-            <span style={styles.badge}>results: {results.length}</span>
-            <span style={styles.badge}>configure calls: {configureCallCount}</span>
-            <span style={styles.badge}>elapsed: {(elapsedMs / 1000).toFixed(1)}s</span>
-            <span style={styles.badge}>wait: {delayRemainingMs > 0 ? `${delayRemainingMs}ms` : '-'}</span>
-            <span style={styles.badge}>candidate source: visible configurator dropdowns</span>
-            <span style={styles.badge}>detailId: {currentTraversalDetailId}</span>
-            <span style={styles.badge}>sessionId: {currentTraversalSessionId}</span>
-            <span style={styles.badge}>callType: {currentTraversalCallType}</span>
-            <span style={styles.badge}>DB saves: {savedToDatabaseCount}</span>
-            <span style={styles.badge}>duplicates skipped: {duplicateSkippedCount}</span>
-            <span style={styles.badge}>DB save errors: {saveErrorCount}</span>
-            <span style={styles.badge}>last DB status: {lastSaveStatus}</span>
-            <span style={styles.badge}>last DB message: {lastSaveMessage}</span>
-          </div>
-        </section>}
-
-        {builderMode === 'bike-across-market' && (
-          <section style={styles.controlPanel}>
-            <div style={styles.controlActions}>
-              <button
-                style={styles.button}
-                onClick={() => void runAcrossSelectedMarkets()}
-                disabled={!state || acrossMarketStatus === 'running' || requestState.loading}
-              >
-                Run this configuration across selected markets
-              </button>
-            </div>
-            <div style={styles.summaryCard}>
-              <strong>Select countries from CPQ_setup_account_context</strong>
-              {!uniqueCountryMarkets.length && <span style={styles.muted}>No active account contexts found.</span>}
-              <div style={styles.marketCheckboxList}>
-                {uniqueCountryMarkets.map((item) => (
-                  <label key={item.country_code} style={styles.marketCheckboxItem}>
-                    <input
-                      type="checkbox"
-                      checked={selectedAcrossMarketCountryCodes.includes(item.country_code)}
-                      onChange={() => toggleAcrossMarketCountry(item.country_code)}
-                      disabled={acrossMarketStatus === 'running'}
-                    />
-                    {item.country_code} ({item.account_code})
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div style={styles.statusRow}>
-              <span style={styles.badge}>status: {acrossMarketStatus}</span>
-              <span style={styles.badge}>selected markets: {selectedAcrossMarketCountryCodes.length}</span>
-              <span style={styles.badge}>processed: {acrossMarketProcessedCount}</span>
-              <span style={styles.badge}>saved: {acrossMarketSavedCount}</span>
-              <span style={styles.badge}>duplicates skipped: {acrossMarketDuplicateCount}</span>
-              <span style={styles.badge}>sourceHeaderId: {canonicalSourceIdentity?.canonicalHeaderId ?? '-'}</span>
-              <span style={styles.badge}>sourceDetailId: {canonicalSourceIdentity?.canonicalDetailId ?? '-'}</span>
-              <span style={styles.badge}>source ruleset: {canonicalSourceIdentity?.ruleset ?? target.ruleset}</span>
-              <span style={styles.badge}>current country: {acrossMarketCurrentCountry}</span>
-              <span style={styles.badge}>last message: {acrossMarketLastMessage}</span>
-            </div>
-            <div style={styles.summaryCard}>
-              <strong>Per-market fidelity report</strong>
-              {!acrossMarketReports.length && <span style={styles.muted}>No run report yet.</span>}
-              {acrossMarketReports.map((report) => (
-                <details key={`${report.marketCode}-${report.runDetailId}-${report.status}`}>
-                  <summary>
-                    {report.marketCode} · status: {report.status} · save: {report.saveStatus}
-                  </summary>
-                  <div style={styles.tinyMuted}>source header: {report.sourceHeaderId}</div>
-                  <div style={styles.tinyMuted}>source detail: {report.sourceDetailId}</div>
-                  <div style={styles.tinyMuted}>run detail: {report.runDetailId}</div>
-                  <div style={styles.tinyMuted}>session: {report.sessionId ?? '-'}</div>
-                  <div style={styles.tinyMuted}>ipn: {report.ipnCode ?? '-'}</div>
-                  <div style={styles.tinyMuted}>rebuilt: {report.rebuilt ? 'yes' : 'no'}</div>
-                  <div style={styles.tinyMuted}>saved detailId: {report.detailIdUsedForSave ?? '-'}</div>
-                  <div style={styles.tinyMuted}>message: {report.message}</div>
-                </details>
+        <div style={styles.grid}>
+          <label style={styles.field}>
+            <span>Account code</span>
+            <select value={accountCode} onChange={(event) => setAccountCode(event.target.value)} style={styles.select}>
+              {accountContexts.map((item) => (
+                <option key={item.id} value={item.account_code}>
+                  {item.account_code} ({item.country_code}, {item.currency})
+                </option>
               ))}
-            </div>
-          </section>
-        )}
+            </select>
+          </label>
 
-        {requestState.error && <p style={styles.error}>Error: {requestState.error}</p>}
+          <label style={styles.field}>
+            <span>Ruleset</span>
+            <select value={ruleset} onChange={(event) => setRuleset(event.target.value)} style={styles.select}>
+              {rulesets.map((item) => (
+                <option key={item.id} value={item.cpq_ruleset}>
+                  {item.cpq_ruleset}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-        <section style={styles.layout}>
-          <div style={styles.leftColumn}>
-            <h2 style={styles.sectionTitle}>Configurator</h2>
-            {!hasFeatures && <p style={styles.muted}>Load a ruleset to begin.</p>}
-            {visibleFeatures.map((feature) => (
-              <div key={feature.featureId} style={{ ...styles.featureCard, ...(highlightedFeatureId === feature.featureId ? styles.featureCardHighlighted : {}) }}>
-                <div style={styles.featureHeader}>{feature.featureLabel}</div>
-                <select
-                  value={feature.selectedOptionId}
-                  style={styles.select}
-                  onChange={(e) => {
-                    const selected = feature.availableOptions.find((option) => option.optionId === e.target.value);
-                    void changeOption(feature.featureId, e.target.value, selected?.value);
-                  }}
-                  disabled={requestState.loading && activeFeatureId === feature.featureId}
-                >
-                  {feature.availableOptions.map((option) => (
-                    <option key={option.optionId} value={option.optionId} disabled={option.isSelectable === false}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {activeFeatureId === feature.featureId && requestState.loading && <span style={styles.tinyMuted}>Updating…</span>}
-              </div>
-            ))}
-          </div>
+        <div style={styles.row}>
+          <button style={styles.button} onClick={() => void startConfiguration()} disabled={requestState.loading}>
+            {requestState.loading ? 'Starting…' : 'Start New Session'}
+          </button>
+          <button style={styles.button} onClick={() => void saveConfiguration()} disabled={saveStatus === 'saving' || !state}>
+            {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
+          </button>
+        </div>
 
-          <aside style={styles.rightColumn}>
-            <h2 style={styles.sectionTitle}>Bike preview</h2>
-            <div style={styles.previewCard}>
-              <div style={styles.previewBox}>
-                {imageLayers.map((layer, index) => (
-                  <img
-                    key={`${layer.featureLabel}-${layer.optionLabel}-${layer.optionValue}-${layer.slot}-${index}`}
-                    src={layer.pictureLink}
-                    alt={`${layer.featureLabel} / ${layer.optionLabel} / ${layer.optionValue} layer ${layer.slot}`}
-                    style={styles.previewLayer}
-                  />
-                ))}
-                {!imageLayersLoading && !imageLayers.length && (
-                  <div style={styles.previewPlaceholder}>No image layers available</div>
-                )}
-              </div>
-              <div style={styles.tinyMuted}>
-                {imageLayersLoading ? 'Resolving image layers…' : `Layers: ${imageLayers.length}`}
-              </div>
-              {imageLayersError ? <div style={styles.error}>Image preview error: {imageLayersError}</div> : null}
-              {debugOpen && (
-                <div style={styles.imageDebugCard}>
-                  <div>
-                    <strong>Matched options:</strong> {imageLayerDebug.matchedSelections.length}
-                  </div>
-                  <div>
-                    <strong>No-image options:</strong> {imageLayerDebug.unmatchedSelections.length}
-                  </div>
-                </div>
-              )}
-            </div>
+        <div style={styles.referenceRow}>
+          <input
+            value={configurationReferenceInput}
+            onChange={(event) => setConfigurationReferenceInput(event.target.value)}
+            placeholder="CFG-YYYYMMDD-XXXXXXXX"
+            style={styles.input}
+          />
+          <button style={styles.button} onClick={() => void retrieveConfiguration()} disabled={retrieveStatus === 'saving'}>
+            {retrieveStatus === 'saving' ? 'Retrieving…' : 'Retrieve Configuration'}
+          </button>
+        </div>
 
-            <h2 style={styles.sectionTitle}>Summary</h2>
-            <div style={styles.summaryCard}>
-              <div>
-                <strong>Description:</strong> {state?.productDescription ?? '-'}
-              </div>
-              <div>
-                <strong>IPN Code:</strong> {state?.ipnCode ?? '-'}
-              </div>
-              <div>
-                <strong>Price:</strong> {summaryPrice}
-              </div>
-              <div>
-                <strong>Ruleset:</strong> {target.ruleset}
-              </div>
-              <div>
-                <strong>Account Code:</strong> {accountCode || '-'}
-              </div>
-              <div>
-                <strong>Customer ID:</strong> {customerId || '-'}
-              </div>
-              <div>
-                <strong>Currency:</strong> {currency || '-'}
-              </div>
-              <div>
-                <strong>Language:</strong> {language || '-'}
-              </div>
-              <div>
-                <strong>Country code:</strong> {countryCode || '-'}
-              </div>
-              <div>
-                <strong>Namespace:</strong> {target.namespace}
-              </div>
-              <div>
-                <strong>Header ID:</strong> {target.headerId}
-              </div>
-              <div>
-                <strong>Detail ID:</strong> {currentDetailId}
-              </div>
-              <div>
-                <strong>Session ID:</strong> {state?.sessionId ?? '-'}
-              </div>
-            </div>
-            <div style={styles.summaryCard}>
-              <label style={styles.label}>
-                Configuration reference
-                <input
-                  value={configurationReferenceInput}
-                  onChange={(e) => setConfigurationReferenceInput(e.target.value)}
-                  placeholder="CFG-YYYYMMDD-XXXXXXXX"
-                  style={styles.input}
-                />
-              </label>
-              <div style={styles.controlActions}>
-                <button style={styles.button} onClick={() => void saveConfigurationReference()} disabled={!state || referenceSaveStatus === 'saving'}>
-                  {referenceSaveStatus === 'saving' ? 'Saving reference…' : 'Save configuration reference'}
-                </button>
-                <button
-                  style={styles.secondaryButton}
-                  onClick={() => void retrieveConfigurationReference()}
-                  disabled={!configurationReferenceInput.trim() || referenceRetrieveStatus === 'saving'}
-                >
-                  {referenceRetrieveStatus === 'saving' ? 'Retrieving…' : 'Retrieve configuration'}
-                </button>
-              </div>
-              <div style={referenceSaveStatus === 'error' ? styles.error : styles.tinyMuted}>Save reference: {referenceSaveMessage}</div>
-              <div style={referenceRetrieveStatus === 'error' ? styles.error : styles.tinyMuted}>
-                Retrieve reference: {referenceRetrieveMessage}
-              </div>
-              <div style={styles.tinyMuted}>
-                Canonical source: {canonicalSourceIdentity?.canonicalHeaderId ?? '-'} / {canonicalSourceIdentity?.canonicalDetailId ?? '-'}
-              </div>
-            </div>
-            <div style={styles.summaryCard}>
-              <button style={styles.button} onClick={() => void saveCurrentConfiguration()} disabled={manualSaveStatus === 'saving' || !state}>
-                {manualSaveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
-              </button>
-              <div style={manualSaveStatus === 'error' ? styles.error : styles.tinyMuted}>
-                {manualSaveStatus === 'idle' ? 'Manual save is ready.' : manualSaveMessage}
-              </div>
-              {manualSaveTimestamp && <div style={styles.tinyMuted}>Last saved: {new Date(manualSaveTimestamp).toLocaleString()}</div>}
-            </div>
-            <details style={styles.debugCard} open>
-              <summary style={styles.debugTitle}>CPQ Request/Response Trace Panel (temporary)</summary>
-              {renderTraceSection('Last Save Request', lastSaveRequestDebug)}
-              {renderTraceSection('Last Save Response', lastSaveResponseDebug)}
-              {renderTraceSection('Last Configure Request', lastConfigureRequestDebug)}
-              {renderTraceSection('Last Configure Response', lastConfigureResponseDebug)}
-            </details>
+        <div style={styles.statusBlock}>
+          <div>Session: {state?.sessionId ?? 'none (session closed or not started)'}</div>
+          <div>DetailId: {state?.detailId ?? '-'}</div>
+          <div>IPN: {state?.ipnCode ?? '-'}</div>
+          <div>Save status: {saveMessage}</div>
+          <div>Retrieve status: {retrieveMessage}</div>
+          {requestState.error && <div style={styles.error}>Runtime error: {requestState.error}</div>}
+        </div>
+      </section>
 
-            <h2 style={styles.sectionTitle}>Captured results</h2>
-            <div style={styles.resultsList}>
-              {!results.length && <p style={styles.muted}>No captured configurations yet.</p>}
-              {results.map((result) => {
-                const key = result.signature + result.sequence;
-                const isExpanded = Boolean(expandedResultKeys[key]);
+      <section style={styles.configurator}>
+        <h2>Configurator</h2>
+        {!state?.features?.length && <p style={styles.muted}>No active configuration. Start a session first.</p>}
+        {state?.features?.map((feature) => (
+          <label key={feature.featureId} style={styles.field}>
+            <span>{feature.featureLabel}</span>
+            <select
+              value={feature.selectedOptionId ?? ''}
+              onChange={(event) => {
+                const nextOption = feature.availableOptions.find((entry) => entry.optionId === event.target.value);
+                if (nextOption) {
+                  void configureOption(feature.featureId, nextOption);
+                }
+              }}
+              disabled={requestState.loading || activeFeatureId === feature.featureId}
+              style={styles.select}
+            >
+              {feature.availableOptions.map((option) => (
+                <option key={option.optionId} value={option.optionId}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </section>
 
-                return (
-                  <div key={key} style={styles.resultCard}>
-                    <div style={styles.resultHeader}>
-                      <strong>#{result.sequence}</strong>
-                      <span style={styles.tinyMuted}>{new Date(result.timestamp).toLocaleString()}</span>
-                    </div>
-                    <div style={styles.resultMeta}>Detail: {result.detailId}</div>
-                    <div style={styles.resultMeta}>Base detail: {result.baseDetailId}</div>
-                    <div style={styles.resultMeta}>Source detail: {result.sourceDetailId}</div>
-                    <div style={styles.resultMeta}>Session: {result.sessionId}</div>
-                    <div style={styles.resultMeta}>IPN Code: {result.ipn ?? '-'}</div>
-                    <div style={styles.resultMeta}>Price: {typeof result.price === 'number' ? result.price : '-'}</div>
-                    <button
-                      style={styles.inlineButton}
-                      onClick={() => setExpandedResultKeys((prev) => ({ ...prev, [key]: !isExpanded }))}
-                    >
-                      {isExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                    {isExpanded && (
-                      <pre style={styles.pre}>{JSON.stringify(result, null, 2)}</pre>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {debugOpen && (
-              <div style={styles.debugCard}>
-                <h3 style={styles.debugTitle}>Ruleset debug</h3>
-                <label style={styles.checkboxLabel}>
-                  <input type="checkbox" checked={includeSelectedOption} onChange={(e) => setIncludeSelectedOption(e.target.checked)} />
-                  Reconfigure with currently-selected options (debug)
-                </label>
-                <ul style={styles.debugList}>
-                  <li>lastCallType: {lastCallType}</li>
-                  <li>sampler mode: configuration-traversal</li>
-                  <li>baseDetailId: {currentTraversalBaseDetailId}</li>
-                  <li>sourceDetailId: {currentTraversalSourceDetailId}</li>
-                  <li>branch detailId: {currentTraversalDetailId}</li>
-                  <li>current sessionId: {currentTraversalSessionId}</li>
-                  <li>current callType: {currentTraversalCallType}</li>
-                  <li>lastChangedFeatureId: {lastChangedFeatureId || '-'}</li>
-                  <li>lastChangedOptionId: {lastChangedOptionId || '-'}</li>
-                  <li>lastChangedOptionValue: {lastChangedOptionValue || '-'}</li>
-                  <li>final Configure URL: {lastConfigureUrl || '-'}</li>
-                  <li>sessionID sent: {lastSessionIdSent || '-'}</li>
-                  <li>changed feature id: {lastChangedFeatureId || '-'}</li>
-                  <li>changed option id (local UI stable id): {lastChangedOptionId || '-'}</li>
-                  <li>changed option value sent to CPQ: {lastChangedOptionValue || '-'}</li>
-                  <li>number of selections sent: {lastConfigureSelectionCount}</li>
-                  <li>account code: {accountCode || '-'}</li>
-                  <li>customer id: {customerId || '-'}</li>
-                  <li>currency: {currency || '-'}</li>
-                  <li>language: {language || '-'}</li>
-                  <li>country_code: {countryCode || '-'}</li>
-                  <li>selected option before change: {lastSelectedBefore || '-'}</li>
-                  <li>selected option after Configure: {lastSelectedAfter || '-'}</li>
-                  <li>matched selected option source: {lastSelectedMatchSource || '-'}</li>
-                  <li>previous feature current value: {lastPreviousFeatureCurrentValue || '-'}</li>
-                  <li>requested new option value: {lastRequestedOptionValue || '-'}</li>
-                  <li>returned feature current value after Configure: {lastReturnedFeatureCurrentValue || '-'}</li>
-                  <li>
-                    requested/returned mismatch:{' '}
-                    {lastRequestedOptionValue && lastReturnedFeatureCurrentValue && lastRequestedOptionValue !== lastReturnedFeatureCurrentValue
-                      ? '⚠️ yes'
-                      : 'no'}
-                  </li>
-                  <li>extracted IPN Code: {state?.ipnCode ?? '-'}</li>
-                  <li>IPN source: {state?.debug?.ipnCodeSource ?? '-'}</li>
-                  <li>sessionId source: {state?.debug?.sessionIdField ?? '-'}</li>
-                  <li>raw feature count: {state?.debug?.rawFeatureCount ?? 0}</li>
-                  <li>deduped feature count: {state?.debug?.dedupedFeatureCount ?? 0}</li>
-                  <li>visible feature count: {state?.debug?.visibleFeatureCount ?? 0}</li>
-                  <li>hidden/system feature count: {state?.debug?.hiddenFeatureCount ?? 0}</li>
-                </ul>
-                <details>
-                  <summary>StartConfiguration / Configure request debug</summary>
-                  <pre style={styles.pre}>{JSON.stringify(lastRawRequest, null, 2)}</pre>
-                </details>
-                <details>
-                  <summary>StartConfiguration / Configure response debug</summary>
-                  <pre style={styles.pre}>{JSON.stringify(lastRawResponse, null, 2)}</pre>
-                </details>
-                <details>
-                  <summary>Configure IPN snippet</summary>
-                  <pre style={styles.pre}>{JSON.stringify(state?.debug?.ipnCodeSnippet ?? null, null, 2)}</pre>
-                </details>
-                <details>
-                  <summary>Parsed feature diagnostics</summary>
-                  <pre style={styles.pre}>{JSON.stringify(state?.features ?? [], null, 2)}</pre>
-                </details>
-              </div>
-            )}
-          </aside>
+      {lastSavedReference && (
+        <section style={styles.savedCard}>
+          <h3>Last saved reference</h3>
+          <div>Reference: {lastSavedReference.configuration_reference}</div>
+          <div>Ruleset: {lastSavedReference.ruleset}</div>
+          <div>Namespace: {lastSavedReference.namespace}</div>
+          <div>Finalized detailId: {lastSavedReference.finalized_detail_id}</div>
+          <div>Account: {lastSavedReference.account_code ?? '-'}</div>
+          <div>Country: {lastSavedReference.country_code ?? '-'}</div>
         </section>
-      </div>
+      )}
     </main>
   );
 }
 
-function isOptionTraversable(option: BikeBuilderFeatureOption) {
-  return option.isSelectable !== false && option.isVisible !== false && option.isEnabled !== false;
-}
-
-function extractRawSnippet(rawResponse: unknown) {
-  if (!rawResponse || typeof rawResponse !== 'object') return rawResponse;
-  const input = rawResponse as Record<string, unknown>;
-  return {
-    Description: input.Description,
-    IPNCode: input.IPNCode,
-    Price: input.Price,
-    SessionID: input.SessionID,
-  };
-}
-
-function extractDebugTitle(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== 'object') return undefined;
-  const objectPayload = payload as Record<string, unknown>;
-  const candidateKeys = [
-    'title',
-    'Title',
-    'caption',
-    'Caption',
-    'fileName',
-    'filename',
-    'label',
-    'operation',
-    'operationName',
-    'Description',
-    'description',
-    'IPNCode',
-    'status',
-  ];
-
-  for (const key of candidateKeys) {
-    const value = objectPayload[key];
-    if (typeof value === 'string' && value.trim()) return `${key}: ${value}`;
-    if (typeof value === 'number') return `${key}: ${value}`;
-  }
-
-  return undefined;
-}
-
 const styles: Record<string, CSSProperties> = {
-  page: { fontFamily: 'Inter, Arial, sans-serif', background: '#f6f7fb', minHeight: 0, padding: 16, overflowY: 'auto', overflowX: 'hidden' },
-  container: { maxWidth: 1360, margin: '0 auto', display: 'grid', gap: 12, minWidth: 0 },
-  heading: { margin: '6px 0 8px', fontSize: 24 },
-  topBar: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, boxShadow: '0 1px 6px rgba(0,0,0,0.05)' },
-  modeSwitchRow: { display: 'grid', gap: 8, marginBottom: 8, maxWidth: 360 },
-  topGrid: { display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' },
-  label: { display: 'grid', gap: 4, fontSize: 12, color: '#374151', fontWeight: 600 },
-  input: { padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13 },
-  topActions: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' },
-  button: { padding: '8px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#111827', color: '#fff', cursor: 'pointer' },
-  secondaryButton: { padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' },
-  inlineButton: { padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 12 },
-  badge: { fontSize: 12, padding: '5px 8px', borderRadius: 999, background: '#eef2ff', color: '#3730a3' },
-  controlPanel: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, display: 'grid', gap: 10 },
-  controlActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  controlGrid: { display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' },
-  checkboxLabel: {
-    display: 'flex',
-    gap: 6,
-    alignItems: 'center',
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: 600,
-    border: '1px solid #d1d5db',
-    borderRadius: 8,
-    padding: '8px 10px',
-  },
-  statusRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  progressWrap: { display: 'grid', gap: 6 },
-  progressLabel: { fontSize: 12, color: '#374151', fontWeight: 600 },
-  progressBar: { width: '100%', height: 14 },
-  layout: { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', minWidth: 0 },
-  leftColumn: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, display: 'grid', gap: 8, minWidth: 0 },
-  rightColumn: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, display: 'grid', gap: 8, alignContent: 'start', minWidth: 0 },
-  sectionTitle: { margin: '0 0 4px', fontSize: 16 },
-  previewCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 10, display: 'grid', gap: 8 },
-  previewBox: {
-    width: '100%',
-    maxWidth: 340,
-    aspectRatio: '1 / 1',
-    border: '1px dashed #d1d5db',
-    borderRadius: 8,
-    background: '#f9fafb',
-    position: 'relative',
-    overflow: 'hidden',
-    justifySelf: 'center',
-  },
-  previewLayer: {
-    position: 'absolute',
-    inset: 0,
-    width: '100%',
-    height: '100%',
-    objectFit: 'contain',
-    pointerEvents: 'none',
-  },
-  previewPlaceholder: {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#6b7280',
-    fontSize: 13,
-    textAlign: 'center',
-    padding: 12,
-  },
-  imageDebugCard: {
-    border: '1px solid #ebedf0',
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 12,
+  page: {
+    maxWidth: 1100,
+    margin: '0 auto',
+    padding: '1.5rem',
     display: 'grid',
-    gap: 4,
+    gap: '1rem',
   },
-  featureCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 8, display: 'grid', gap: 6, background: '#fcfcfd' },
-  featureCardHighlighted: { border: '2px solid #2563eb', background: '#eff6ff', boxShadow: '0 0 0 2px rgba(37,99,235,0.15)' },
-  featureHeader: { fontSize: 13, fontWeight: 600, color: '#111827' },
-  select: { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, background: '#fff' },
-  summaryCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 10, display: 'grid', gap: 6, fontSize: 13 },
-  marketCheckboxList: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 },
-  marketCheckboxItem: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#111827' },
-  resultsList: { border: '1px solid #ebedf0', borderRadius: 10, padding: 8, display: 'grid', gap: 8, maxHeight: 520, overflow: 'auto' },
-  resultCard: { border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, display: 'grid', gap: 4, background: '#fff' },
-  resultHeader: { display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 12 },
-  resultMeta: { fontSize: 12, color: '#374151' },
-  debugCard: { border: '1px solid #ebedf0', borderRadius: 10, padding: 10, display: 'grid', gap: 8, fontSize: 12 },
-  debugTitle: { margin: 0, fontSize: 14 },
-  traceSection: { border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, background: '#fff' },
-  traceBody: { display: 'grid', gap: 6, marginTop: 6 },
-  debugList: { margin: 0, paddingLeft: 18, display: 'grid', gap: 4 },
-  pre: { maxHeight: 220, overflow: 'auto', background: '#f8fafc', padding: 8, borderRadius: 8, border: '1px solid #e5e7eb' },
-  tinyMuted: { fontSize: 11, color: '#6b7280' },
-  muted: { color: '#6b7280', fontSize: 13 },
-  error: { color: '#b91c1c', fontSize: 13, margin: 0 },
+  controls: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 12,
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.75rem',
+  },
+  configurator: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 12,
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.75rem',
+  },
+  savedCard: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 12,
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.25rem',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))',
+    gap: '0.75rem',
+  },
+  field: {
+    display: 'grid',
+    gap: '0.35rem',
+  },
+  row: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+  },
+  referenceRow: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+  },
+  statusBlock: {
+    display: 'grid',
+    gap: '0.2rem',
+    fontSize: '0.92rem',
+  },
+  select: {
+    minHeight: 34,
+    borderRadius: 8,
+    border: '1px solid #a1a1aa',
+    padding: '0.35rem 0.5rem',
+    background: '#fff',
+  },
+  input: {
+    flex: '1 1 320px',
+    minHeight: 34,
+    borderRadius: 8,
+    border: '1px solid #a1a1aa',
+    padding: '0.35rem 0.5rem',
+  },
+  button: {
+    minHeight: 34,
+    borderRadius: 8,
+    border: '1px solid #18181b',
+    padding: '0.35rem 0.75rem',
+    background: '#18181b',
+    color: '#fff',
+    cursor: 'pointer',
+  },
+  muted: {
+    color: '#52525b',
+  },
+  error: {
+    color: '#b91c1c',
+  },
 };

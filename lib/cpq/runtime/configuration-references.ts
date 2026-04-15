@@ -1,34 +1,56 @@
 import { sql } from '@/lib/db/client';
 
-export type CanonicalConfigurationReference = {
+export type ConfigurationReferenceRow = {
   id: number;
   configuration_reference: string;
-  canonical_header_id: string;
-  canonical_detail_id: string;
   ruleset: string;
   namespace: string;
-  product_description: string | null;
+  header_id: string;
+  finalized_detail_id: string;
+  source_header_id: string | null;
+  source_detail_id: string | null;
   account_code: string | null;
+  customer_id: string | null;
+  account_type: string | null;
+  company: string | null;
+  currency: string | null;
+  language: string | null;
   country_code: string | null;
-  source_working_detail_id: string | null;
-  source_session_id: string | null;
+  customer_location: string | null;
+  application_instance: string | null;
+  application_name: string | null;
+  finalized_session_id: string | null;
+  final_ipn_code: string | null;
+  product_description: string | null;
+  finalize_response_json: unknown;
   json_snapshot: unknown;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 };
 
-export type SaveCanonicalConfigurationReferenceInput = {
+export type SaveConfigurationReferenceInput = {
   configuration_reference?: string;
-  canonical_header_id: string;
-  canonical_detail_id: string;
   ruleset: string;
   namespace: string;
-  product_description?: string | null;
+  header_id: string;
+  finalized_detail_id: string;
+  source_header_id?: string | null;
+  source_detail_id?: string | null;
   account_code?: string | null;
+  customer_id?: string | null;
+  account_type?: string | null;
+  company?: string | null;
+  currency?: string | null;
+  language?: string | null;
   country_code?: string | null;
-  source_working_detail_id?: string | null;
-  source_session_id?: string | null;
+  customer_location?: string | null;
+  application_instance?: string | null;
+  application_name?: string | null;
+  finalized_session_id?: string | null;
+  final_ipn_code?: string | null;
+  product_description?: string | null;
+  finalize_response_json?: unknown;
   json_snapshot?: unknown;
 };
 
@@ -45,55 +67,63 @@ const trimRequired = (value: unknown, field: string) => {
 
 const buildReferenceKey = () => `CFG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-export async function saveCanonicalConfigurationReference(input: SaveCanonicalConfigurationReferenceInput) {
+export async function saveConfigurationReference(input: SaveConfigurationReferenceInput) {
   const providedReference = trimOrNull(input.configuration_reference);
   const configurationReference = providedReference ?? buildReferenceKey();
 
   const rows = (await sql`
     insert into cpq_configuration_references (
       configuration_reference,
-      canonical_header_id,
-      canonical_detail_id,
       ruleset,
       namespace,
-      product_description,
+      header_id,
+      finalized_detail_id,
+      source_header_id,
+      source_detail_id,
       account_code,
+      customer_id,
+      account_type,
+      company,
+      currency,
+      language,
       country_code,
-      source_working_detail_id,
-      source_session_id,
+      customer_location,
+      application_instance,
+      application_name,
+      finalized_session_id,
+      final_ipn_code,
+      product_description,
+      finalize_response_json,
       json_snapshot,
       is_active
     )
     values (
       ${configurationReference},
-      ${trimRequired(input.canonical_header_id, 'canonical_header_id')},
-      ${trimRequired(input.canonical_detail_id, 'canonical_detail_id')},
       ${trimRequired(input.ruleset, 'ruleset')},
       ${trimRequired(input.namespace, 'namespace')},
-      ${trimOrNull(input.product_description)},
+      ${trimRequired(input.header_id, 'header_id')},
+      ${trimRequired(input.finalized_detail_id, 'finalized_detail_id')},
+      ${trimOrNull(input.source_header_id)},
+      ${trimOrNull(input.source_detail_id)},
       ${trimOrNull(input.account_code)},
+      ${trimOrNull(input.customer_id)},
+      ${trimOrNull(input.account_type)},
+      ${trimOrNull(input.company)},
+      ${trimOrNull(input.currency)},
+      ${trimOrNull(input.language)},
       ${trimOrNull(input.country_code)},
-      ${trimOrNull(input.source_working_detail_id)},
-      ${trimOrNull(input.source_session_id)},
+      ${trimOrNull(input.customer_location)},
+      ${trimOrNull(input.application_instance)},
+      ${trimOrNull(input.application_name)},
+      ${trimOrNull(input.finalized_session_id)},
+      ${trimOrNull(input.final_ipn_code)},
+      ${trimOrNull(input.product_description)},
+      ${JSON.stringify(input.finalize_response_json ?? {})}::jsonb,
       ${JSON.stringify(input.json_snapshot ?? {})}::jsonb,
       true
     )
-    on conflict (configuration_reference)
-    do update set
-      canonical_header_id = excluded.canonical_header_id,
-      canonical_detail_id = excluded.canonical_detail_id,
-      ruleset = excluded.ruleset,
-      namespace = excluded.namespace,
-      product_description = excluded.product_description,
-      account_code = excluded.account_code,
-      country_code = excluded.country_code,
-      source_working_detail_id = excluded.source_working_detail_id,
-      source_session_id = excluded.source_session_id,
-      json_snapshot = excluded.json_snapshot,
-      is_active = true,
-      updated_at = now()
     returning *
-  `) as CanonicalConfigurationReference[];
+  `) as ConfigurationReferenceRow[];
 
   return rows[0];
 }
@@ -106,7 +136,7 @@ export async function resolveConfigurationReference(configurationReference: stri
       and is_active = true
     order by updated_at desc, id desc
     limit 1
-  `) as CanonicalConfigurationReference[];
+  `) as ConfigurationReferenceRow[];
 
   return rows[0] ?? null;
 }

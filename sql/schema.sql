@@ -1,4 +1,4 @@
--- tp2-cpq-app minimal baseline schema
+-- tp2-cpq-app manual CPQ lifecycle schema baseline
 
 create table if not exists CPQ_setup_account_context (
   id bigserial primary key,
@@ -56,19 +56,29 @@ create index if not exists cpq_sampler_result_unprocessed_idx
   on CPQ_sampler_result (processed_for_image_sync)
   where processed_for_image_sync = false;
 
-
 create table if not exists cpq_configuration_references (
   id bigserial primary key,
   configuration_reference text not null unique,
-  canonical_header_id text not null,
-  canonical_detail_id text not null,
   ruleset text not null,
   namespace text not null,
-  product_description text,
+  header_id text not null,
+  finalized_detail_id text not null,
+  source_header_id text,
+  source_detail_id text,
   account_code text,
+  customer_id text,
+  account_type text,
+  company text,
+  currency text,
+  language text,
   country_code text,
-  source_working_detail_id text,
-  source_session_id text,
+  customer_location text,
+  application_instance text,
+  application_name text,
+  finalized_session_id text,
+  final_ipn_code text,
+  product_description text,
+  finalize_response_json jsonb not null default '{}'::jsonb,
   json_snapshot jsonb not null default '{}'::jsonb,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
@@ -79,6 +89,8 @@ create index if not exists cpq_configuration_references_lookup_idx
   on cpq_configuration_references (configuration_reference, is_active);
 create index if not exists cpq_configuration_references_ruleset_idx
   on cpq_configuration_references (ruleset, namespace, created_at desc);
+create index if not exists cpq_configuration_references_account_idx
+  on cpq_configuration_references (account_code, country_code, created_at desc);
 
 create table if not exists cpq_image_management (
   id bigserial primary key,

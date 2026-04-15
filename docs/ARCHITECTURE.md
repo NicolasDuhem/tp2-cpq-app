@@ -1,69 +1,35 @@
-# ARCHITECTURE (CPQ-only)
+# ARCHITECTURE (manual CPQ lifecycle)
 
-## Route architecture
-- `/cpq`: **primary** CPQ Bike Builder page.
-- `/cpq` traversal UX exposes one unified workflow: **Start configuration traversal**.
-- `/bike-builder`: legacy alias route that performs a redirect to `/cpq`.
-- `/cpq/setup`: setup console with exactly three tabs:
-  1. Account code management
-  2. Ruleset management
-  3. Picture management
-- `/cpq/results`: sampler result matrix (bike rows, dynamic feature columns, dynamic country/detailId columns).
+## Primary route
+- `/cpq` is the main business workflow.
+- `/bike-builder` is an alias to `/cpq`.
 
-## API architecture
-### Runtime APIs (`/api/cpq/*`)
-- `POST /api/cpq/init`: starts CPQ configuration session.
-- `POST /api/cpq/configure`: applies one runtime selection update.
-- `POST /api/cpq/image-layers`: resolves configured picture layers.
-- `POST /api/cpq/sampler-result`: persists traversal snapshots with duplicate protection on `(ipn_code, country_code)`.
-- `POST /api/cpq/configuration-references`: creates/updates canonical retrievable identities.
-- `GET /api/cpq/configuration-references`: resolves one canonical row by `configuration_reference`.
-- `POST /api/cpq/retrieve-configuration`: resolve helper used by retrieve UI flow.
+## Lifecycle model
+1. `POST /api/cpq/init` → StartConfiguration.
+2. `POST /api/cpq/configure` → apply manual option changes.
+3. `POST /api/cpq/finalize` → FinalizeConfiguration on save.
+4. `POST /api/cpq/configuration-references` → persist finalized save row.
+5. `POST /api/cpq/retrieve-configuration` → resolve saved row and start a fresh session from it.
 
-### Setup APIs (`/api/cpq/setup/*`)
-- Account context management (`account-context`, `account-context/:id`).
-- Ruleset management (`rulesets`, `rulesets/:id`).
-- Picture management (`picture-management`, `picture-management/:id`, `picture-management/sync`).
+## Session management rules
+- Active session is scoped by `(ruleset, account_code)`.
+- Changing either `ruleset` or `account_code` triggers a new StartConfiguration.
+- Save triggers FinalizeConfiguration, which ends the active session.
+- Further edits require a new StartConfiguration (new session).
 
-## Naming decisions
-- **Sampler** is the canonical technical term in code and SQL (`CPQ_sampler_result`).
-- “Simpering” appears only as legacy wording and is treated as synonymous with sampler.
-- Setup UI labels remain user-facing: account code management, ruleset management, picture management.
+## Save architecture
+- Save does **not** use traversal/sampler persistence.
+- Save path is deterministic:
+  - Finalize live session
+  - Capture finalized `detailId`
+  - Persist in `cpq_configuration_references`
 
-## Traversal design
-- Traversal model is a dynamic state graph walk driven by CPQ responses.
-- Traversal candidate source of truth is the visible Configurator dropdown model (`state.features`) already rendered in UI.
-- For each discovered state, the app inspects currently selectable visible dropdown options, applies one change, calls `/configure`, then continues from the returned state.
-- State revisits are reduced using a stable state signature of selected options.
-- Progress estimate is lower-bound adaptive and built from visible dropdown choice counts only.
-- Manual **Save Configuration** and traversal auto-save share the same persistence path (`POST /api/cpq/sampler-result`).
-- Persistence uniqueness is enforced by `(ipn_code, country_code)`:
-  - `country_code` comes from selected account context (`CPQ_setup_account_context`).
-  - first discovered tuple is kept; later duplicates are skipped.
+## Retrieve architecture
+- Retrieve is deterministic and reference-driven:
+  - Resolve one row from `cpq_configuration_references`
+  - Build StartConfiguration request from saved row data + configured instance
+  - Start a new session and hydrate UI from returned configuration state
 
-## Across-market retrieve/rebuild design
-- Across-market mode uses CPQ retrieve semantics, not visible-dropdown replay.
-- Canonical source identity for the currently loaded bike is tracked in runtime state:
-  - `sourceHeaderId`
-  - `sourceDetailId`
-  - `ruleset`
-  - `namespace`
-  - optional `configurationReference`
-- Per selected country, the app:
-  1. builds a coherent market context from one `CPQ_setup_account_context` row
-  2. generates a new target detailId
-  3. calls StartConfiguration with `sourceHeaderDetail` pointing to canonical source identity
-  4. hydrates/evaluates the new session with configure
-  5. persists result with dedupe `(ipn_code, country_code)`
-  6. waits 5000 ms before the next country
-
-## Runtime and canonical identities
-- Runtime working identity (`sessionId`, working `detailId`) is transient and used for live Configure calls.
-- Canonical retrievable identity (`configuration_reference`, `canonical_header_id`, `canonical_detail_id`) is persisted in `cpq_configuration_references`.
-- Retrieve creates a new working detail and uses canonical ids in `sourceHeaderDetail`.
-
-
-## Canonical save capability
-- Canonical reference persistence is now gated by backend copy capability (`CopyConfiguration`-style API).
-- Runtime endpoint used by app: `POST /api/cpq/configuration-references` -> server-side copy call -> DB persist on success.
-- If copy capability env is missing, API returns `501` and canonical row is not written.
+## Deprecated from primary flow
+- Traversal/sampler behaviors are retired from `/cpq` manual save/retrieve.
+- `CPQ_sampler_result` remains for historical/result uses only.
