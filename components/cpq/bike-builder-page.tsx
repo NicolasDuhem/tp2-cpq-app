@@ -32,6 +32,14 @@ type SamplerSourceSnapshot = {
   rawResponse: unknown;
 };
 
+type SamplerSelectedOption = {
+  featureLabel: string;
+  featureId: string;
+  optionLabel: string;
+  optionId: string;
+  optionValue: string;
+};
+
 type RulesetRecord = {
   id: number;
   cpq_ruleset: string;
@@ -522,52 +530,98 @@ export default function BikeBuilderPage() {
     }
   };
 
-  const buildSamplerSelectedOptions = (parsed: NormalizedBikeBuilderState) =>
+  const buildSamplerSelectedOptions = (parsed: NormalizedBikeBuilderState): SamplerSelectedOption[] =>
     parsed.features
       .map((feature) => {
+        const featureId = feature.featureId.trim();
+        const selectedOptionId = (feature.selectedOptionId ?? '').trim();
+        if (!featureId || !selectedOptionId) return null;
+
         const selectedOption =
-          feature.availableOptions.find((option) => option.optionId === feature.selectedOptionId) ??
+          feature.availableOptions.find((option) => option.optionId === selectedOptionId) ??
           feature.availableOptions.find((option) => option.selected) ??
           null;
-        const optionId = (selectedOption?.optionId ?? feature.selectedOptionId ?? '').trim();
-        const optionLabel = (selectedOption?.label ?? '').trim();
-        const optionValue = (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? optionId ?? '').trim();
+
+        const optionId = (selectedOption?.optionId ?? selectedOptionId).trim();
+        const optionLabel = (selectedOption?.label ?? selectedOptionId ?? '').trim() || selectedOptionId || '(none)';
+        const optionValue = (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? '').trim();
 
         return {
           featureLabel: feature.featureLabel.trim(),
-          featureId: feature.featureId.trim(),
+          featureId,
           optionLabel,
           optionId,
           optionValue,
         };
       })
-      .filter((entry) => entry.featureLabel && entry.featureId && entry.optionLabel && entry.optionValue);
+      .filter((entry): entry is SamplerSelectedOption => Boolean(entry))
+      .sort((a, b) => a.featureId.localeCompare(b.featureId));
+
+  const buildTraversalPathKey = (steps: SamplerSelectedOption[]) =>
+    steps.map((step) => `${step.featureId}:${step.optionId}:${step.optionValue}`).join(' > ');
+
+  const buildSamplerSignature = (samplerRuleset: string, selectedOptions: SamplerSelectedOption[]) => {
+    const tokens = selectedOptions
+      .map((entry) => `${entry.featureId}:${entry.optionId}:${entry.optionValue}`)
+      .sort((a, b) => a.localeCompare(b))
+      .join('|');
+    return `${samplerRuleset}::${tokens}`;
+  };
 
   const buildCapturedSamplerPayload = (snapshot: SamplerSourceSnapshot) => {
     const parsed = snapshot.parsed;
     const selectedOptions = buildSamplerSelectedOptions(parsed);
+    const normalizedRuleset = (parsed.ruleset || ruleset).trim();
+    const traversalPath: SamplerSelectedOption[] = [];
+    const traversalPathKey = buildTraversalPathKey(traversalPath);
+    const rawSnippet = {
+      Description: parsed.productDescription ?? null,
+      IPNCode: parsed.ipnCode ?? null,
+      Price: parsed.configuredPrice ?? null,
+      SessionID: parsed.sessionId ?? null,
+    };
 
     return {
-      capturedAt: new Date().toISOString(),
-      capturedFrom: snapshot.source,
-      capturedFromAt: snapshot.capturedAt,
-      cpqContext: {
-        ruleset: parsed.ruleset,
-        namespace: parsed.namespace ?? selectedRuleset?.namespace ?? fallbackRuleset.namespace,
-        headerId: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
-        detailId: parsed.detailId ?? null,
-        sessionId: parsed.sessionId,
-        sourceHeaderId: parsed.sourceHeaderId ?? null,
-        sourceDetailId: parsed.sourceDetailId ?? null,
-      },
-      bikeSummary: {
-        description: parsed.productDescription ?? null,
-        ipn: parsed.ipnCode ?? null,
-        price: parsed.configuredPrice ?? null,
-      },
+      sequence: 1,
+      timestamp: new Date().toISOString(),
+      traversalLevel: 1,
+      traversalPath,
+      traversalPathKey,
+      parentPathKey: '',
+      changedFeatureId: '',
+      changedOptionId: '',
+      changedOptionValue: '',
+      ruleset: normalizedRuleset,
+      namespace: parsed.namespace ?? selectedRuleset?.namespace ?? fallbackRuleset.namespace,
+      headerId: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+      detailId: parsed.detailId ?? null,
+      sessionId: parsed.sessionId,
+      baseDetailId: parsed.sourceDetailId ?? parsed.detailId ?? null,
+      sourceDetailId: parsed.sourceDetailId ?? null,
+      branchDetailId: parsed.detailId ?? null,
+      samplerMode: 'sampler',
+      description: parsed.productDescription ?? null,
+      ipn: parsed.ipnCode ?? null,
+      price: parsed.configuredPrice ?? null,
       selectedOptions,
-      debug: parsed.debug ?? null,
-      raw: snapshot.rawResponse ?? parsed.raw ?? null,
+      dropdownOrderSnapshot: parsed.features.map((feature, index) => {
+        const selectedOptionId = (feature.selectedOptionId ?? '').trim();
+        const selectedOption =
+          feature.availableOptions.find((option) => option.optionId === selectedOptionId) ??
+          feature.availableOptions.find((option) => option.selected) ??
+          null;
+        return {
+          level: index + 1,
+          featureId: feature.featureId.trim(),
+          featureLabel: feature.featureLabel.trim(),
+          selectedOptionId,
+          selectedOptionLabel: (selectedOption?.label ?? selectedOptionId ?? '').trim() || '(none)',
+          selectedOptionValue: (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? '').trim(),
+        };
+      }),
+      signature: buildSamplerSignature(normalizedRuleset, selectedOptions),
+      rawSnippet,
+      source: 'manual-save',
     };
   };
 
@@ -596,17 +650,17 @@ export default function BikeBuilderPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ipn_code: capturedPayload.bikeSummary.ipn,
+          ipn_code: capturedPayload.ipn,
           ruleset: lastSamplerSource.parsed.ruleset || ruleset,
           account_code: selectedAccount.account_code,
           customer_id: selectedAccount.customer_id,
           currency: selectedAccount.currency,
           language: selectedAccount.language,
           country_code: selectedAccount.country_code,
-          namespace: capturedPayload.cpqContext.namespace,
-          header_id: capturedPayload.cpqContext.headerId,
-          detail_id: capturedPayload.cpqContext.detailId,
-          session_id: capturedPayload.cpqContext.sessionId,
+          namespace: capturedPayload.namespace,
+          header_id: capturedPayload.headerId,
+          detail_id: capturedPayload.detailId,
+          session_id: capturedPayload.sessionId,
           json_result: capturedPayload,
         }),
       });
