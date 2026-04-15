@@ -11,6 +11,18 @@ This review covers only the manual CPQ lifecycle currently implemented in the ap
 
 It explicitly excludes the historical sampler traversal flow (`CPQ_sampler_result`) as the canonical manual save path.
 
+## Additive bulk lifecycle (combinations table)
+
+The `/cpq` page now also supports **Configure all ticked items** from generated combinations.
+This does not replace the manual lifecycle; it orchestrates the same Start → Configure → Finalize → Save pattern per selected row.
+
+Key invariants:
+- Each selected row runs in a fresh StartConfiguration session.
+- `featureId` is re-mapped from each fresh session model (never reused from original generated session).
+- Option matching is feature-scoped (option lookup happens inside the mapped feature only).
+- Configure calls are skipped when row target option already matches current selected option.
+- Every automation call is written into the debug timeline using `Bulk:*` actions.
+
 ---
 
 ## End-to-end narrative (frontend → app API → CPQ → parsing/state → DB)
@@ -341,4 +353,3 @@ After finalize success, frontend sends a large object containing:
 
 - `CPQ_sampler_result` is still present for sampler/image-management workflows, but is not used by manual save/retrieve flow.
 - Manual canonical persistence and retrieval are implemented through `cpq_configuration_references` + `/api/cpq/configuration-references` + `/api/cpq/retrieve-configuration`.
-
