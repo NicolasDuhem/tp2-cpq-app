@@ -44,6 +44,7 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 - `/bike-builder` (alias route to `/cpq`)
 - `/cpq/setup`
 - `/cpq/results` (historical sampler result matrix)
+- `/cpq/ui-docs` (internal UI label-to-code/data mapping)
 
 ## APIs
 - `POST /api/cpq/init`
@@ -74,3 +75,8 @@ npm run dev
 - `docs/ARCHITECTURE.md`
 - `docs/DATABASE.md`
 - `docs/PROCESSDATA.md`
+
+## UI governance
+- Picture management on `/cpq/setup` now uses dynamic feature tabs, feature summary metrics, tile navigation, and modal editing for picture links.
+- Internal UI mapping documentation lives at `/cpq/ui-docs`.
+- Standard: every UI change should include an update to the `/cpq/ui-docs` mapping table in the same PR.

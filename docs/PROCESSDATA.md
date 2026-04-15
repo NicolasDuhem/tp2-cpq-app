@@ -132,3 +132,18 @@
 ### Debug trace visibility
 - Automated calls are timeline-visible with `Bulk:*` action names.
 - This keeps app request/response and route-level CPQ traceability aligned with manual debugging.
+
+
+### Setup picture management UX contract
+- Picture mappings are loaded from `GET /api/cpq/setup/picture-management` and grouped by `feature_label` tabs in the client UI.
+- Feature summary metrics are computed client-side from loaded rows:
+  - `missing`: rows with 0 populated picture links (`picture_link_1..4`)
+  - `with pictures`: rows with at least 1 populated picture link
+  - `completion`: `with pictures / total`
+  - `fully complete`: rows with 4 populated links
+- Editing occurs in a modal per unique `(feature_label, option_label, option_value)` tile and persists through `PUT /api/cpq/setup/picture-management/:id`.
+- Sync from sampler behavior and DB semantics are unchanged.
+
+### UI documentation governance
+- `/cpq/ui-docs` is the internal map of visible UI labels to component ownership and data source contracts.
+- Any UI update should include a same-PR update to this map.
