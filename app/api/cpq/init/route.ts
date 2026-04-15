@@ -4,8 +4,11 @@ import { buildStartConfigurationPayload } from '@/lib/cpq/runtime/config';
 import { mapCpqToNormalizedState } from '@/lib/cpq/runtime/mappers';
 import { mockInitState } from '@/lib/cpq/runtime/mock-data';
 import { InitConfiguratorRequest } from '@/types/cpq';
+import { createTraceId, errorToLog, logTrace } from '@/lib/cpq/runtime/debug';
 
 export async function POST(req: NextRequest) {
+  const traceId = req.headers.get('x-cpq-trace-id') ?? createTraceId();
+  const start = Date.now();
   const body = (await req.json().catch(() => ({}))) as Partial<InitConfiguratorRequest>;
   const ruleset = body.ruleset ?? process.env.CPQ_PART_NAME ?? 'BBLV6_G-LineMY26';
 
@@ -22,7 +25,15 @@ export async function POST(req: NextRequest) {
     context: body.context,
   };
 
-  console.log('[cpq/init] request', requestPayload);
+  logTrace({
+    timestamp: new Date().toISOString(),
+    traceId,
+    action: 'StartConfiguration',
+    route: '/api/cpq/init',
+    source: 'api',
+    request: requestPayload,
+  });
+
   const cpqStartRequestBody = buildStartConfigurationPayload({
     namespace: requestPayload.namespace,
     partName: requestPayload.partName || requestPayload.ruleset,
@@ -45,6 +56,7 @@ export async function POST(req: NextRequest) {
   if (process.env.CPQ_USE_MOCK === 'true') {
     const parsed = mockInitState(ruleset);
     return NextResponse.json({
+      traceId,
       sessionId: parsed.sessionId,
       parsed,
       rawResponse: parsed.raw ?? parsed,
@@ -54,10 +66,27 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const cpqResponse = await startConfiguration(requestPayload);
+    const cpqResponse = await startConfiguration(requestPayload, undefined, {
+      traceId,
+      route: '/api/cpq/init',
+      action: 'StartConfiguration',
+    });
     const normalized = mapCpqToNormalizedState(cpqResponse, ruleset);
 
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: 'StartConfiguration',
+      route: '/api/cpq/init',
+      source: 'api',
+      status: 200,
+      success: true,
+      durationMs: Date.now() - start,
+      response: { sessionId: normalized.sessionId },
+    });
+
     return NextResponse.json({
+      traceId,
       sessionId: normalized.sessionId,
       parsed: normalized,
       rawResponse: cpqResponse,
@@ -65,9 +94,19 @@ export async function POST(req: NextRequest) {
       callType: 'StartConfiguration',
     });
   } catch (error) {
-    console.error('[cpq/init] failed', error);
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: 'StartConfiguration',
+      route: '/api/cpq/init',
+      source: 'api',
+      status: 500,
+      success: false,
+      durationMs: Date.now() - start,
+      error: errorToLog(error),
+    });
     return NextResponse.json(
-      { error: 'CPQ init failed', details: error instanceof Error ? error.message : String(error) },
+      { traceId, error: 'CPQ init failed', details: error instanceof Error ? error.message : String(error) },
       { status: 500 },
     );
   }

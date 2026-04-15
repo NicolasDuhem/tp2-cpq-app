@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db/client';
+import { createTraceId, errorToLog, logTrace } from './debug';
 
 export type ConfigurationReferenceRow = {
   id: number;
@@ -54,6 +55,12 @@ export type SaveConfigurationReferenceInput = {
   json_snapshot?: unknown;
 };
 
+type DbTraceOptions = {
+  traceId?: string;
+  route?: string;
+  action?: string;
+};
+
 const trimOrNull = (value: unknown) => {
   const trimmed = String(value ?? '').trim();
   return trimmed || null;
@@ -65,78 +72,157 @@ const trimRequired = (value: unknown, field: string) => {
   return trimmed;
 };
 
-const buildReferenceKey = () => `CFG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+const buildReferenceKey = () =>
+  `CFG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-export async function saveConfigurationReference(input: SaveConfigurationReferenceInput) {
+export async function saveConfigurationReference(input: SaveConfigurationReferenceInput, options?: DbTraceOptions) {
+  const traceId = options?.traceId ?? createTraceId();
+  const start = Date.now();
   const providedReference = trimOrNull(input.configuration_reference);
   const configurationReference = providedReference ?? buildReferenceKey();
 
-  const rows = (await sql`
-    insert into cpq_configuration_references (
-      configuration_reference,
-      ruleset,
-      namespace,
-      header_id,
-      finalized_detail_id,
-      source_header_id,
-      source_detail_id,
-      account_code,
-      customer_id,
-      account_type,
-      company,
-      currency,
-      language,
-      country_code,
-      customer_location,
-      application_instance,
-      application_name,
-      finalized_session_id,
-      final_ipn_code,
-      product_description,
-      finalize_response_json,
-      json_snapshot,
-      is_active
-    )
-    values (
-      ${configurationReference},
-      ${trimRequired(input.ruleset, 'ruleset')},
-      ${trimRequired(input.namespace, 'namespace')},
-      ${trimRequired(input.header_id, 'header_id')},
-      ${trimRequired(input.finalized_detail_id, 'finalized_detail_id')},
-      ${trimOrNull(input.source_header_id)},
-      ${trimOrNull(input.source_detail_id)},
-      ${trimOrNull(input.account_code)},
-      ${trimOrNull(input.customer_id)},
-      ${trimOrNull(input.account_type)},
-      ${trimOrNull(input.company)},
-      ${trimOrNull(input.currency)},
-      ${trimOrNull(input.language)},
-      ${trimOrNull(input.country_code)},
-      ${trimOrNull(input.customer_location)},
-      ${trimOrNull(input.application_instance)},
-      ${trimOrNull(input.application_name)},
-      ${trimOrNull(input.finalized_session_id)},
-      ${trimOrNull(input.final_ipn_code)},
-      ${trimOrNull(input.product_description)},
-      ${JSON.stringify(input.finalize_response_json ?? {})}::jsonb,
-      ${JSON.stringify(input.json_snapshot ?? {})}::jsonb,
-      true
-    )
-    returning *
-  `) as ConfigurationReferenceRow[];
+  logTrace({
+    timestamp: new Date().toISOString(),
+    traceId,
+    action: options?.action ?? 'saveConfigurationReference',
+    route: options?.route ?? '/api/cpq/configuration-references',
+    source: 'db',
+    request: {
+      ...input,
+      configuration_reference: configurationReference,
+    },
+  });
 
-  return rows[0];
+  try {
+    const rows = (await sql`
+      insert into cpq_configuration_references (
+        configuration_reference,
+        ruleset,
+        namespace,
+        header_id,
+        finalized_detail_id,
+        source_header_id,
+        source_detail_id,
+        account_code,
+        customer_id,
+        account_type,
+        company,
+        currency,
+        language,
+        country_code,
+        customer_location,
+        application_instance,
+        application_name,
+        finalized_session_id,
+        final_ipn_code,
+        product_description,
+        finalize_response_json,
+        json_snapshot,
+        is_active
+      )
+      values (
+        ${configurationReference},
+        ${trimRequired(input.ruleset, 'ruleset')},
+        ${trimRequired(input.namespace, 'namespace')},
+        ${trimRequired(input.header_id, 'header_id')},
+        ${trimRequired(input.finalized_detail_id, 'finalized_detail_id')},
+        ${trimOrNull(input.source_header_id)},
+        ${trimOrNull(input.source_detail_id)},
+        ${trimOrNull(input.account_code)},
+        ${trimOrNull(input.customer_id)},
+        ${trimOrNull(input.account_type)},
+        ${trimOrNull(input.company)},
+        ${trimOrNull(input.currency)},
+        ${trimOrNull(input.language)},
+        ${trimOrNull(input.country_code)},
+        ${trimOrNull(input.customer_location)},
+        ${trimOrNull(input.application_instance)},
+        ${trimOrNull(input.application_name)},
+        ${trimOrNull(input.finalized_session_id)},
+        ${trimOrNull(input.final_ipn_code)},
+        ${trimOrNull(input.product_description)},
+        ${JSON.stringify(input.finalize_response_json ?? {})}::jsonb,
+        ${JSON.stringify(input.json_snapshot ?? {})}::jsonb,
+        true
+      )
+      returning *
+    `) as ConfigurationReferenceRow[];
+
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: options?.action ?? 'saveConfigurationReference',
+      route: options?.route ?? '/api/cpq/configuration-references',
+      source: 'db',
+      status: 201,
+      success: true,
+      durationMs: Date.now() - start,
+      response: rows[0],
+    });
+
+    return rows[0];
+  } catch (error) {
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: options?.action ?? 'saveConfigurationReference',
+      route: options?.route ?? '/api/cpq/configuration-references',
+      source: 'db',
+      success: false,
+      durationMs: Date.now() - start,
+      error: errorToLog(error),
+    });
+    throw error;
+  }
 }
 
-export async function resolveConfigurationReference(configurationReference: string) {
-  const rows = (await sql`
-    select *
-    from cpq_configuration_references
-    where configuration_reference = ${trimRequired(configurationReference, 'configuration_reference')}
-      and is_active = true
-    order by updated_at desc, id desc
-    limit 1
-  `) as ConfigurationReferenceRow[];
+export async function resolveConfigurationReference(configurationReference: string, options?: DbTraceOptions) {
+  const traceId = options?.traceId ?? createTraceId();
+  const start = Date.now();
 
-  return rows[0] ?? null;
+  logTrace({
+    timestamp: new Date().toISOString(),
+    traceId,
+    action: options?.action ?? 'resolveConfigurationReference',
+    route: options?.route ?? '/api/cpq/configuration-references',
+    source: 'db',
+    request: { configurationReference },
+  });
+
+  try {
+    const rows = (await sql`
+      select *
+      from cpq_configuration_references
+      where configuration_reference = ${trimRequired(configurationReference, 'configuration_reference')}
+        and is_active = true
+      order by updated_at desc, id desc
+      limit 1
+    `) as ConfigurationReferenceRow[];
+
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: options?.action ?? 'resolveConfigurationReference',
+      route: options?.route ?? '/api/cpq/configuration-references',
+      source: 'db',
+      status: 200,
+      success: true,
+      durationMs: Date.now() - start,
+      response: rows[0] ?? { found: false },
+    });
+
+    return rows[0] ?? null;
+  } catch (error) {
+    logTrace({
+      timestamp: new Date().toISOString(),
+      traceId,
+      action: options?.action ?? 'resolveConfigurationReference',
+      route: options?.route ?? '/api/cpq/configuration-references',
+      source: 'db',
+      success: false,
+      durationMs: Date.now() - start,
+      error: errorToLog(error),
+    });
+    throw error;
+  }
 }
