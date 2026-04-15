@@ -340,11 +340,38 @@ export const finalizeConfiguration = async (sessionId: string, options?: CpqClie
     action: 'FinalizeConfiguration',
   });
 
-  if (!result.ok || !result.data) {
+  const trimmedText = (result.text ?? '').trim();
+  const parsed = result.data;
+  const hasExplicitError =
+    Boolean(parsed) &&
+    typeof parsed === 'object' &&
+    (Reflect.has(parsed, 'error') ||
+      Reflect.has(parsed, 'errors') ||
+      Reflect.has(parsed, 'exception') ||
+      (Reflect.has(parsed, 'success') && parsed.success === false));
+  const finalizeSuccess = result.status === 200 && !hasExplicitError;
+
+  logTrace({
+    timestamp: new Date().toISOString(),
+    traceId: options?.traceId ?? createTraceId(),
+    action: options?.action ?? 'FinalizeConfiguration',
+    route: options?.route ?? 'cpq:FinalizeConfiguration',
+    source: 'cpq',
+    status: result.status,
+    success: finalizeSuccess,
+    response: {
+      rawResponseText: sanitizeForLog(result.text ?? ''),
+      parsedJson: parsed ? sanitizeForLog(parsed) : null,
+      finalizeSuccess,
+      emptyBody: trimmedText.length === 0,
+    },
+  });
+
+  if (!finalizeSuccess) {
     throw new Error(
-      `CPQ FinalizeConfiguration failed (${result.status}): ${result.data ? JSON.stringify(result.data) : result.text ?? 'No response body'}`,
+      `CPQ FinalizeConfiguration failed (${result.status}): ${parsed ? JSON.stringify(parsed) : result.text ?? 'No response body'}`,
     );
   }
 
-  return result.data;
+  return parsed ?? {};
 };

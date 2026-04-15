@@ -40,30 +40,6 @@ export async function POST(req: NextRequest) {
     });
     const parsed = mapCpqToNormalizedState(cpqResponse, ruleset);
 
-    if (!parsed.detailId) {
-      logTrace({
-        timestamp: new Date().toISOString(),
-        traceId,
-        action: 'FinalizeConfiguration',
-        route: '/api/cpq/finalize',
-        source: 'api',
-        status: 502,
-        success: false,
-        durationMs: Date.now() - start,
-        response: { rawResponse: sanitizeForLog(cpqResponse), parsed },
-        error: { message: 'Unexpected CPQ response: finalized detail ID missing' },
-      });
-      return NextResponse.json(
-        {
-          traceId,
-          error: 'Unexpected CPQ response: finalized detail ID missing',
-          errorCategory: 'finalized_detail_missing',
-          details: 'Finalize completed but no DetailId/ConfigurationId was found in the response payload.',
-        },
-        { status: 502 },
-      );
-    }
-
     logTrace({
       timestamp: new Date().toISOString(),
       traceId,
@@ -74,8 +50,11 @@ export async function POST(req: NextRequest) {
       success: true,
       durationMs: Date.now() - start,
       response: {
+        rawResponseText: typeof cpqResponse === 'string' ? cpqResponse : '',
+        parsedJson: sanitizeForLog(cpqResponse),
+        finalizeSuccess: true,
         sessionId,
-        detailId: parsed.detailId,
+        detailId: parsed.detailId ?? null,
       },
     });
 

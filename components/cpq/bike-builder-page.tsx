@@ -316,7 +316,7 @@ export default function BikeBuilderPage() {
       }
 
       const finalizedState = finalizeResult.payload.parsed;
-      const finalizedDetailId = finalizedState.detailId ?? '';
+      const finalizedDetailId = finalizedState.detailId ?? state.detailId ?? '';
       if (!finalizedDetailId) {
         setSaveStatus('error');
         setSaveMessage('Unexpected CPQ response: finalized detail ID missing');
