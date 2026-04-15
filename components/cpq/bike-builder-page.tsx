@@ -1,7 +1,12 @@
 'use client';
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
-import { BikeBuilderContext, BikeBuilderFeatureOption, NormalizedBikeBuilderState } from '@/types/cpq';
+import {
+  BikeBuilderContext,
+  BikeBuilderFeatureOption,
+  FinalizeConfigurationRequest,
+  NormalizedBikeBuilderState,
+} from '@/types/cpq';
 
 type RequestState = {
   loading: boolean;
@@ -293,10 +298,15 @@ export default function BikeBuilderPage() {
     setSaveTechnicalDetail(null);
 
     try {
-      const finalizeResult = await trackedFetch<CpqRouteResponse>(traceId, 'FinalizeConfiguration', '/api/cpq/finalize', {
-        sessionId: state.sessionId,
-        ruleset,
-      });
+      const finalizePayload: FinalizeConfigurationRequest = {
+        sessionID: state.sessionId,
+      };
+      const finalizeResult = await trackedFetch<CpqRouteResponse>(
+        traceId,
+        'FinalizeConfiguration',
+        '/api/cpq/finalize',
+        finalizePayload,
+      );
 
       if (!finalizeResult.response.ok) {
         setSaveStatus('error');

@@ -119,6 +119,10 @@ export type ConfigureConfiguratorRequest = {
   context?: Partial<BikeBuilderContext>;
 };
 
+export type FinalizeConfigurationRequest = {
+  sessionID: string;
+};
+
 export type CpqApiEnvelope = {
   [key: string]: unknown;
 };
