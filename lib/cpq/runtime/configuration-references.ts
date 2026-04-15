@@ -4,10 +4,14 @@ import { createTraceId, errorToLog, logTrace } from './debug';
 export type ConfigurationReferenceRow = {
   id: number;
   configuration_reference: string;
+  canonical_header_id: string;
+  canonical_detail_id: string;
   ruleset: string;
   namespace: string;
-  header_id: string;
-  finalized_detail_id: string;
+  header_id: string | null;
+  finalized_detail_id: string | null;
+  source_working_detail_id: string | null;
+  source_session_id: string | null;
   source_header_id: string | null;
   source_detail_id: string | null;
   account_code: string | null;
@@ -32,10 +36,14 @@ export type ConfigurationReferenceRow = {
 
 export type SaveConfigurationReferenceInput = {
   configuration_reference?: string;
+  canonical_header_id?: string | null;
+  canonical_detail_id?: string | null;
   ruleset: string;
   namespace: string;
-  header_id: string;
-  finalized_detail_id: string;
+  header_id?: string | null;
+  finalized_detail_id?: string | null;
+  source_working_detail_id?: string | null;
+  source_session_id?: string | null;
   source_header_id?: string | null;
   source_detail_id?: string | null;
   account_code?: string | null;
@@ -75,11 +83,54 @@ const trimRequired = (value: unknown, field: string) => {
 const buildReferenceKey = () =>
   `CFG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
+const toJsonObject = (value: unknown, fieldName: string) => {
+  if (value === undefined) return {};
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+};
+
 export async function saveConfigurationReference(input: SaveConfigurationReferenceInput, options?: DbTraceOptions) {
   const traceId = options?.traceId ?? createTraceId();
   const start = Date.now();
   const providedReference = trimOrNull(input.configuration_reference);
   const configurationReference = providedReference ?? buildReferenceKey();
+  const ruleset = trimRequired(input.ruleset, 'ruleset');
+  const namespace = trimRequired(input.namespace, 'namespace');
+  const canonicalDetailId = trimRequired(input.canonical_detail_id ?? input.finalized_detail_id, 'canonical_detail_id');
+  const canonicalHeaderId = trimOrNull(input.canonical_header_id ?? input.header_id) ?? 'Simulator';
+  const finalizeResponseJson = toJsonObject(input.finalize_response_json, 'finalize_response_json');
+  const jsonSnapshot = toJsonObject(input.json_snapshot, 'json_snapshot');
+  const payload = {
+    configuration_reference: trimRequired(configurationReference, 'configuration_reference'),
+    canonical_header_id: canonicalHeaderId,
+    canonical_detail_id: canonicalDetailId,
+    ruleset,
+    namespace,
+    header_id: trimOrNull(input.header_id) ?? canonicalHeaderId,
+    finalized_detail_id: trimOrNull(input.finalized_detail_id) ?? canonicalDetailId,
+    source_working_detail_id: trimOrNull(input.source_working_detail_id),
+    source_session_id: trimOrNull(input.source_session_id),
+    source_header_id: trimOrNull(input.source_header_id),
+    source_detail_id: trimOrNull(input.source_detail_id),
+    account_code: trimOrNull(input.account_code),
+    customer_id: trimOrNull(input.customer_id),
+    account_type: trimOrNull(input.account_type),
+    company: trimOrNull(input.company),
+    currency: trimOrNull(input.currency),
+    language: trimOrNull(input.language),
+    country_code: trimOrNull(input.country_code),
+    customer_location: trimOrNull(input.customer_location),
+    application_instance: trimOrNull(input.application_instance),
+    application_name: trimOrNull(input.application_name),
+    finalized_session_id: trimOrNull(input.finalized_session_id),
+    final_ipn_code: trimOrNull(input.final_ipn_code),
+    product_description: trimOrNull(input.product_description),
+    finalize_response_json: finalizeResponseJson,
+    json_snapshot: jsonSnapshot,
+    is_active: true,
+  };
 
   logTrace({
     timestamp: new Date().toISOString(),
@@ -88,8 +139,8 @@ export async function saveConfigurationReference(input: SaveConfigurationReferen
     route: options?.route ?? '/api/cpq/configuration-references',
     source: 'db',
     request: {
-      ...input,
-      configuration_reference: configurationReference,
+      input,
+      db_payload: payload,
     },
   });
 
@@ -97,10 +148,14 @@ export async function saveConfigurationReference(input: SaveConfigurationReferen
     const rows = (await sql`
       insert into cpq_configuration_references (
         configuration_reference,
+        canonical_header_id,
+        canonical_detail_id,
         ruleset,
         namespace,
         header_id,
         finalized_detail_id,
+        source_working_detail_id,
+        source_session_id,
         source_header_id,
         source_detail_id,
         account_code,
@@ -121,30 +176,63 @@ export async function saveConfigurationReference(input: SaveConfigurationReferen
         is_active
       )
       values (
-        ${configurationReference},
-        ${trimRequired(input.ruleset, 'ruleset')},
-        ${trimRequired(input.namespace, 'namespace')},
-        ${trimRequired(input.header_id, 'header_id')},
-        ${trimRequired(input.finalized_detail_id, 'finalized_detail_id')},
-        ${trimOrNull(input.source_header_id)},
-        ${trimOrNull(input.source_detail_id)},
-        ${trimOrNull(input.account_code)},
-        ${trimOrNull(input.customer_id)},
-        ${trimOrNull(input.account_type)},
-        ${trimOrNull(input.company)},
-        ${trimOrNull(input.currency)},
-        ${trimOrNull(input.language)},
-        ${trimOrNull(input.country_code)},
-        ${trimOrNull(input.customer_location)},
-        ${trimOrNull(input.application_instance)},
-        ${trimOrNull(input.application_name)},
-        ${trimOrNull(input.finalized_session_id)},
-        ${trimOrNull(input.final_ipn_code)},
-        ${trimOrNull(input.product_description)},
-        ${JSON.stringify(input.finalize_response_json ?? {})}::jsonb,
-        ${JSON.stringify(input.json_snapshot ?? {})}::jsonb,
-        true
+        ${payload.configuration_reference},
+        ${payload.canonical_header_id},
+        ${payload.canonical_detail_id},
+        ${payload.ruleset},
+        ${payload.namespace},
+        ${payload.header_id},
+        ${payload.finalized_detail_id},
+        ${payload.source_working_detail_id},
+        ${payload.source_session_id},
+        ${payload.source_header_id},
+        ${payload.source_detail_id},
+        ${payload.account_code},
+        ${payload.customer_id},
+        ${payload.account_type},
+        ${payload.company},
+        ${payload.currency},
+        ${payload.language},
+        ${payload.country_code},
+        ${payload.customer_location},
+        ${payload.application_instance},
+        ${payload.application_name},
+        ${payload.finalized_session_id},
+        ${payload.final_ipn_code},
+        ${payload.product_description},
+        ${JSON.stringify(payload.finalize_response_json)}::jsonb,
+        ${JSON.stringify(payload.json_snapshot)}::jsonb,
+        ${payload.is_active}
       )
+      on conflict (configuration_reference) do update
+      set
+        canonical_header_id = excluded.canonical_header_id,
+        canonical_detail_id = excluded.canonical_detail_id,
+        ruleset = excluded.ruleset,
+        namespace = excluded.namespace,
+        header_id = excluded.header_id,
+        finalized_detail_id = excluded.finalized_detail_id,
+        source_working_detail_id = excluded.source_working_detail_id,
+        source_session_id = excluded.source_session_id,
+        source_header_id = excluded.source_header_id,
+        source_detail_id = excluded.source_detail_id,
+        account_code = excluded.account_code,
+        customer_id = excluded.customer_id,
+        account_type = excluded.account_type,
+        company = excluded.company,
+        currency = excluded.currency,
+        language = excluded.language,
+        country_code = excluded.country_code,
+        customer_location = excluded.customer_location,
+        application_instance = excluded.application_instance,
+        application_name = excluded.application_name,
+        finalized_session_id = excluded.finalized_session_id,
+        final_ipn_code = excluded.final_ipn_code,
+        product_description = excluded.product_description,
+        finalize_response_json = excluded.finalize_response_json,
+        json_snapshot = excluded.json_snapshot,
+        is_active = excluded.is_active,
+        updated_at = now()
       returning *
     `) as ConfigurationReferenceRow[];
 

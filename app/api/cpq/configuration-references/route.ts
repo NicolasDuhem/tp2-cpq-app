@@ -20,10 +20,14 @@ export async function POST(req: NextRequest) {
     const row = await saveConfigurationReference(
       {
         configuration_reference: body.configuration_reference as string | undefined,
+        canonical_header_id: body.canonical_header_id as string | null | undefined,
+        canonical_detail_id: body.canonical_detail_id as string | null | undefined,
         ruleset: String(body.ruleset ?? ''),
         namespace: String(body.namespace ?? ''),
-        header_id: String(body.header_id ?? ''),
-        finalized_detail_id: String(body.finalized_detail_id ?? ''),
+        header_id: body.header_id as string | null | undefined,
+        finalized_detail_id: body.finalized_detail_id as string | null | undefined,
+        source_working_detail_id: body.source_working_detail_id as string | null | undefined,
+        source_session_id: body.source_session_id as string | null | undefined,
         source_header_id: body.source_header_id as string | null | undefined,
         source_detail_id: body.source_detail_id as string | null | undefined,
         account_code: body.account_code as string | null | undefined,

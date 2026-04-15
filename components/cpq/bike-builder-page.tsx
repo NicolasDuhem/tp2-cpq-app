@@ -331,8 +331,12 @@ export default function BikeBuilderPage() {
         {
           ruleset,
           namespace: selectedRuleset?.namespace ?? fallbackRuleset.namespace,
+          canonical_header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          canonical_detail_id: finalizedDetailId,
           header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
           finalized_detail_id: finalizedDetailId,
+          source_working_detail_id: state.detailId,
+          source_session_id: state.sessionId,
           source_header_id: finalizedState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
           source_detail_id: finalizedState.sourceDetailId ?? null,
           account_code: selectedAccount.account_code,
