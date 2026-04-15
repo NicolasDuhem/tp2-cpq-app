@@ -133,6 +133,43 @@
 - Automated calls are timeline-visible with `Bulk:*` action names.
 - This keeps app request/response and route-level CPQ traceability aligned with manual debugging.
 
+## Layered preview process data (`/cpq`)
+
+### Trigger
+- Runs whenever the active configurator selected options change in CPQ Bike Builder state.
+
+### Input extraction
+- Client derives selected options from current parsed state (`features[]`) and sends:
+  - `featureLabel`
+  - selected `optionLabel`
+  - selected `optionValue`
+- Entries without all three fields are excluded.
+
+### Matching contract
+- API endpoint: `POST /api/cpq/image-layers`.
+- Service: `resolveImageLayersForSelectedOptions` in `lib/cpq/setup/service.ts`.
+- SQL join conditions:
+  - `cpq_image_management.feature_label = selection.featureLabel`
+  - `cpq_image_management.option_label = selection.optionLabel`
+  - `cpq_image_management.option_value = selection.optionValue`
+  - `cpq_image_management.is_active = true`
+- Empty `picture_link_1..4` values are ignored in returned layers.
+
+### Layer ordering contract (current)
+1. Preserve selected-option order received from current configuration state.
+2. For each matched row, append non-empty links in slot order: `picture_link_1` → `picture_link_4`.
+
+### UI behavior
+- Preview area displays stacked layers in a fixed product-viewer viewport.
+- Empty response displays: **No image layers available.**
+- Metadata chips show layer/match counts.
+- Optional details panel shows matched mapping triplets and ordering rule.
+
+### Download behavior
+- User click on **Download current preview** triggers export.
+- Client composes all rendered layers into a canvas and downloads one PNG file.
+- No automatic download occurs on state changes.
+
 
 ### Setup picture management UX contract
 - Picture mappings are loaded from `GET /api/cpq/setup/picture-management` and grouped by `feature_label` tabs in the client UI.
