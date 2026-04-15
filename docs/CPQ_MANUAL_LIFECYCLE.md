@@ -241,7 +241,13 @@ This prevents further Configure calls on a finalized session from current screen
 
 ### Frontend payload to save route
 
-After finalize success, frontend sends a large object containing:
+After finalize success, frontend sends save payload where content source is selected as:
+
+- latest `Configure` parsed/raw state when available
+- otherwise latest `StartConfiguration` parsed/raw state
+- never finalize response body as canonical snapshot source
+
+Then frontend sends a large object containing:
 
 - Canonical identity:
   - `ruleset`, `namespace`, `canonical_header_id`, `canonical_detail_id`
@@ -252,10 +258,10 @@ After finalize success, frontend sends a large object containing:
 - App metadata:
   - `application_instance`, `application_name`
 - Product outputs:
-  - `final_ipn_code`, `product_description`
+  - `final_ipn_code`, `product_description` (from selected Configure/Start source state)
 - Debug/audit JSON blobs:
-  - `finalize_response_json`
-  - `json_snapshot` (parsed state + raw finalize + timestamp)
+  - `finalize_response_json` (audit/lifecycle only)
+  - `json_snapshot` (selected Configure/Start parsed state + selected options + source marker + raw finalize + timestamp)
 
 ### Database mapping behavior
 
@@ -276,6 +282,7 @@ After finalize success, frontend sends a large object containing:
 
 - On success route returns `{ traceId, row }` (201).
 - UI stores `row` as `lastSavedReference`, fills retrieve input with `configuration_reference`, shows success message.
+- UI then automatically writes one secondary row to `CPQ_sampler_result` using the same selected Configure/Start source snapshot.
 - On failure returns 400 with `db_persistence_failed` category and details; UI shows error.
 
 ---

@@ -8,8 +8,9 @@
 1. `POST /api/cpq/init` → StartConfiguration.
 2. `POST /api/cpq/configure` → apply manual option changes.
 3. `POST /api/cpq/finalize` → FinalizeConfiguration on save.
-4. `POST /api/cpq/configuration-references` → persist finalized save row.
-5. `POST /api/cpq/retrieve-configuration` → resolve saved row and start a fresh session from it.
+4. `POST /api/cpq/configuration-references` → persist canonical save row from latest source state (`configure` preferred, fallback `startconfiguration`).
+5. `POST /api/cpq/sampler-result` → auto-persist secondary sampler row only after canonical save succeeds (same source-state rule).
+6. `POST /api/cpq/retrieve-configuration` → resolve saved row and start a fresh session from it.
 
 ## Bulk combinations execution model (additive)
 - Source data: generated combinations table on `/cpq`.
@@ -21,7 +22,8 @@
   4. Skip `/api/cpq/configure` when option is already selected in current state.
   5. After each configure call, replace row working state with response-parsed state before next feature.
   6. Finalize with `POST /api/cpq/finalize` payload `{ "sessionID": "<row session>" }`.
-  7. Save finalized row in `cpq_configuration_references`.
+  7. Save canonical row in `cpq_configuration_references` from row working state (not finalize payload body).
+  8. Auto-save secondary sampler row in `CPQ_sampler_result` using same source state.
 - Sessions are never reused across selected rows.
 - Debug timeline records all automated API calls (`Bulk:StartConfiguration`, `Bulk:Configure`, `Bulk:FinalizeConfiguration`, `Bulk:SaveConfigurationReference`).
 
@@ -36,7 +38,10 @@
 - Save path is deterministic:
   - Finalize live session
   - Capture finalized `detailId`
-  - Persist in `cpq_configuration_references`
+  - Select save source state: latest `configure`, else latest `startconfiguration`
+  - Persist canonical row in `cpq_configuration_references` from selected source
+  - Persist secondary sampler row in `CPQ_sampler_result` from selected source
+  - Keep finalize response only as finalize metadata/audit (`finalize_response_json`)
 
 ## Secondary sampler capture architecture
 - `/cpq` also exposes **Save current configuration to sampler** (secondary/manual support flow).

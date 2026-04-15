@@ -179,6 +179,9 @@ export default function BikeBuilderPage() {
   const [samplerSaveMessage, setSamplerSaveMessage] = useState('-');
   const [samplerSaveDetail, setSamplerSaveDetail] = useState<string | null>(null);
   const [lastSamplerSource, setLastSamplerSource] = useState<SamplerSourceSnapshot | null>(null);
+  const [latestStartSnapshot, setLatestStartSnapshot] = useState<SamplerSourceSnapshot | null>(null);
+  const [latestConfigureSnapshot, setLatestConfigureSnapshot] = useState<SamplerSourceSnapshot | null>(null);
+  const [latestFinalizeResponse, setLatestFinalizeResponse] = useState<CpqRouteResponse | null>(null);
 
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
@@ -305,12 +308,16 @@ export default function BikeBuilderPage() {
       }
 
       setState(responsePayload.parsed);
-      setLastSamplerSource({
+      const startSnapshot: SamplerSourceSnapshot = {
         source: 'startconfiguration',
         capturedAt: new Date().toISOString(),
         parsed: responsePayload.parsed,
         rawResponse: responsePayload.rawResponse,
-      });
+      };
+      setLastSamplerSource(startSnapshot);
+      setLatestStartSnapshot(startSnapshot);
+      setLatestConfigureSnapshot(null);
+      setLatestFinalizeResponse(null);
       manualSessionClosedRef.current = false;
       setRequestState({ loading: false });
     } catch (error) {
@@ -516,12 +523,14 @@ export default function BikeBuilderPage() {
       }
 
       setState(payload.parsed);
-      setLastSamplerSource({
+      const configureSnapshot: SamplerSourceSnapshot = {
         source: 'configure',
         capturedAt: new Date().toISOString(),
         parsed: payload.parsed,
         rawResponse: payload.rawResponse,
-      });
+      };
+      setLastSamplerSource(configureSnapshot);
+      setLatestConfigureSnapshot(configureSnapshot);
       setRequestState({ loading: false });
     } catch (error) {
       setRequestState({ loading: false, error: error instanceof Error ? error.message : 'Configure failed' });
@@ -625,6 +634,42 @@ export default function BikeBuilderPage() {
     };
   };
 
+  const getLatestSaveSourceState = (): SamplerSourceSnapshot | null => latestConfigureSnapshot ?? latestStartSnapshot;
+
+  const saveSamplerSnapshot = async (
+    traceId: string,
+    action: string,
+    sourceSnapshot: SamplerSourceSnapshot,
+    account: AccountContextRecord,
+  ) => {
+    const capturedPayload = buildCapturedSamplerPayload(sourceSnapshot);
+    const samplerResult = await trackedFetch<{ error?: string; row?: { id: number; created_at: string } }>(
+      traceId,
+      action,
+      '/api/cpq/sampler-result',
+      {
+        ipn_code: capturedPayload.ipn,
+        ruleset: sourceSnapshot.parsed.ruleset || ruleset,
+        account_code: account.account_code,
+        customer_id: account.customer_id,
+        currency: account.currency,
+        language: account.language,
+        country_code: account.country_code,
+        namespace: capturedPayload.namespace,
+        header_id: capturedPayload.headerId,
+        detail_id: capturedPayload.detailId,
+        session_id: capturedPayload.sessionId,
+        json_result: capturedPayload,
+      },
+    );
+
+    if (!samplerResult.response.ok || !samplerResult.payload.row) {
+      throw new Error(samplerResult.payload.error ?? 'Sampler save failed');
+    }
+
+    return { row: samplerResult.payload.row, capturedPayload };
+  };
+
   const saveCurrentConfigurationToSampler = async () => {
     if (!selectedAccount) {
       setSamplerSaveStatus('error');
@@ -645,37 +690,12 @@ export default function BikeBuilderPage() {
     setSamplerSaveDetail(null);
 
     try {
-      const capturedPayload = buildCapturedSamplerPayload(lastSamplerSource);
-      const response = await fetch('/api/cpq/sampler-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ipn_code: capturedPayload.ipn,
-          ruleset: lastSamplerSource.parsed.ruleset || ruleset,
-          account_code: selectedAccount.account_code,
-          customer_id: selectedAccount.customer_id,
-          currency: selectedAccount.currency,
-          language: selectedAccount.language,
-          country_code: selectedAccount.country_code,
-          namespace: capturedPayload.namespace,
-          header_id: capturedPayload.headerId,
-          detail_id: capturedPayload.detailId,
-          session_id: capturedPayload.sessionId,
-          json_result: capturedPayload,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        row?: { id: number; created_at: string };
-      };
-
-      if (!response.ok || !payload.row) {
-        throw new Error(payload.error ?? 'Sampler save failed');
-      }
+      const traceId = createTraceId();
+      const { row, capturedPayload } = await saveSamplerSnapshot(traceId, 'SaveCurrentConfigurationToSampler', lastSamplerSource, selectedAccount);
 
       setSamplerSaveStatus('saved');
       setSamplerSaveMessage(
-        `Sampler row ${payload.row.id} saved from ${lastSamplerSource.source} (${capturedPayload.selectedOptions.length} selected options).`,
+        `Sampler row ${row.id} saved from ${lastSamplerSource.source} (${capturedPayload.selectedOptions.length} selected options).`,
       );
     } catch (error) {
       setSamplerSaveStatus('error');
@@ -707,6 +727,7 @@ export default function BikeBuilderPage() {
         '/api/cpq/finalize',
         finalizePayload,
       );
+      setLatestFinalizeResponse(finalizeResult.payload);
 
       if (!finalizeResult.response.ok) {
         setSaveStatus('error');
@@ -724,6 +745,15 @@ export default function BikeBuilderPage() {
         return;
       }
 
+      const saveSource = getLatestSaveSourceState();
+      if (!saveSource) {
+        setSaveStatus('error');
+        setSaveMessage('No Start/Configure response available to build save payload.');
+        setSaveTechnicalDetail('Canonical save payload must use latest Configure, otherwise latest StartConfiguration.');
+        return;
+      }
+      const saveSourceState = saveSource.parsed;
+
       const saveResult = await trackedFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
         traceId,
         'SaveConfigurationReference',
@@ -737,8 +767,8 @@ export default function BikeBuilderPage() {
           finalized_detail_id: finalizedDetailId,
           source_working_detail_id: state.detailId,
           source_session_id: state.sessionId,
-          source_header_id: finalizedState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
-          source_detail_id: finalizedState.sourceDetailId ?? null,
+          source_header_id: saveSourceState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          source_detail_id: saveSourceState.sourceDetailId ?? null,
           account_code: selectedAccount.account_code,
           customer_id: selectedAccount.customer_id,
           account_type: 'Dealer',
@@ -750,11 +780,13 @@ export default function BikeBuilderPage() {
           application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
           application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
           finalized_session_id: state.sessionId,
-          final_ipn_code: finalizedState.ipnCode ?? null,
-          product_description: finalizedState.productDescription ?? null,
+          final_ipn_code: saveSourceState.ipnCode ?? null,
+          product_description: saveSourceState.productDescription ?? null,
           finalize_response_json: finalizeResult.payload.rawResponse,
           json_snapshot: {
-            parsed: finalizedState,
+            parsed: saveSourceState,
+            selectedOptions: buildSamplerSelectedOptions(saveSourceState),
+            saveSource: saveSource.source,
             finalizeRawResponse: finalizeResult.payload.rawResponse,
             retrievedAt: new Date().toISOString(),
           },
@@ -770,8 +802,14 @@ export default function BikeBuilderPage() {
 
       setLastSavedReference(saveResult.payload.row);
       setConfigurationReferenceInput(saveResult.payload.row.configuration_reference);
+      const { row: samplerRow } = await saveSamplerSnapshot(traceId, 'AutoSaveSamplerAfterCanonicalSave', saveSource, selectedAccount);
+      setSamplerSaveStatus('saved');
+      setSamplerSaveDetail(null);
+      setSamplerSaveMessage(`Auto-saved sampler row ${samplerRow.id} from ${saveSource.source} after canonical save.`);
       setSaveStatus('saved');
-      setSaveMessage(`Saved ${saveResult.payload.row.configuration_reference} with finalized detailId ${finalizedDetailId}.`);
+      setSaveMessage(
+        `Saved ${saveResult.payload.row.configuration_reference} with finalized detailId ${finalizedDetailId} using ${saveSource.source} snapshot.`,
+      );
 
       manualSessionClosedRef.current = true;
       setState(null);
@@ -812,6 +850,16 @@ export default function BikeBuilderPage() {
       manualSessionClosedRef.current = false;
       setRuleset(payload.resolved.ruleset);
       if (payload.resolved.account_code) setAccountCode(payload.resolved.account_code);
+      const retrievedSnapshot: SamplerSourceSnapshot = {
+        source: 'startconfiguration',
+        capturedAt: new Date().toISOString(),
+        parsed: payload.parsed,
+        rawResponse: payload.parsed,
+      };
+      setLastSamplerSource(retrievedSnapshot);
+      setLatestStartSnapshot(retrievedSnapshot);
+      setLatestConfigureSnapshot(null);
+      setLatestFinalizeResponse(null);
 
       setRetrieveStatus('saved');
       setRetrieveMessage(`Retrieved ${payload.resolved.configuration_reference}. New session ${payload.parsed.sessionId}.`);
@@ -928,6 +976,12 @@ export default function BikeBuilderPage() {
     if (!finalizedDetailId) {
       throw new Error('Bulk finalize response did not return detailId.');
     }
+    const bulkSaveSourceSnapshot: SamplerSourceSnapshot = {
+      source: 'configure',
+      capturedAt: new Date().toISOString(),
+      parsed: rowState,
+      rawResponse: rowState,
+    };
 
     const saveResult = await trackedFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
       traceId,
@@ -942,8 +996,8 @@ export default function BikeBuilderPage() {
         finalized_detail_id: finalizedDetailId,
         source_working_detail_id: rowState.detailId,
         source_session_id: rowState.sessionId,
-        source_header_id: finalizedState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
-        source_detail_id: finalizedState.sourceDetailId ?? null,
+        source_header_id: rowState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+        source_detail_id: rowState.sourceDetailId ?? null,
         account_code: selectedAccount.account_code,
         customer_id: selectedAccount.customer_id,
         account_type: 'Dealer',
@@ -955,11 +1009,13 @@ export default function BikeBuilderPage() {
         application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
         application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
         finalized_session_id: rowState.sessionId,
-        final_ipn_code: finalizedState.ipnCode ?? null,
-        product_description: finalizedState.productDescription ?? null,
+        final_ipn_code: rowState.ipnCode ?? null,
+        product_description: rowState.productDescription ?? null,
         finalize_response_json: finalizeResult.payload.rawResponse,
         json_snapshot: {
-          parsed: finalizedState,
+          parsed: rowState,
+          selectedOptions: buildSamplerSelectedOptions(rowState),
+          saveSource: bulkSaveSourceSnapshot.source,
           finalizeRawResponse: finalizeResult.payload.rawResponse,
           retrievedAt: new Date().toISOString(),
         },
@@ -969,6 +1025,7 @@ export default function BikeBuilderPage() {
     if (!saveResult.response.ok || !saveResult.payload.row) {
       throw new Error(saveResult.payload.error ?? 'Bulk save reference failed');
     }
+    await saveSamplerSnapshot(traceId, 'Bulk:AutoSaveSamplerAfterCanonicalSave', bulkSaveSourceSnapshot, selectedAccount);
 
     return {
       finalizedState,
@@ -1178,6 +1235,11 @@ export default function BikeBuilderPage() {
           <div>DetailId: {state?.detailId ?? '-'}</div>
           <div>IPN: {state?.ipnCode ?? '-'}</div>
           <div>Save status: {saveMessage}</div>
+          <div>
+            Save source tracker: configure={latestConfigureSnapshot ? 'available' : 'none'} / start=
+            {latestStartSnapshot ? 'available' : 'none'}
+          </div>
+          <div>Last finalize response tracked: {latestFinalizeResponse ? 'yes (kept separate from save payload)' : 'no'}</div>
           <div>
             Sampler save status: {samplerSaveMessage}
             {lastSamplerSource ? ` (source: ${lastSamplerSource.source})` : ''}

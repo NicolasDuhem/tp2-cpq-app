@@ -4,7 +4,7 @@
 
 Manual saved configurations are persisted to `cpq_configuration_references` via `POST /api/cpq/configuration-references`.
 
-`CPQ_sampler_result` remains in repository for sampler/image sync workflows and is not used by the manual save/retrieve lifecycle.
+`CPQ_sampler_result` remains a secondary/support table for sampler/image sync workflows; it receives an automatic row after canonical save but is still not the retrieve source of truth.
 
 ---
 
@@ -52,7 +52,7 @@ Stores stable, retrievable identities for manually finalized CPQ configurations,
 ### Payload/debug snapshots
 
 - `finalize_response_json` — raw finalize route response object as JSONB.
-- `json_snapshot` — object containing normalized parsed state + finalize raw payload + timestamp.
+- `json_snapshot` — object containing normalized parsed state from latest Configure (fallback StartConfiguration), selected options, save-source marker, finalize raw payload, timestamp.
 
 ### Record lifecycle
 
@@ -93,22 +93,24 @@ All context/lineage/product fields can be null/empty.
 - `header_id` / `canonical_header_id` (from setup ruleset)
 - account context fields (`account_code`, `customer_id`, `currency`, `language`, `country_code`, company/account_type/customer_location derivations)
 
-## From working runtime state (pre-finalize)
+## From latest working source state (preferred Configure, fallback StartConfiguration)
 
 - `source_working_detail_id` (`state.detailId`)
 - `source_session_id` and `finalized_session_id` (`state.sessionId`)
-- potentially `source_header_id`, `source_detail_id` (from parsed finalize state fallback logic)
+- `source_header_id`, `source_detail_id` from selected source state (not finalize payload body)
+- final parsed content fields used for save snapshot (`final_ipn_code`, `product_description`, selected options)
 
 ## From FinalizeConfiguration response/state
 
 - `finalized_detail_id` and `canonical_detail_id` from `parsed.detailId` or fallback to prior state detail id
-- `finalize_response_json` raw object
-- final parsed fields captured into `json_snapshot`
+- `finalize_response_json` raw object for audit/debug
+- finalize payload is **not** the canonical snapshot source
 
-## From current parsed app state
+## Automatic secondary write after canonical save
 
-- `final_ipn_code`
-- `product_description`
+- After canonical upsert success, UI writes one row to `CPQ_sampler_result`.
+- Sampler row payload uses the same selected source snapshot (latest Configure, fallback StartConfiguration).
+- Finalize payload is excluded as sampler snapshot source.
 
 ---
 
@@ -159,4 +161,3 @@ That means a fresh DB created strictly from current `sql/schema.sql` may fail ma
 
 - `CPQ_sampler_result` is **not** the canonical manual save path.
 - `cpq_configuration_references` is the implemented source of truth for manual save/retrieve lifecycle.
-
