@@ -258,3 +258,25 @@ export const configureConfiguration = async (
 
   return result.data;
 };
+
+
+export const finalizeConfiguration = async (sessionId: string): Promise<CpqApiEnvelope> => {
+  const trimmedSessionId = String(sessionId ?? '').trim();
+  if (!trimmedSessionId) {
+    throw new Error('sessionId is required');
+  }
+
+  const body = {
+    sessionID: trimmedSessionId,
+  };
+
+  const result = await post('FinalizeConfiguration', body, '[cpq/finalize]');
+
+  if (!result.ok || !result.data) {
+    throw new Error(
+      `CPQ FinalizeConfiguration failed (${result.status}): ${result.data ? JSON.stringify(result.data) : result.text ?? 'No response body'}`,
+    );
+  }
+
+  return result.data;
+};

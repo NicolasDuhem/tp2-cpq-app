@@ -1,42 +1,27 @@
-# DATABASE (retained CPQ model)
+# DATABASE
 
-## Tables
+## Core tables
 1. `CPQ_setup_account_context`
-   - Builder/setup account context definitions.
+   - Account/customer context used to build StartConfiguration integration parameters.
 2. `CPQ_setup_ruleset`
-   - Ruleset definitions used by runtime targeting.
-3. `CPQ_sampler_result`
-   - Persistent traversal snapshots and sync-processing flags.
-   - Logical uniqueness is `(ipn_code, country_code)`.
-   - `country_code` originates from selected setup account context (`CPQ_setup_account_context`).
-4. `cpq_configuration_references`
-   - Canonical retrieve registry for `configuration_reference` -> (`canonical_header_id`, `canonical_detail_id`, ruleset, namespace).
+   - Ruleset + namespace + header defaults for StartConfiguration.
+3. `cpq_configuration_references` (**canonical manual save/retrieve table**)
+   - Stores finalized configuration identities and full retrieval context.
+4. `CPQ_sampler_result`
+   - Historical sampler output table (not canonical manual save/retrieve).
 5. `cpq_image_management`
-   - Selection-to-picture-layer mappings.
+   - Option-to-image layer mapping.
 
-## SQL baseline strategy
-- Keep a clean fresh baseline only:
-  - `sql/schema.sql`
-  - `sql/seed.sql`
-- No historical monolith migrations are retained in this extracted CPQ scope.
+## `cpq_configuration_references` fields
+- identity: `configuration_reference` (unique), `ruleset`, `namespace`, `header_id`, `finalized_detail_id`
+- retrieve metadata: `source_header_id`, `source_detail_id`
+- account context: `account_code`, `customer_id`, `account_type`, `company`, `currency`, `language`, `country_code`, `customer_location`
+- application context: `application_instance`, `application_name`
+- session/finalization metadata: `finalized_session_id`, `final_ipn_code`, `product_description`
+- snapshots: `finalize_response_json`, `json_snapshot`
+- lifecycle: `is_active`, `created_at`, `updated_at`
 
-## Indexing / uniqueness notes
-- `cpq_sampler_result_ipn_country_unique_idx` enforces DB-side uniqueness for non-null `(ipn_code, country_code)`.
-- App/API also apply deduplication logic so first-discovered tuple is retained and later duplicates are skipped.
-
-
-## Sampler matrix consumption notes
-- `sku_code` shown on `/cpq/results` is sourced from `CPQ_sampler_result.ipn_code`.
-- `bike_type` is enriched by joining `CPQ_sampler_result.ruleset` to `CPQ_setup_ruleset.cpq_ruleset`.
-- Feature columns come from `CPQ_sampler_result.json_result.selectedOptions[*]` entries.
-- Country matrix values are populated from `CPQ_sampler_result.detail_id` keyed by `country_code`.
-
-
-## Canonical retrieve registry notes
-- `cpq_configuration_references` is the source of truth for retrieve identity.
-- `CPQ_sampler_result` stays a historical output/snapshot table and is not used as canonical retrieve registry.
-
-
-## Canonical save write rule
-- Rows in `cpq_configuration_references` are only written/updated after backend copy succeeds into a fresh canonical `detail_id`.
-- `source_working_detail_id` and `source_session_id` remain trace metadata and are not treated as canonical retrieve identity.
+## Save/retrieve semantics
+- Save writes finalized rows to `cpq_configuration_references` after FinalizeConfiguration.
+- Retrieve resolves a row by `configuration_reference` and rebuilds StartConfiguration from saved data.
+- `CPQ_sampler_result` is intentionally excluded from canonical save/retrieve behavior.
