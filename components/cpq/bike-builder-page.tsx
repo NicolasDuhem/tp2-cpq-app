@@ -136,6 +136,35 @@ type CombinationDataset = {
 };
 
 type RowExecutionStatus = 'pending' | 'running' | 'configured' | 'finalized' | 'saved' | 'failed';
+type BulkExecutionStage =
+  | 'StartConfiguration'
+  | 'Feature remap'
+  | 'Configure'
+  | 'FinalizeConfiguration'
+  | 'Save to cpq_configuration_references'
+  | 'Save to CPQ_sampler_result';
+type RowDiagnosticEvent = {
+  timestamp: string;
+  stage: BulkExecutionStage;
+  direction: 'request' | 'response';
+  action: string;
+  route: string;
+  payload: unknown;
+  status?: number;
+  traceId?: string;
+};
+type RowFailureDiagnostics = {
+  rowId: string;
+  status: RowExecutionStatus;
+  currentStage: BulkExecutionStage | null;
+  errorSummary: string | null;
+  errorDetails: string | null;
+  traceId?: string;
+  sessionId?: string | null;
+  ignoredFeatures: string[];
+  lastRequests: RowDiagnosticEvent[];
+  lastResponses: RowDiagnosticEvent[];
+};
 
 type BulkProgress = {
   running: boolean;
@@ -230,6 +259,9 @@ export default function BikeBuilderPage() {
   const [combinationDataset, setCombinationDataset] = useState<CombinationDataset | null>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [combinationRowStatuses, setCombinationRowStatuses] = useState<Record<string, RowExecutionStatus>>({});
+  const [combinationRowDiagnostics, setCombinationRowDiagnostics] = useState<Record<string, RowFailureDiagnostics>>({});
+  const [failedRowModalId, setFailedRowModalId] = useState<string | null>(null);
+  const [ignoredFeatureLabels, setIgnoredFeatureLabels] = useState<string[]>([]);
   const [bulkProgress, setBulkProgress] = useState<BulkProgress>({
     running: false,
     totalSelected: 0,
@@ -407,6 +439,19 @@ export default function BikeBuilderPage() {
   }, []);
 
   useEffect(() => {
+    const loadIgnoredFeatures = async () => {
+      try {
+        const response = await fetch('/api/cpq/setup/picture-management/ignored-features');
+        const payload = (await response.json().catch(() => ({ featureLabels: [] }))) as { featureLabels?: string[] };
+        setIgnoredFeatureLabels(Array.isArray(payload.featureLabels) ? payload.featureLabels : []);
+      } catch {
+        setIgnoredFeatureLabels([]);
+      }
+    };
+    void loadIgnoredFeatures();
+  }, []);
+
+  useEffect(() => {
     if (!selectedAccount || !ruleset) return;
     void startConfiguration();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -416,6 +461,8 @@ export default function BikeBuilderPage() {
     setCombinationDataset(null);
     setColumnFilters({});
     setCombinationRowStatuses({});
+    setCombinationRowDiagnostics({});
+    setFailedRowModalId(null);
     setBulkProgress({
       running: false,
       totalSelected: 0,
@@ -1018,7 +1065,94 @@ export default function BikeBuilderPage() {
     );
   };
 
-  const startFreshSessionForCombinationRow = async (traceId: string) => {
+  const pushRowDiagnosticEvent = (rowId: string, event: RowDiagnosticEvent) => {
+    setCombinationRowDiagnostics((current) => {
+      const previous = current[rowId] ?? {
+        rowId,
+        status: 'pending' as RowExecutionStatus,
+        currentStage: null,
+        errorSummary: null,
+        errorDetails: null,
+        ignoredFeatures: [],
+        lastRequests: [],
+        lastResponses: [],
+      };
+      const nextRequests = event.direction === 'request' ? [...previous.lastRequests, event].slice(-2) : previous.lastRequests;
+      const nextResponses = event.direction === 'response' ? [...previous.lastResponses, event].slice(-2) : previous.lastResponses;
+      return {
+        ...current,
+        [rowId]: {
+          ...previous,
+          currentStage: event.stage,
+          lastRequests: nextRequests,
+          lastResponses: nextResponses,
+          traceId: event.traceId ?? previous.traceId,
+        },
+      };
+    });
+  };
+
+  const setRowDiagnosticStatus = (
+    rowId: string,
+    patch: Partial<Omit<RowFailureDiagnostics, 'rowId' | 'lastRequests' | 'lastResponses' | 'ignoredFeatures'>> & {
+      ignoredFeatures?: string[];
+    },
+  ) => {
+    setCombinationRowDiagnostics((current) => {
+      const previous = current[rowId] ?? {
+        rowId,
+        status: 'pending' as RowExecutionStatus,
+        currentStage: null,
+        errorSummary: null,
+        errorDetails: null,
+        ignoredFeatures: [],
+        lastRequests: [],
+        lastResponses: [],
+      };
+      return {
+        ...current,
+        [rowId]: {
+          ...previous,
+          ...patch,
+          ignoredFeatures: patch.ignoredFeatures ?? previous.ignoredFeatures,
+        },
+      };
+    });
+  };
+
+  const trackedBulkFetch = async <T,>(
+    rowId: string,
+    traceId: string,
+    stage: BulkExecutionStage,
+    action: string,
+    route: string,
+    payload: unknown,
+    init?: Omit<RequestInit, 'headers' | 'body'>,
+  ) => {
+    pushRowDiagnosticEvent(rowId, {
+      timestamp: new Date().toISOString(),
+      stage,
+      direction: 'request',
+      action,
+      route,
+      payload,
+      traceId,
+    });
+    const result = await trackedFetch<T>(traceId, action, route, payload, init);
+    pushRowDiagnosticEvent(rowId, {
+      timestamp: new Date().toISOString(),
+      stage,
+      direction: 'response',
+      action,
+      route,
+      payload: result.payload,
+      status: result.response.status,
+      traceId: (result.payload as { traceId?: string })?.traceId ?? traceId,
+    });
+    return result;
+  };
+
+  const startFreshSessionForCombinationRow = async (rowId: string, traceId: string) => {
     if (!selectedAccount) throw new Error('Select an account code to run bulk configuration.');
 
     const activeRuleset = selectedRuleset ?? {
@@ -1045,8 +1179,10 @@ export default function BikeBuilderPage() {
       } satisfies Partial<BikeBuilderContext>,
     };
 
-    const { response, payload: responsePayload } = await trackedFetch<CpqRouteResponse>(
+    const { response, payload: responsePayload } = await trackedBulkFetch<CpqRouteResponse>(
+      rowId,
       traceId,
+      'StartConfiguration',
       'Bulk:StartConfiguration',
       '/api/cpq/init',
       payload,
@@ -1058,13 +1194,20 @@ export default function BikeBuilderPage() {
     return responsePayload.parsed;
   };
 
-  const finalizeAndSaveCombinationRow = async (traceId: string, rowState: NormalizedBikeBuilderState) => {
+  const finalizeAndSaveCombinationRow = async (rowId: string, traceId: string, rowState: NormalizedBikeBuilderState) => {
     if (!selectedAccount) {
       throw new Error('Missing account context for save.');
     }
 
     const finalizePayload: FinalizeConfigurationRequest = { sessionID: rowState.sessionId };
-    const finalizeResult = await trackedFetch<CpqRouteResponse>(traceId, 'Bulk:FinalizeConfiguration', '/api/cpq/finalize', finalizePayload);
+    const finalizeResult = await trackedBulkFetch<CpqRouteResponse>(
+      rowId,
+      traceId,
+      'FinalizeConfiguration',
+      'Bulk:FinalizeConfiguration',
+      '/api/cpq/finalize',
+      finalizePayload,
+    );
 
     if (!finalizeResult.response.ok) {
       throw new Error(finalizeResult.payload.error ?? 'Bulk finalize failed');
@@ -1082,8 +1225,10 @@ export default function BikeBuilderPage() {
       rawResponse: rowState,
     };
 
-    const saveResult = await trackedFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
+    const saveResult = await trackedBulkFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
+      rowId,
       traceId,
+      'Save to cpq_configuration_references',
       'Bulk:SaveConfigurationReference',
       '/api/cpq/configuration-references',
       {
@@ -1124,7 +1269,26 @@ export default function BikeBuilderPage() {
     if (!saveResult.response.ok || !saveResult.payload.row) {
       throw new Error(saveResult.payload.error ?? 'Bulk save reference failed');
     }
+    pushRowDiagnosticEvent(rowId, {
+      timestamp: new Date().toISOString(),
+      stage: 'Save to CPQ_sampler_result',
+      direction: 'request',
+      action: 'Bulk:AutoSaveSamplerAfterCanonicalSave',
+      route: '/api/cpq/sampler-result',
+      payload: { sessionId: rowState.sessionId, source: bulkSaveSourceSnapshot.source },
+      traceId,
+    });
     await saveSamplerSnapshot(traceId, 'Bulk:AutoSaveSamplerAfterCanonicalSave', bulkSaveSourceSnapshot, selectedAccount);
+    pushRowDiagnosticEvent(rowId, {
+      timestamp: new Date().toISOString(),
+      stage: 'Save to CPQ_sampler_result',
+      direction: 'response',
+      action: 'Bulk:AutoSaveSamplerAfterCanonicalSave',
+      route: '/api/cpq/sampler-result',
+      payload: { status: 'ok' },
+      status: 200,
+      traceId,
+    });
 
     return {
       finalizedState,
@@ -1134,6 +1298,16 @@ export default function BikeBuilderPage() {
 
   const runSelectedCombinationRows = async () => {
     if (!combinationDataset || !selectedAccount) return;
+    let latestIgnoredFeatureLabels = ignoredFeatureLabels;
+    try {
+      const response = await fetch('/api/cpq/setup/picture-management/ignored-features');
+      const payload = (await response.json().catch(() => ({ featureLabels: [] }))) as { featureLabels?: string[] };
+      latestIgnoredFeatureLabels = Array.isArray(payload.featureLabels) ? payload.featureLabels : [];
+      setIgnoredFeatureLabels(latestIgnoredFeatureLabels);
+    } catch {
+      latestIgnoredFeatureLabels = ignoredFeatureLabels;
+    }
+
     const selectedRows = combinationDataset.rows.filter((row) => row.selected);
     if (selectedRows.length === 0) {
       setBulkProgress((current) => ({ ...current, message: 'No rows are ticked.' }));
@@ -1145,6 +1319,23 @@ export default function BikeBuilderPage() {
       return acc;
     }, {});
     setCombinationRowStatuses(nextStatuses);
+    setCombinationRowDiagnostics(
+      selectedRows.reduce<Record<string, RowFailureDiagnostics>>((acc, row) => {
+        acc[row.id] = {
+          rowId: row.id,
+          status: 'pending',
+          currentStage: null,
+          errorSummary: null,
+          errorDetails: null,
+          sessionId: null,
+          traceId: undefined,
+          ignoredFeatures: [],
+          lastRequests: [],
+          lastResponses: [],
+        };
+        return acc;
+      }, {}),
+    );
     setBulkProgress({
       running: true,
       totalSelected: selectedRows.length,
@@ -1165,6 +1356,7 @@ export default function BikeBuilderPage() {
     for (const [rowIndex, row] of selectedRows.entries()) {
       const traceId = createTraceId();
       setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'running' }));
+      setRowDiagnosticStatus(row.id, { status: 'running', traceId, currentStage: 'StartConfiguration', errorSummary: null, errorDetails: null });
       setBulkProgress((current) => ({
         ...current,
         currentRowIndex: rowIndex + 1,
@@ -1175,13 +1367,24 @@ export default function BikeBuilderPage() {
       }));
 
       try {
-        let workingState = await startFreshSessionForCombinationRow(traceId);
+        let workingState = await startFreshSessionForCombinationRow(row.id, traceId);
+        setRowDiagnosticStatus(row.id, { sessionId: workingState.sessionId });
         setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
 
+        const ignoredFeaturesForRow: string[] = [];
         for (const column of combinationDataset.columns) {
           const rowCell = row.cellsByFeatureKey[column.stableFeatureKey];
           if (!rowCell) continue;
 
+          const isIgnoredFeature = latestIgnoredFeatureLabels.some(
+            (featureLabel) => featureLabel.trim().toLowerCase() === column.featureLabel.trim().toLowerCase(),
+          );
+          if (isIgnoredFeature) {
+            ignoredFeaturesForRow.push(column.featureLabel);
+            continue;
+          }
+
+          setRowDiagnosticStatus(row.id, { currentStage: 'Feature remap' });
           setBulkProgress((current) => ({ ...current, currentFeatureKey: column.stableFeatureKey }));
           const currentFeature = resolveCurrentFeatureForRowSelection(rowCell, workingState, column);
           if (!currentFeature) {
@@ -1199,8 +1402,11 @@ export default function BikeBuilderPage() {
             continue;
           }
 
-          const { response, payload } = await trackedFetch<CpqRouteResponse>(
+          setRowDiagnosticStatus(row.id, { currentStage: 'Configure' });
+          const { response, payload } = await trackedBulkFetch<CpqRouteResponse>(
+            row.id,
             traceId,
+            'Configure',
             'Bulk:Configure',
             '/api/cpq/configure',
             {
@@ -1223,13 +1429,17 @@ export default function BikeBuilderPage() {
             throw new Error(payload.error ?? 'Bulk configure failed');
           }
           workingState = payload.parsed;
+          setRowDiagnosticStatus(row.id, { sessionId: workingState.sessionId });
           setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
         }
 
+        setRowDiagnosticStatus(row.id, { ignoredFeatures: ignoredFeaturesForRow });
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'configured' }));
-        const { finalizedState, savedRow } = await finalizeAndSaveCombinationRow(traceId, workingState);
+        setRowDiagnosticStatus(row.id, { status: 'configured', currentStage: 'FinalizeConfiguration' });
+        const { finalizedState, savedRow } = await finalizeAndSaveCombinationRow(row.id, traceId, workingState);
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'finalized' }));
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'saved' }));
+        setRowDiagnosticStatus(row.id, { status: 'saved', currentStage: null, errorSummary: null, errorDetails: null });
         setLastSavedReference(savedRow);
         succeeded += 1;
         saved += 1;
@@ -1243,6 +1453,11 @@ export default function BikeBuilderPage() {
       } catch (error) {
         failed += 1;
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'failed' }));
+        setRowDiagnosticStatus(row.id, {
+          status: 'failed',
+          errorSummary: error instanceof Error ? error.message : `Row ${rowIndex + 1} failed.`,
+          errorDetails: error instanceof Error ? error.stack ?? error.message : String(error),
+        });
         setBulkProgress((current) => ({
           ...current,
           failed,
@@ -1250,6 +1465,15 @@ export default function BikeBuilderPage() {
         }));
       }
     }
+
+    setCombinationDataset((current) =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.filter((row) => row.selected),
+          }
+        : current,
+    );
 
     setBulkProgress((current) => ({
       ...current,
@@ -1264,6 +1488,7 @@ export default function BikeBuilderPage() {
     ...layer,
     order: index + 1,
   }));
+  const activeFailedRowDiagnostic = failedRowModalId ? combinationRowDiagnostics[failedRowModalId] ?? null : null;
 
   const handleDownloadCurrentPreview = async () => {
     if (orderedPreviewLayers.length === 0) {
@@ -1645,7 +1870,25 @@ export default function BikeBuilderPage() {
                           }
                         />
                       </td>
-                      <td style={styles.tableCell}>{combinationRowStatuses[row.id] ?? 'pending'}</td>
+                      <td style={styles.tableCell}>
+                        <div>
+                          {combinationRowStatuses[row.id] ?? 'pending'}
+                          {combinationRowDiagnostics[row.id]?.currentStage ? ` · ${combinationRowDiagnostics[row.id]?.currentStage}` : ''}
+                        </div>
+                        {combinationRowDiagnostics[row.id]?.ignoredFeatures.length ? (
+                          <div style={styles.cellMeta}>
+                            Ignored: {combinationRowDiagnostics[row.id]?.ignoredFeatures.join(', ')}
+                          </div>
+                        ) : null}
+                        {combinationRowStatuses[row.id] === 'failed' ? (
+                          <>
+                            <div style={styles.error}>{combinationRowDiagnostics[row.id]?.errorSummary ?? 'Failed'}</div>
+                            <button style={styles.inspectButton} onClick={() => setFailedRowModalId(row.id)}>
+                              Inspect failure
+                            </button>
+                          </>
+                        ) : null}
+                      </td>
                       {combinationDataset.columns.map((column) => {
                         const cell = row.cellsByFeatureKey[column.stableFeatureKey];
                         return (
@@ -1671,6 +1914,53 @@ export default function BikeBuilderPage() {
           </>
         )}
       </section>
+      {activeFailedRowDiagnostic ? (
+        <div style={styles.modalBackdrop} onClick={() => setFailedRowModalId(null)}>
+          <div style={styles.failureModal} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ margin: 0 }}>Bulk row failure details</h3>
+            <div>Row: {activeFailedRowDiagnostic.rowId}</div>
+            <div>Status: {activeFailedRowDiagnostic.status}</div>
+            <div>Stage: {activeFailedRowDiagnostic.currentStage ?? '-'}</div>
+            <div>TraceId: {activeFailedRowDiagnostic.traceId ?? '-'}</div>
+            <div>SessionId: {activeFailedRowDiagnostic.sessionId ?? '-'}</div>
+            <div style={styles.error}>Why: {activeFailedRowDiagnostic.errorSummary ?? '-'}</div>
+            {activeFailedRowDiagnostic.errorDetails ? <div style={styles.cellMeta}>Details: {activeFailedRowDiagnostic.errorDetails}</div> : null}
+            {activeFailedRowDiagnostic.ignoredFeatures.length ? (
+              <div style={styles.cellMeta}>Ignored features for this row: {activeFailedRowDiagnostic.ignoredFeatures.join(', ')}</div>
+            ) : null}
+
+            <div>
+              <strong>Last 2 requests</strong>
+              {activeFailedRowDiagnostic.lastRequests.length === 0 ? (
+                <div style={styles.cellMeta}>No requests captured.</div>
+              ) : (
+                activeFailedRowDiagnostic.lastRequests.map((entry) => (
+                  <details key={`${entry.timestamp}-${entry.action}-req`} style={styles.failureDetailBlock}>
+                    <summary>{entry.timestamp} · {entry.stage} · {entry.action}</summary>
+                    <pre style={styles.debugPre}>{JSON.stringify(entry.payload, null, 2)}</pre>
+                  </details>
+                ))
+              )}
+            </div>
+            <div>
+              <strong>Last 2 responses</strong>
+              {activeFailedRowDiagnostic.lastResponses.length === 0 ? (
+                <div style={styles.cellMeta}>No responses captured.</div>
+              ) : (
+                activeFailedRowDiagnostic.lastResponses.map((entry) => (
+                  <details key={`${entry.timestamp}-${entry.action}-res`} style={styles.failureDetailBlock}>
+                    <summary>{entry.timestamp} · {entry.stage} · status {entry.status ?? '-'}</summary>
+                    <pre style={styles.debugPre}>{JSON.stringify(entry.payload, null, 2)}</pre>
+                  </details>
+                ))
+              )}
+            </div>
+            <div style={styles.row}>
+              <button style={styles.button} onClick={() => setFailedRowModalId(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1854,6 +2144,45 @@ const styles: Record<string, CSSProperties> = {
     background: '#fff',
     color: '#18181b',
     cursor: 'pointer',
+  },
+  inspectButton: {
+    marginTop: '0.35rem',
+    minHeight: 28,
+    borderRadius: 6,
+    border: '1px solid #3f3f46',
+    padding: '0.2rem 0.45rem',
+    background: '#fff',
+    color: '#18181b',
+    cursor: 'pointer',
+    fontSize: '0.78rem',
+  },
+  modalBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15, 23, 42, 0.45)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
+    padding: '1rem',
+  },
+  failureModal: {
+    width: 'min(920px, 96vw)',
+    maxHeight: '90vh',
+    overflow: 'auto',
+    borderRadius: 12,
+    background: '#fff',
+    border: '1px solid #d4d4d8',
+    padding: '1rem',
+    display: 'grid',
+    gap: '0.55rem',
+  },
+  failureDetailBlock: {
+    border: '1px solid #e5e7eb',
+    borderRadius: 8,
+    padding: '0.4rem 0.5rem',
+    marginTop: '0.35rem',
+    background: '#fafafa',
   },
   previewCard: {
     border: '1px solid #d4d4d8',

@@ -166,6 +166,7 @@ export async function listImageManagementRows(filters: { featureLabel?: string; 
       feature_label,
       option_label,
       option_value,
+      ignore_during_configure,
       picture_link_1,
       picture_link_2,
       picture_link_3,
@@ -194,6 +195,7 @@ export async function updateImageManagementRow(id: number, input: Record<string,
   const pictureLink3 = asNullableTrimmedText(input.picture_link_3);
   const pictureLink4 = asNullableTrimmedText(input.picture_link_4);
   const isActive = parseBoolean(input.is_active, true);
+  const ignoreDuringConfigure = parseBoolean(input.ignore_during_configure, false);
 
   const rows = (await sql`
     update cpq_image_management
@@ -201,13 +203,15 @@ export async function updateImageManagementRow(id: number, input: Record<string,
         picture_link_2 = ${pictureLink2},
         picture_link_3 = ${pictureLink3},
         picture_link_4 = ${pictureLink4},
-        is_active = ${isActive}
+        is_active = ${isActive},
+        ignore_during_configure = ${ignoreDuringConfigure}
     where id = ${id}
     returning
       id,
       feature_label,
       option_label,
       option_value,
+      ignore_during_configure,
       picture_link_1,
       picture_link_2,
       picture_link_3,
@@ -218,6 +222,46 @@ export async function updateImageManagementRow(id: number, input: Record<string,
   `) as CpqImageManagementRecord[];
 
   return rows[0] ?? null;
+}
+
+export async function setImageFeatureIgnoreDuringConfigure(featureLabelInput: string, ignoreDuringConfigureInput: unknown) {
+  const featureLabel = asTrimmedText(featureLabelInput);
+  if (!featureLabel) {
+    throw new Error('feature_label is required');
+  }
+  const ignoreDuringConfigure = parseBoolean(ignoreDuringConfigureInput, false);
+
+  const rows = (await sql`
+    update cpq_image_management
+    set ignore_during_configure = ${ignoreDuringConfigure}
+    where feature_label = ${featureLabel}
+    returning
+      id,
+      feature_label,
+      option_label,
+      option_value,
+      ignore_during_configure,
+      picture_link_1,
+      picture_link_2,
+      picture_link_3,
+      picture_link_4,
+      is_active,
+      created_at,
+      updated_at
+  `) as CpqImageManagementRecord[];
+
+  return rows;
+}
+
+export async function listIgnoredFeatureLabelsForConfigure() {
+  const rows = (await sql`
+    select distinct feature_label
+    from cpq_image_management
+    where ignore_during_configure = true
+    order by feature_label
+  `) as Array<{ feature_label: string }>;
+
+  return rows.map((row) => row.feature_label);
 }
 
 export async function syncImageManagementFromSampler() {

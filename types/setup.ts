@@ -28,6 +28,7 @@ export type CpqImageManagementRecord = {
   feature_label: string;
   option_label: string;
   option_value: string;
+  ignore_during_configure: boolean;
   picture_link_1: string | null;
   picture_link_2: string | null;
   picture_link_3: string | null;

@@ -115,14 +115,18 @@
 3. **Feature-scoped option resolve**
    - Resolves option only from the mapped feature’s `availableOptions`.
    - Never performs global option matching across all features.
-4. **Configure loop**
+4. **Feature ignore rule**
+   - If feature label is flagged in setup (`ignore_during_configure = true`), bulk runner skips that feature and does not call `/configure`.
+5. **Configure loop**
    - Compares target option with current selected option/value.
    - Skips `/api/cpq/configure` if already matching.
    - If different, calls configure and refreshes current row state from response before continuing.
-5. **Finalize**
+6. **Finalize**
    - Calls `POST /api/cpq/finalize` with `{ "sessionID": "<row session>" }`.
-6. **Save**
+7. **Save**
    - Calls `POST /api/cpq/configuration-references` using existing manual save schema.
+8. **Sampler support save**
+   - Writes one support row to `CPQ_sampler_result`.
 
 ### Multi-row behavior
 - Next selected row always starts with a brand-new StartConfiguration call.
@@ -132,6 +136,11 @@
 ### Debug trace visibility
 - Automated calls are timeline-visible with `Bulk:*` action names.
 - This keeps app request/response and route-level CPQ traceability aligned with manual debugging.
+- Bulk rows also keep row-local diagnostics with stage + error + request/response ring buffers (last 2 each), visible from failed-row **Inspect failure** action.
+
+### Post-run table behavior
+- When a bulk run completes, combinations table is reduced to the originally ticked rows.
+- Unticked rows are removed from the visible table; selected rows retain their statuses and diagnostics.
 
 ## Layered preview process data (`/cpq`)
 
@@ -173,6 +182,7 @@
 
 ### Setup picture management UX contract
 - Picture mappings are loaded from `GET /api/cpq/setup/picture-management` and grouped by `feature_label` tabs in the client UI.
+- Feature-level toggle **Ignore during /configure** updates all rows sharing one feature label through `PUT /api/cpq/setup/picture-management/feature-flags`.
 - Feature summary metrics are computed client-side from loaded rows:
   - `missing`: rows with 0 populated picture links (`picture_link_1..4`)
   - `with pictures`: rows with at least 1 populated picture link
