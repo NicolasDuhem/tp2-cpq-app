@@ -1,19 +1,25 @@
-# Canonical Save Capability Gap
+# Canonical Save Capability Gap (historical note)
 
-## Current status (new app)
-- **Canonical save is only considered legacy-equivalent when ProductConfigurator `CopyConfiguration` is configured and reachable from the backend.**
-- The backend now attempts canonical save in this order:
-  1. Generate a new canonical `targetDetailId`
-  2. Call ProductConfigurator `CopyConfiguration` (or equivalent endpoint configured by env)
-  3. Persist `cpq_configuration_references` only after copy succeeds
-- If copy capability is not configured, `POST /api/cpq/configuration-references` returns `501` and no canonical reference row is written.
+## Current status (as of this documentation refresh)
 
-## Required capability
-To enable canonical save, set:
-- `CPQ_COPY_CONFIGURATION_URL` (required): full backend URL for CopyConfiguration-style operation.
-- `CPQ_COPY_API_KEY` (optional): API key used for copy endpoint (falls back to `CPQ_API_KEY`).
-- `CPQ_COPY_TIMEOUT_MS` (optional): timeout for copy request.
-- `CPQ_COPY_REQUEST_WRAPPER` (optional): set to `inputParameters` only if endpoint expects wrapped payload.
+The active runtime save path does **not** invoke ProductConfigurator `CopyConfiguration`.
+Canonical save is implemented by persisting canonical identity/context into `cpq_configuration_references` after finalize.
 
-## Why this exists
-Legacy flow relied on host-side copy semantics before persisting retrievable identity. Without a real copy call, retrieve remains approximation-only and can break when source/working identities diverge.
+## Why this file is retained
+
+A helper module exists (`lib/cpq/runtime/copy-configuration.ts`) for potential future copy-capability integration, but it is currently not wired into the active API routes.
+
+## Practical implication
+
+- Do not describe save flow as copy-backed in current operational docs.
+- If copy-backed behavior is introduced later, update:
+  - `CPQ_MANUAL_LIFECYCLE.md`
+  - `CPQ_DATABASE_SAVE_FLOW.md`
+  - `RETRIEVE_AND_REFERENCE_FLOW.md`
+  - and this file.
+
+## Potential future activation inputs (not currently active)
+- `CPQ_COPY_CONFIGURATION_URL`
+- `CPQ_COPY_API_KEY`
+- `CPQ_COPY_TIMEOUT_MS`
+- `CPQ_COPY_REQUEST_WRAPPER`

@@ -1,196 +1,107 @@
-# PROCESSDATA
+# Process data and flow contracts
 
-## Manual CPQ lifecycle (authoritative)
+## 1) Manual lifecycle on `/cpq`
 
-### 1) StartConfiguration
-- Triggered when `/cpq` loads with valid setup selections.
-- Triggered again when `ruleset` changes.
-- Triggered again when `account_code` changes.
-- Starts one live session and returns `sessionId` + current `detailId`.
+### StartConfiguration
+- Triggered manually by **Start New Session**.
+- Also retriggered when selected account or ruleset changes.
+- Route: `POST /api/cpq/init`.
+- Captures latest start snapshot for downstream save-source fallback.
 
-### 2) Configure
-- Every manual dropdown change calls `POST /api/cpq/configure`.
-- Uses the currently active `sessionId`.
-- UI state is hydrated from each Configure response.
+### Configure
+- Triggered by dropdown option changes.
+- Route: `POST /api/cpq/configure`.
+- Uses active session ID.
+- Updates current state and latest configure snapshot.
 
-### 3) FinalizeConfiguration
+### FinalizeConfiguration
 - Triggered by **Save Configuration**.
-- Calls `POST /api/cpq/finalize` with active `sessionId`.
-- Finalize closes the active session and returns finalized state identity.
+- Route: `POST /api/cpq/finalize`.
+- Finalize response is tracked and persisted as finalize metadata only.
 
-### 4) Save finalized configuration
-- After finalize succeeds, app writes one row to `cpq_configuration_references`.
-- Save payload source-of-truth is **not** finalize response body:
-  - preferred source: latest `Configure` response/state
-  - fallback source: latest `StartConfiguration` response/state
-  - finalize response is retained for lifecycle/audit metadata only.
-- A unique `configuration_reference` is always generated server-side if not provided.
-- Saved data includes retrieval context (ruleset/namespace/header/detail/account/application) and JSON snapshots.
+### Canonical save to `cpq_configuration_references`
+- Happens immediately after successful finalize.
+- Route: `POST /api/cpq/configuration-references`.
+- Canonical save source snapshot rule:
+  1. latest configure snapshot,
+  2. otherwise latest start snapshot,
+  3. never finalize response body.
 
-### 5) Automatic secondary sampler write after canonical save
-- If canonical save succeeds, app immediately writes one support row into `CPQ_sampler_result`.
-- Auto sampler row uses the same source-state contract (latest Configure else latest StartConfiguration).
-- Finalize response body is not used as sampler snapshot source.
+### Auto support write to `CPQ_sampler_result`
+- After canonical save success, one sampler row is auto-inserted.
+- Uses same snapshot source rule as canonical save.
 
-### 6) Retrieve configuration
-- User provides `configuration_reference`.
-- App resolves row from `cpq_configuration_references`.
-- App starts a fresh StartConfiguration using saved row values.
-- UI is hydrated from that response in a new live session.
+### Retrieve by reference
+- Triggered by **Retrieve Configuration**.
+- Route: `POST /api/cpq/retrieve-configuration`.
+- Resolves one `configuration_reference`, then calls StartConfiguration with saved context.
 
-## Session closure and continuation
-- Saving finalizes and closes current session.
-- To continue editing or configure another bike, a new StartConfiguration must be created.
+## 2) Sampler flow details
 
-## Deprecated from primary process
-- Traversal/sampler-driven manual save behavior is removed from the `/cpq` primary flow.
+## Manual sampler save
+- UI action: **Save current configuration to sampler**.
+- Route: `POST /api/cpq/sampler-result`.
+- Snapshot source rule:
+  - latest Configure, else latest StartConfiguration.
+  - finalize is explicitly excluded.
 
-## Secondary process: manual sampler save (`CPQ_sampler_result`)
+## `json_result` structure intent
+The stored snapshot keeps a legacy-style shape with core sections:
+- CPQ context (`ruleset`, `namespace`, header/detail/session/source IDs)
+- bike summary (`description`, `ipn`, `price`)
+- `selectedOptions[]` containing `featureLabel/featureId/optionLabel/optionId/optionValue`
+- optional debug/raw snippets
 
-### Trigger
-- User clicks **Save current configuration to sampler** on `/cpq`.
+## Sampler → image-management sync
+- Route: `POST /api/cpq/setup/picture-management/sync`.
+- Reads unprocessed sampler rows.
+- Extracts selected options.
+- Upserts unique `(feature_label, option_label, option_value)` into `cpq_image_management`.
+- Marks sampler rows processed (`processed_for_image_sync = true`).
 
-### Source-state contract (legacy-compatible)
-- Capture from latest `Configure` response if available.
-- If no configure occurred yet in current flow, capture from latest `StartConfiguration` response.
-- Do **not** use `FinalizeConfiguration` response for this sampler capture path.
+## 3) Picture management flow
 
-### Persistence contract (`POST /api/cpq/sampler-result`)
-- Required: `ruleset`, `account_code` (trimmed + non-empty validation).
-- Optional text fields are trimmed; empty string persisted as `null`.
-- `json_result` is stored as jsonb; defaults to `{}` if missing.
-- New rows start with `processed_for_image_sync = false`.
+On `/cpq/setup` Picture management tab:
+- Feature tabs are generated dynamically from `feature_label`.
+- Search and missing-only filters apply before tab grouping.
+- Summary metrics are feature-scoped:
+  - total rows
+  - missing pictures (0/4)
+  - with pictures (>=1)
+  - completion %
+  - fully complete (4/4)
+- Tile click opens modal editor for picture links + activation/ignore flags.
+- Feature-level **Ignore during /configure** toggle updates all rows of that feature.
 
-### Captured `json_result` shape
-- `cpqContext`: ruleset, namespace, headerId, detailId, sessionId, sourceHeaderId, sourceDetailId.
-- `bikeSummary`: description, ipn, price.
-- `selectedOptions[]` (critical for sync), each entry includes:
-  - `featureLabel`
-  - `featureId`
-  - `optionLabel`
-  - `optionId`
-  - `optionValue`
-- optional debugging payloads (`debug`, `raw`).
+## 4) Layered preview flow
 
-## Secondary process: sync from sampler results (`cpq_image_management`)
+- `/cpq` builds selected option triplets from current normalized state.
+- Calls `POST /api/cpq/image-layers`.
+- Server performs exact match on active `cpq_image_management` rows:
+  - `(feature_label, option_label, option_value)` + `is_active=true`
+- Output ordering rule:
+  1. selected-option traversal order from current state,
+  2. within each match, `picture_link_1..4` slot order.
+- Download action composes resolved layers client-side into a PNG.
 
-### Trigger
-- Setup page button **Sync from sampler results** → `POST /api/cpq/setup/picture-management/sync`.
+## 5) Combination + bulk configure flow
 
-### Batch behavior
-1. Select source rows from `CPQ_sampler_result` where `processed_for_image_sync = false`, ordered by `id`.
-2. For each row:
-   - Parse `json_result.selectedOptions` array (if present).
-   - Trim and extract `featureLabel`, `optionLabel`, `optionValue`.
-   - Skip entries missing any of these fields.
-   - De-duplicate in-run via key `featureLabel + '\0' + optionLabel + '\0' + optionValue`.
-   - Mark current sampler row processed (`processed_for_image_sync = true`, `processed_for_image_sync_at = now()`).
-3. Insert distinct combinations into `cpq_image_management` with `ON CONFLICT DO NOTHING`.
-4. Continue after per-row errors; aggregate them in `syncErrors`.
-5. Return summary:
-   - `sourceRowsScanned`
-   - `selectedOptionsScanned`
-   - `distinctCombinationsFound`
-   - `inserted`
-   - `skippedExisting`
-   - `samplerRowsMarkedProcessed`
-   - `syncErrors`
-   - `unprocessedRowsRemaining`
-   - `total`
+## Generation
+- Uses active configurator state to generate row combinations.
+- Stores stable feature identity metadata to survive session-specific feature IDs.
 
-## Bulk "Configure all ticked items" process data
+## Bulk run (`Configure all ticked items`)
+Per selected row:
+1. Start fresh session.
+2. Re-map feature identity to fresh-session feature.
+3. Resolve option inside mapped feature scope (no global matching).
+4. Skip features flagged ignore-during-configure.
+5. Skip configure call if target option already selected.
+6. Finalize session.
+7. Save canonical reference row.
+8. Auto-save sampler support row.
 
-### Trigger and row scope
-- User generates combinations, ticks rows, and clicks **Configure all ticked items**.
-- Only ticked rows are processed.
-- Status/progress is tracked globally and per row (`pending`, `running`, `configured`, `finalized`, `saved`, `failed`).
-
-### Per-row lifecycle
-1. **Start fresh session**
-   - Calls `POST /api/cpq/init`.
-   - Produces a fresh `sessionId` and a fresh feature/option model.
-2. **Feature remap in current session**
-   - Uses stable feature identity saved in the combination dataset.
-   - Re-resolves current `featureId` from the new session model.
-3. **Feature-scoped option resolve**
-   - Resolves option only from the mapped feature’s `availableOptions`.
-   - Never performs global option matching across all features.
-4. **Feature ignore rule**
-   - If feature label is flagged in setup (`ignore_during_configure = true`), bulk runner skips that feature and does not call `/configure`.
-5. **Configure loop**
-   - Compares target option with current selected option/value.
-   - Skips `/api/cpq/configure` if already matching.
-   - If different, calls configure and refreshes current row state from response before continuing.
-6. **Finalize**
-   - Calls `POST /api/cpq/finalize` with `{ "sessionID": "<row session>" }`.
-7. **Save**
-   - Calls `POST /api/cpq/configuration-references` using existing manual save schema.
-8. **Sampler support save**
-   - Writes one support row to `CPQ_sampler_result`.
-
-### Multi-row behavior
-- Next selected row always starts with a brand-new StartConfiguration call.
-- No session reuse across rows.
-- Failures are isolated to the current row; processing continues to remaining selected rows.
-
-### Debug trace visibility
-- Automated calls are timeline-visible with `Bulk:*` action names.
-- This keeps app request/response and route-level CPQ traceability aligned with manual debugging.
-- Bulk rows also keep row-local diagnostics with stage + error + request/response ring buffers (last 2 each), visible from failed-row **Inspect failure** action.
-
-### Post-run table behavior
-- When a bulk run completes, combinations table is reduced to the originally ticked rows.
-- Unticked rows are removed from the visible table; selected rows retain their statuses and diagnostics.
-
-## Layered preview process data (`/cpq`)
-
-### Trigger
-- Runs whenever the active configurator selected options change in CPQ Bike Builder state.
-
-### Input extraction
-- Client derives selected options from current parsed state (`features[]`) and sends:
-  - `featureLabel`
-  - selected `optionLabel`
-  - selected `optionValue`
-- Entries without all three fields are excluded.
-
-### Matching contract
-- API endpoint: `POST /api/cpq/image-layers`.
-- Service: `resolveImageLayersForSelectedOptions` in `lib/cpq/setup/service.ts`.
-- SQL join conditions:
-  - `cpq_image_management.feature_label = selection.featureLabel`
-  - `cpq_image_management.option_label = selection.optionLabel`
-  - `cpq_image_management.option_value = selection.optionValue`
-  - `cpq_image_management.is_active = true`
-- Empty `picture_link_1..4` values are ignored in returned layers.
-
-### Layer ordering contract (current)
-1. Preserve selected-option order received from current configuration state.
-2. For each matched row, append non-empty links in slot order: `picture_link_1` → `picture_link_4`.
-
-### UI behavior
-- Preview area displays stacked layers in a fixed product-viewer viewport.
-- Empty response displays: **No image layers available.**
-- Metadata chips show layer/match counts.
-- Optional details panel shows matched mapping triplets and ordering rule.
-
-### Download behavior
-- User click on **Download current preview** triggers export.
-- Client composes all rendered layers into a canvas and downloads one PNG file.
-- No automatic download occurs on state changes.
-
-
-### Setup picture management UX contract
-- Picture mappings are loaded from `GET /api/cpq/setup/picture-management` and grouped by `feature_label` tabs in the client UI.
-- Feature-level toggle **Ignore during /configure** updates all rows sharing one feature label through `PUT /api/cpq/setup/picture-management/feature-flags`.
-- Feature summary metrics are computed client-side from loaded rows:
-  - `missing`: rows with 0 populated picture links (`picture_link_1..4`)
-  - `with pictures`: rows with at least 1 populated picture link
-  - `completion`: `with pictures / total`
-  - `fully complete`: rows with 4 populated links
-- Editing occurs in a modal per unique `(feature_label, option_label, option_value)` tile and persists through `PUT /api/cpq/setup/picture-management/:id`.
-- Sync from sampler behavior and DB semantics are unchanged.
-
-### UI documentation governance
-- `/cpq/ui-docs` is the internal map of visible UI labels to component ownership and data source contracts.
-- Any UI update should include a same-PR update to this map.
+## Diagnostics
+- Row statuses: `pending`, `running`, `configured`, `finalized`, `saved`, `failed`.
+- Failed rows expose **Inspect failure** modal with stage, summary, trace/session IDs, and last two requests/responses.
+- After run completion, combination table keeps only originally ticked rows.

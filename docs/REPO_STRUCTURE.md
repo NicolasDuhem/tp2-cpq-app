@@ -1,36 +1,43 @@
-# REPO_STRUCTURE
+# Repository structure and ownership
 
-## Folder layout
-- `app/`
-  - Route-only files (`page.tsx`, API route handlers).
-  - `app/cpq/*` for retained CPQ routes.
-  - `app/api/cpq/*` and `app/api/cpq/setup/*` for retained API surface.
-- `components/`
-  - `components/cpq/`: Bike Builder and CPQ results UI components.
-  - `components/setup/`: CPQ setup UI component.
-  - `components/shared/`: shared shell/navigation components.
-- `lib/`
-  - `lib/cpq/runtime/`: CPQ runtime integration (client/config/mappers/mock/persistence).
-  - `lib/cpq/setup/`: setup services + picture-layer/sync logic.
-  - `lib/cpq/results/`: results read model/service.
-  - `lib/db/`: database client.
-- `types/`
-  - `types/cpq.ts`: CPQ runtime/shared DTOs.
-  - `types/setup.ts`: setup/image-management/shared setup DTOs.
-- `sql/`
-  - `schema.sql`, `seed.sql`.
-- `docs/`
-  - repository and extraction documentation.
+## Top-level areas
 
-## Route placement
-- Route handlers/pages are intentionally thin wrappers in `app/`.
-- Page-level UI and behavior live in `components/*` to keep route files migration-friendly.
+- `app/` — Next.js route entries and API route handlers.
+- `components/` — UI implementations split by domain (`cpq`, `setup`, `docs`, `shared`).
+- `lib/` — runtime/service logic (`cpq/runtime`, `cpq/setup`, `cpq/results`, `db`).
+- `types/` — shared TypeScript domain types.
+- `docs/` — system documentation.
+- `sql/` — baseline SQL schema/seed (must be reconciled with live CSV exports).
+- root CSV schema exports:
+  - `table.csv`
+  - `columns.csv`
+  - `fieldrequired.csv`
+  - `constraints.csv`
+  - `indexes.csv`
 
-## Runtime/setup boundary
-- Runtime-specific code is isolated in `lib/cpq/runtime`.
-- Setup-specific data access and picture sync live in `lib/cpq/setup`.
-- Results aggregation lives in `lib/cpq/results`.
+## Route ownership
 
-## Alias decision
-- `/cpq` is the canonical Bike Builder URL.
-- `/bike-builder` is retained as a compatibility alias and now redirects to `/cpq`.
+### Pages
+- `app/cpq/page.tsx` → Bike Builder page (`components/cpq/bike-builder-page.tsx`).
+- `app/cpq/setup/page.tsx` → setup page (`components/setup/cpq-setup-page.tsx`).
+- `app/cpq/results/page.tsx` → sampler results matrix (`components/cpq/cpq-results-page.tsx`).
+- `app/cpq/ui-docs/page.tsx` → UI label/data mapping page (`components/docs/ui-docs-page.tsx`).
+
+### Redirects
+- `app/page.tsx` redirects `/` to `/cpq`.
+- `app/bike-builder/page.tsx` redirects `/bike-builder` to `/cpq`.
+
+## API ownership
+- `app/api/cpq/*` runtime + persistence routes.
+- `app/api/cpq/setup/*` setup and picture-management admin routes.
+
+## Service ownership
+- `lib/cpq/runtime/*` — CPQ calls, normalization, canonical reference persistence, sampler persistence, debug tracing.
+- `lib/cpq/setup/service.ts` — setup CRUD, sync, image layer resolution.
+- `lib/cpq/results/service.ts` — matrix read-model and filtering source queries.
+- `lib/db/client.ts` — Neon SQL adapter.
+
+## Maintenance note
+When changing runtime behavior, update both:
+1. corresponding docs in `docs/`, and
+2. if labels/sections changed, the `/cpq/ui-docs` source (`components/docs/ui-docs-page.tsx`).

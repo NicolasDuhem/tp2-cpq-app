@@ -334,6 +334,36 @@ const entries: UiDocEntry[] = [
     dataSource: 'syncSummary returned by POST /api/cpq/setup/picture-management/sync.',
     notes: 'Errors shown in separate note block.',
   },
+  {
+    page: 'CPQ - Sampler Results',
+    section: 'Filters',
+    subsection: 'Header filter row',
+    label: 'ruleset / bike_type / sku_code search / country presence',
+    purpose: 'Filters matrix rows before rendering table output.',
+    codeSource: 'components/cpq/cpq-results-matrix.client.tsx',
+    dataSource: 'Client-side filters over server-provided matrix rows from lib/cpq/results/service.ts.',
+    notes: 'All filters are combinable.',
+  },
+  {
+    page: 'CPQ - Sampler Results',
+    section: 'Matrix',
+    subsection: 'Identity note',
+    label: 'Rows are grouped by sku_code + ruleset + feature signature...',
+    purpose: 'Explains stable row grouping used before country pivot.',
+    codeSource: 'lib/cpq/results/service.ts',
+    dataSource: 'rowIdentityDescription returned by getCpqResultsPageData().',
+    notes: 'Rendered by components/cpq/cpq-results-matrix.client.tsx.',
+  },
+  {
+    page: 'CPQ - Bike Builder',
+    section: 'Combination table',
+    subsection: 'Bulk action',
+    label: 'Configure all ticked items',
+    purpose: 'Runs per-row fresh session Start/Configure/Finalize/save lifecycle.',
+    codeSource: 'components/cpq/bike-builder-page.tsx',
+    dataSource: 'Uses runtime APIs (/init, /configure, /finalize, /configuration-references, /sampler-result).',
+    notes: 'Respects ignore-during-configure feature flags from setup.',
+  },
 ];
 
 export default function UiDocsPage() {
