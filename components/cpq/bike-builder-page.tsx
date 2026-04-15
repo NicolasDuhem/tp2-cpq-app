@@ -73,6 +73,12 @@ type CombinationFeatureColumn = {
   stableFeatureKey: string;
   featureLabel: string;
   currentSessionFeatureId: string;
+  stableFeatureIdentity: {
+    featureName?: string;
+    featureQuestion?: string;
+    featureLabel: string;
+    featureSequence?: number;
+  };
 };
 
 type CombinationCell = CombinationFeatureColumn & {
@@ -94,6 +100,21 @@ type CombinationDataset = {
   columns: CombinationFeatureColumn[];
 };
 
+type RowExecutionStatus = 'pending' | 'running' | 'configured' | 'finalized' | 'saved' | 'failed';
+
+type BulkProgress = {
+  running: boolean;
+  totalSelected: number;
+  currentRowIndex: number;
+  currentRowId: string | null;
+  currentSessionId: string | null;
+  currentFeatureKey: string | null;
+  succeeded: number;
+  failed: number;
+  saved: number;
+  message: string;
+};
+
 const fallbackRuleset = {
   cpq_ruleset: 'BBLV6_G-LineMY26',
   namespace: 'Default',
@@ -103,6 +124,24 @@ const fallbackRuleset = {
 const isDebugEnabled = process.env.NEXT_PUBLIC_CPQ_DEBUG === 'true';
 
 const createTraceId = () => crypto.randomUUID();
+
+const buildStableFeatureIdentity = (feature: NormalizedBikeBuilderState['features'][number]) => {
+  const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
+  return {
+    featureName: feature.featureName?.trim() || undefined,
+    featureQuestion: firstOptionMetadata?.FeatureQuestion?.trim() || undefined,
+    featureLabel: feature.featureLabel.trim(),
+    featureSequence: feature.featureSequence,
+  };
+};
+
+const buildStableFeatureKey = (
+  identity: ReturnType<typeof buildStableFeatureIdentity>,
+  featureIndex: number,
+) => {
+  const baseKey = identity.featureName || identity.featureQuestion || identity.featureLabel || 'feature';
+  return `${baseKey}::${featureIndex + 1}`;
+};
 
 export default function BikeBuilderPage() {
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
@@ -126,6 +165,19 @@ export default function BikeBuilderPage() {
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
   const [combinationDataset, setCombinationDataset] = useState<CombinationDataset | null>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [combinationRowStatuses, setCombinationRowStatuses] = useState<Record<string, RowExecutionStatus>>({});
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress>({
+    running: false,
+    totalSelected: 0,
+    currentRowIndex: 0,
+    currentRowId: null,
+    currentSessionId: null,
+    currentFeatureKey: null,
+    succeeded: 0,
+    failed: 0,
+    saved: 0,
+    message: 'Idle',
+  });
   const manualSessionClosedRef = useRef(false);
 
   const selectedRuleset = useMemo(
@@ -275,6 +327,19 @@ export default function BikeBuilderPage() {
   useEffect(() => {
     setCombinationDataset(null);
     setColumnFilters({});
+    setCombinationRowStatuses({});
+    setBulkProgress({
+      running: false,
+      totalSelected: 0,
+      currentRowIndex: 0,
+      currentRowId: null,
+      currentSessionId: null,
+      currentFeatureKey: null,
+      succeeded: 0,
+      failed: 0,
+      saved: 0,
+      message: 'Idle',
+    });
   }, [state?.sessionId]);
 
   const generateCombinations = () => {
@@ -286,17 +351,14 @@ export default function BikeBuilderPage() {
     const columns: CombinationFeatureColumn[] = state.features
       .filter((feature) => feature.isVisible !== false)
       .map((feature, featureIndex) => {
-        const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
-        const stableFeatureKey =
-          feature.featureName?.trim() ||
-          firstOptionMetadata?.FeatureQuestion?.trim() ||
-          feature.featureLabel.trim() ||
-          `feature-${featureIndex + 1}`;
+        const stableFeatureIdentity = buildStableFeatureIdentity(feature);
+        const stableFeatureKey = buildStableFeatureKey(stableFeatureIdentity, featureIndex);
 
         return {
           stableFeatureKey,
           featureLabel: feature.featureLabel,
           currentSessionFeatureId: feature.featureId,
+          stableFeatureIdentity,
         };
       });
 
@@ -308,12 +370,8 @@ export default function BikeBuilderPage() {
     const optionsByFeature = state.features
       .filter((feature) => feature.isVisible !== false)
       .map((feature, featureIndex) => {
-        const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
-        const stableFeatureKey =
-          feature.featureName?.trim() ||
-          firstOptionMetadata?.FeatureQuestion?.trim() ||
-          feature.featureLabel.trim() ||
-          `feature-${featureIndex + 1}`;
+        const stableFeatureIdentity = buildStableFeatureIdentity(feature);
+        const stableFeatureKey = buildStableFeatureKey(stableFeatureIdentity, featureIndex);
 
         const availableOptions = feature.availableOptions.filter(
           (option) => option.isVisible !== false && option.isEnabled !== false && option.isSelectable !== false,
@@ -333,6 +391,7 @@ export default function BikeBuilderPage() {
         rows: [],
         columns,
       });
+      setCombinationRowStatuses({});
       return;
     }
 
@@ -372,6 +431,12 @@ export default function BikeBuilderPage() {
       rows,
       columns,
     });
+    setCombinationRowStatuses(
+      rows.reduce<Record<string, RowExecutionStatus>>((acc, row) => {
+        acc[row.id] = 'pending';
+        return acc;
+      }, {}),
+    );
     setColumnFilters({});
   };
 
@@ -567,6 +632,288 @@ export default function BikeBuilderPage() {
     }
   };
 
+  const resolveCurrentFeatureForRowSelection = (
+    rowCell: CombinationCell,
+    currentState: NormalizedBikeBuilderState,
+    column: CombinationFeatureColumn,
+  ) => {
+    const visibleFeatures = currentState.features.filter((feature) => feature.isVisible !== false);
+    const normalizedTargetLabel = column.stableFeatureIdentity.featureLabel.trim().toLowerCase();
+    const normalizedTargetName = column.stableFeatureIdentity.featureName?.toLowerCase();
+    const normalizedTargetQuestion = column.stableFeatureIdentity.featureQuestion?.toLowerCase();
+
+    const matchingFeatures = visibleFeatures.filter((feature) => {
+      const identity = buildStableFeatureIdentity(feature);
+      return (
+        (normalizedTargetName && identity.featureName?.toLowerCase() === normalizedTargetName) ||
+        (normalizedTargetQuestion && identity.featureQuestion?.toLowerCase() === normalizedTargetQuestion) ||
+        identity.featureLabel.trim().toLowerCase() === normalizedTargetLabel
+      );
+    });
+
+    if (matchingFeatures.length === 1) return matchingFeatures[0];
+    if (matchingFeatures.length > 1) {
+      return matchingFeatures.find((feature) => feature.featureLabel.trim().toLowerCase() === normalizedTargetLabel) ?? matchingFeatures[0];
+    }
+
+    return (
+      visibleFeatures.find(
+        (feature) =>
+          feature.featureLabel.trim().toLowerCase() === rowCell.featureLabel.trim().toLowerCase() ||
+          feature.featureId === rowCell.currentSessionFeatureId,
+      ) ?? null
+    );
+  };
+
+  const resolveCurrentOptionWithinFeature = (feature: NormalizedBikeBuilderState['features'][number], rowCell: CombinationCell) => {
+    const normalizedRowOptionLabel = rowCell.optionLabel.trim().toLowerCase();
+    return (
+      feature.availableOptions.find(
+        (option) =>
+          option.optionId === rowCell.optionId &&
+          (option.value ?? option.optionId) === rowCell.optionValue,
+      ) ??
+      feature.availableOptions.find(
+        (option) => option.optionId === rowCell.optionId || (option.value ?? option.optionId) === rowCell.optionValue,
+      ) ??
+      feature.availableOptions.find((option) => option.label.trim().toLowerCase() === normalizedRowOptionLabel) ??
+      null
+    );
+  };
+
+  const startFreshSessionForCombinationRow = async (traceId: string) => {
+    if (!selectedAccount) throw new Error('Select an account code to run bulk configuration.');
+
+    const activeRuleset = selectedRuleset ?? {
+      ...fallbackRuleset,
+      cpq_ruleset: ruleset,
+    };
+    const payload = {
+      ruleset: activeRuleset.cpq_ruleset,
+      partName: activeRuleset.cpq_ruleset,
+      namespace: activeRuleset.namespace,
+      headerId: activeRuleset.header_id,
+      detailId: crypto.randomUUID(),
+      sourceHeaderId: '',
+      sourceDetailId: '',
+      context: {
+        accountCode: selectedAccount.account_code,
+        company: selectedAccount.account_code,
+        accountType: 'Dealer',
+        customerId: selectedAccount.customer_id,
+        currency: selectedAccount.currency,
+        language: selectedAccount.language,
+        countryCode: selectedAccount.country_code,
+        customerLocation: selectedAccount.country_code,
+      } satisfies Partial<BikeBuilderContext>,
+    };
+
+    const { response, payload: responsePayload } = await trackedFetch<CpqRouteResponse>(
+      traceId,
+      'Bulk:StartConfiguration',
+      '/api/cpq/init',
+      payload,
+    );
+    if (!response.ok) {
+      throw new Error(responsePayload.error ?? 'Bulk StartConfiguration failed');
+    }
+
+    return responsePayload.parsed;
+  };
+
+  const finalizeAndSaveCombinationRow = async (traceId: string, rowState: NormalizedBikeBuilderState) => {
+    if (!selectedAccount) {
+      throw new Error('Missing account context for save.');
+    }
+
+    const finalizePayload: FinalizeConfigurationRequest = { sessionID: rowState.sessionId };
+    const finalizeResult = await trackedFetch<CpqRouteResponse>(traceId, 'Bulk:FinalizeConfiguration', '/api/cpq/finalize', finalizePayload);
+
+    if (!finalizeResult.response.ok) {
+      throw new Error(finalizeResult.payload.error ?? 'Bulk finalize failed');
+    }
+
+    const finalizedState = finalizeResult.payload.parsed;
+    const finalizedDetailId = finalizedState.detailId ?? rowState.detailId ?? '';
+    if (!finalizedDetailId) {
+      throw new Error('Bulk finalize response did not return detailId.');
+    }
+
+    const saveResult = await trackedFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
+      traceId,
+      'Bulk:SaveConfigurationReference',
+      '/api/cpq/configuration-references',
+      {
+        ruleset,
+        namespace: selectedRuleset?.namespace ?? fallbackRuleset.namespace,
+        canonical_header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+        canonical_detail_id: finalizedDetailId,
+        header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+        finalized_detail_id: finalizedDetailId,
+        source_working_detail_id: rowState.detailId,
+        source_session_id: rowState.sessionId,
+        source_header_id: finalizedState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+        source_detail_id: finalizedState.sourceDetailId ?? null,
+        account_code: selectedAccount.account_code,
+        customer_id: selectedAccount.customer_id,
+        account_type: 'Dealer',
+        company: selectedAccount.account_code,
+        currency: selectedAccount.currency,
+        language: selectedAccount.language,
+        country_code: selectedAccount.country_code,
+        customer_location: selectedAccount.country_code,
+        application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
+        application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
+        finalized_session_id: rowState.sessionId,
+        final_ipn_code: finalizedState.ipnCode ?? null,
+        product_description: finalizedState.productDescription ?? null,
+        finalize_response_json: finalizeResult.payload.rawResponse,
+        json_snapshot: {
+          parsed: finalizedState,
+          finalizeRawResponse: finalizeResult.payload.rawResponse,
+          retrievedAt: new Date().toISOString(),
+        },
+      },
+    );
+
+    if (!saveResult.response.ok || !saveResult.payload.row) {
+      throw new Error(saveResult.payload.error ?? 'Bulk save reference failed');
+    }
+
+    return {
+      finalizedState,
+      savedRow: saveResult.payload.row,
+    };
+  };
+
+  const runSelectedCombinationRows = async () => {
+    if (!combinationDataset || !selectedAccount) return;
+    const selectedRows = combinationDataset.rows.filter((row) => row.selected);
+    if (selectedRows.length === 0) {
+      setBulkProgress((current) => ({ ...current, message: 'No rows are ticked.' }));
+      return;
+    }
+
+    const nextStatuses = combinationDataset.rows.reduce<Record<string, RowExecutionStatus>>((acc, row) => {
+      acc[row.id] = row.selected ? 'pending' : combinationRowStatuses[row.id] ?? 'pending';
+      return acc;
+    }, {});
+    setCombinationRowStatuses(nextStatuses);
+    setBulkProgress({
+      running: true,
+      totalSelected: selectedRows.length,
+      currentRowIndex: 0,
+      currentRowId: null,
+      currentSessionId: null,
+      currentFeatureKey: null,
+      succeeded: 0,
+      failed: 0,
+      saved: 0,
+      message: 'Bulk processing started.',
+    });
+
+    let succeeded = 0;
+    let failed = 0;
+    let saved = 0;
+
+    for (const [rowIndex, row] of selectedRows.entries()) {
+      const traceId = createTraceId();
+      setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'running' }));
+      setBulkProgress((current) => ({
+        ...current,
+        currentRowIndex: rowIndex + 1,
+        currentRowId: row.id,
+        currentSessionId: null,
+        currentFeatureKey: null,
+        message: `Processing row ${rowIndex + 1}/${selectedRows.length}`,
+      }));
+
+      try {
+        let workingState = await startFreshSessionForCombinationRow(traceId);
+        setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
+
+        for (const column of combinationDataset.columns) {
+          const rowCell = row.cellsByFeatureKey[column.stableFeatureKey];
+          if (!rowCell) continue;
+
+          setBulkProgress((current) => ({ ...current, currentFeatureKey: column.stableFeatureKey }));
+          const currentFeature = resolveCurrentFeatureForRowSelection(rowCell, workingState, column);
+          if (!currentFeature) {
+            throw new Error(`Could not map feature "${column.featureLabel}" in new session ${workingState.sessionId}.`);
+          }
+          const targetOption = resolveCurrentOptionWithinFeature(currentFeature, rowCell);
+          if (!targetOption) {
+            throw new Error(`Could not resolve option "${rowCell.optionLabel}" inside feature "${currentFeature.featureLabel}".`);
+          }
+
+          const targetOptionValue = targetOption.value ?? targetOption.optionId;
+          const optionAlreadySelected =
+            currentFeature.selectedOptionId === targetOption.optionId || currentFeature.selectedValue === targetOptionValue;
+          if (optionAlreadySelected) {
+            continue;
+          }
+
+          const { response, payload } = await trackedFetch<CpqRouteResponse>(
+            traceId,
+            'Bulk:Configure',
+            '/api/cpq/configure',
+            {
+              sessionId: workingState.sessionId,
+              featureId: currentFeature.featureId,
+              optionId: targetOption.optionId,
+              optionValue: targetOptionValue,
+              ruleset,
+              context: {
+                accountCode: selectedAccount.account_code,
+                customerId: selectedAccount.customer_id,
+                currency: selectedAccount.currency,
+                language: selectedAccount.language,
+                countryCode: selectedAccount.country_code,
+              },
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(payload.error ?? 'Bulk configure failed');
+          }
+          workingState = payload.parsed;
+          setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
+        }
+
+        setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'configured' }));
+        const { finalizedState, savedRow } = await finalizeAndSaveCombinationRow(traceId, workingState);
+        setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'finalized' }));
+        setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'saved' }));
+        setLastSavedReference(savedRow);
+        succeeded += 1;
+        saved += 1;
+        setBulkProgress((current) => ({
+          ...current,
+          currentSessionId: finalizedState.sessionId,
+          succeeded,
+          saved,
+          message: `Row ${rowIndex + 1}/${selectedRows.length} saved (${savedRow.configuration_reference}).`,
+        }));
+      } catch (error) {
+        failed += 1;
+        setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'failed' }));
+        setBulkProgress((current) => ({
+          ...current,
+          failed,
+          message: error instanceof Error ? error.message : `Row ${rowIndex + 1} failed.`,
+        }));
+      }
+    }
+
+    setBulkProgress((current) => ({
+      ...current,
+      running: false,
+      currentFeatureKey: null,
+      currentSessionId: null,
+      message: `Bulk run finished: ${succeeded} succeeded, ${failed} failed, ${saved} saved.`,
+    }));
+  };
+
   return (
     <main style={styles.page}>
       <section style={styles.controls}>
@@ -598,13 +945,21 @@ export default function BikeBuilderPage() {
         </div>
 
         <div style={styles.row}>
-          <button style={styles.button} onClick={() => void startConfiguration()} disabled={requestState.loading}>
+          <button style={styles.button} onClick={() => void startConfiguration()} disabled={requestState.loading || bulkProgress.running}>
             {requestState.loading ? 'Starting…' : 'Start New Session'}
           </button>
-          <button style={styles.button} onClick={() => void saveConfiguration()} disabled={saveStatus === 'saving' || !state}>
+          <button
+            style={styles.button}
+            onClick={() => void saveConfiguration()}
+            disabled={saveStatus === 'saving' || !state || bulkProgress.running}
+          >
             {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
           </button>
-          <button style={styles.button} onClick={generateCombinations} disabled={requestState.loading || !state?.features?.length}>
+          <button
+            style={styles.button}
+            onClick={generateCombinations}
+            disabled={requestState.loading || !state?.features?.length || bulkProgress.running}
+          >
             Generate configuration combinations
           </button>
         </div>
@@ -633,6 +988,12 @@ export default function BikeBuilderPage() {
             </details>
           ) : null}
           <div>Retrieve status: {retrieveMessage}</div>
+          <div>
+            Bulk run: {bulkProgress.message} (selected: {bulkProgress.totalSelected}, row: {bulkProgress.currentRowIndex || '-'}, succeeded:{' '}
+            {bulkProgress.succeeded}, failed: {bulkProgress.failed}, saved: {bulkProgress.saved})
+          </div>
+          <div>Bulk current session: {bulkProgress.currentSessionId ?? '-'}</div>
+          <div>Bulk current feature: {bulkProgress.currentFeatureKey ?? '-'}</div>
           {requestState.error && <div style={styles.error}>Runtime error: {requestState.error}</div>}
         </div>
       </section>
@@ -649,7 +1010,7 @@ export default function BikeBuilderPage() {
                 const nextOption = feature.availableOptions.find((entry) => entry.optionId === event.target.value);
                 if (nextOption) void configureOption(feature.featureId, nextOption);
               }}
-              disabled={requestState.loading || activeFeatureId === feature.featureId}
+              disabled={requestState.loading || activeFeatureId === feature.featureId || bulkProgress.running}
               style={styles.select}
             >
               {feature.availableOptions.map((option) => (
@@ -719,7 +1080,7 @@ export default function BikeBuilderPage() {
                       : current,
                   )
                 }
-                disabled={filteredCombinationRows.length === 0}
+                disabled={filteredCombinationRows.length === 0 || bulkProgress.running}
               >
                 Tick filtered rows
               </button>
@@ -735,9 +1096,16 @@ export default function BikeBuilderPage() {
                       : current,
                   )
                 }
-                disabled={combinationDataset.rows.length === 0}
+                disabled={combinationDataset.rows.length === 0 || bulkProgress.running}
               >
                 Untick all
+              </button>
+              <button
+                style={styles.button}
+                onClick={() => void runSelectedCombinationRows()}
+                disabled={bulkProgress.running || !combinationDataset.rows.some((row) => row.selected)}
+              >
+                {bulkProgress.running ? 'Configuring ticked items…' : 'Configure all ticked items'}
               </button>
             </div>
             <div style={styles.tableWrap}>
@@ -745,6 +1113,7 @@ export default function BikeBuilderPage() {
                 <thead>
                   <tr>
                     <th style={styles.tableHeader}>Select</th>
+                    <th style={styles.tableHeader}>Status</th>
                     {combinationDataset.columns.map((column) => (
                       <th key={`header-${column.stableFeatureKey}`} style={styles.tableHeader}>
                         <div>{column.featureLabel}</div>
@@ -770,6 +1139,7 @@ export default function BikeBuilderPage() {
                         <input
                           type="checkbox"
                           checked={row.selected}
+                          disabled={bulkProgress.running}
                           onChange={(event) =>
                             setCombinationDataset((current) =>
                               current
@@ -784,6 +1154,7 @@ export default function BikeBuilderPage() {
                           }
                         />
                       </td>
+                      <td style={styles.tableCell}>{combinationRowStatuses[row.id] ?? 'pending'}</td>
                       {combinationDataset.columns.map((column) => {
                         const cell = row.cellsByFeatureKey[column.stableFeatureKey];
                         return (
@@ -798,7 +1169,7 @@ export default function BikeBuilderPage() {
                   ))}
                   {filteredCombinationRows.length === 0 ? (
                     <tr>
-                      <td colSpan={combinationDataset.columns.length + 1} style={styles.emptyCell}>
+                      <td colSpan={combinationDataset.columns.length + 2} style={styles.emptyCell}>
                         No rows match current filters.
                       </td>
                     </tr>

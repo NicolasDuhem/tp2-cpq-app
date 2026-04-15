@@ -9,6 +9,17 @@ CPQ-only Next.js application focused on a **manual-first CPQ lifecycle**.
 4. The finalized state is persisted to `cpq_configuration_references`.
 5. **Retrieve Configuration** resolves one `configuration_reference` and starts a fresh session from the saved reference data.
 
+## Bulk workflow from combinations table
+- Generate combinations from the current active session and tick one or more rows.
+- Click **Configure all ticked items** to run an automated per-row lifecycle:
+  1. Start a **fresh** session for the row (`StartConfiguration`).
+  2. Re-map each target feature against the fresh session model (never reuse old `featureId`).
+  3. Resolve option matches **inside the mapped feature scope only** (no global option matching).
+  4. Call `/configure` only when the target option is not already selected.
+  5. Finalize with `{ "sessionID": "<active row session>" }`.
+  6. Save into `cpq_configuration_references`.
+- Every selected row runs in a brand-new session and appears in the debug timeline with `Bulk:*` actions.
+
 ## Session rules
 - Same `sessionId` stays active while `ruleset` and `account_code` stay unchanged.
 - Changing `ruleset` starts a new session.
