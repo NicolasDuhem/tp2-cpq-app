@@ -111,6 +111,16 @@ Response:
 - `PUT /api/cpq/setup/picture-management/feature-flags`
 - `GET /api/cpq/setup/picture-management/ignored-features`
 
+### `PUT /api/cpq/setup/picture-management/feature-flags`
+Request body:
+- required: `feature_label`
+- optional: `ignore_during_configure` (boolean)
+- optional: `feature_layer_order` (integer `1..20`)
+
+Behavior:
+- Updates all `cpq_image_management` rows sharing the same `feature_label`.
+- `feature_layer_order` is feature-level business control (`1 = top layer`).
+
 ## Layer route
 
 ## `POST /api/cpq/image-layers`
@@ -124,5 +134,6 @@ Request:
 ```
 Response:
 - `layers[]`
+  - each layer includes `featureLayerOrder`
 - `matchedSelections[]`
 - `unmatchedSelections[]`

@@ -14,6 +14,18 @@ const asNullableTrimmedText = (value: unknown) => {
   return trimmed.length ? trimmed : null;
 };
 const ISO2_COUNTRY_REGEX = /^[A-Z]{2}$/;
+const IMAGE_LAYER_ORDER_MIN = 1;
+const IMAGE_LAYER_ORDER_MAX = 20;
+const IMAGE_LAYER_ORDER_DEFAULT = 10;
+
+const parseFeatureLayerOrder = (value: unknown, fallback = IMAGE_LAYER_ORDER_DEFAULT) => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < IMAGE_LAYER_ORDER_MIN || parsed > IMAGE_LAYER_ORDER_MAX) {
+    throw new Error(`feature_layer_order must be an integer between ${IMAGE_LAYER_ORDER_MIN} and ${IMAGE_LAYER_ORDER_MAX}`);
+  }
+  return parsed;
+};
 
 export async function listAccountContexts(activeOnly = false) {
   if (activeOnly) {
@@ -166,6 +178,7 @@ export async function listImageManagementRows(filters: { featureLabel?: string; 
       feature_label,
       option_label,
       option_value,
+      feature_layer_order,
       ignore_during_configure,
       picture_link_1,
       picture_link_2,
@@ -211,6 +224,7 @@ export async function updateImageManagementRow(id: number, input: Record<string,
       feature_label,
       option_label,
       option_value,
+      feature_layer_order,
       ignore_during_configure,
       picture_link_1,
       picture_link_2,
@@ -240,6 +254,50 @@ export async function setImageFeatureIgnoreDuringConfigure(featureLabelInput: st
       feature_label,
       option_label,
       option_value,
+      feature_layer_order,
+      ignore_during_configure,
+      picture_link_1,
+      picture_link_2,
+      picture_link_3,
+      picture_link_4,
+      is_active,
+      created_at,
+      updated_at
+  `) as CpqImageManagementRecord[];
+
+  return rows;
+}
+
+export async function setImageFeatureSettings(
+  featureLabelInput: string,
+  input: { ignore_during_configure?: unknown; feature_layer_order?: unknown },
+) {
+  const featureLabel = asTrimmedText(featureLabelInput);
+  if (!featureLabel) {
+    throw new Error('feature_label is required');
+  }
+
+  const hasIgnoreField = Object.prototype.hasOwnProperty.call(input, 'ignore_during_configure');
+  const hasLayerOrderField = Object.prototype.hasOwnProperty.call(input, 'feature_layer_order');
+
+  if (!hasIgnoreField && !hasLayerOrderField) {
+    throw new Error('At least one field must be provided: ignore_during_configure or feature_layer_order');
+  }
+
+  const ignoreDuringConfigure = hasIgnoreField ? parseBoolean(input.ignore_during_configure, false) : null;
+  const featureLayerOrder = hasLayerOrderField ? parseFeatureLayerOrder(input.feature_layer_order) : null;
+
+  const rows = (await sql`
+    update cpq_image_management
+    set ignore_during_configure = coalesce(${ignoreDuringConfigure}, ignore_during_configure),
+        feature_layer_order = coalesce(${featureLayerOrder}, feature_layer_order)
+    where feature_label = ${featureLabel}
+    returning
+      id,
+      feature_label,
+      option_label,
+      option_value,
+      feature_layer_order,
       ignore_during_configure,
       picture_link_1,
       picture_link_2,
@@ -321,8 +379,20 @@ export async function syncImageManagementFromSampler() {
   let skippedExisting = 0;
   for (const row of distinctRows) {
     const result = (await sql`
-      insert into cpq_image_management (feature_label, option_label, option_value)
-      values (${row.feature_label}, ${row.option_label}, ${row.option_value})
+      insert into cpq_image_management (feature_label, option_label, option_value, feature_layer_order)
+      values (
+        ${row.feature_label},
+        ${row.option_label},
+        ${row.option_value},
+        coalesce(
+          (
+            select min(existing.feature_layer_order)
+            from cpq_image_management existing
+            where existing.feature_label = ${row.feature_label}
+          ),
+          ${IMAGE_LAYER_ORDER_DEFAULT}
+        )
+      )
       on conflict (feature_label, option_label, option_value) do nothing
       returning id
     `) as Array<{ id: number }>;
@@ -393,6 +463,7 @@ export async function resolveImageLayersForSelectedOptions(
       s.option_label,
       s.option_value,
       m.id as match_id,
+      m.feature_layer_order,
       m.picture_link_1,
       m.picture_link_2,
       m.picture_link_3,
@@ -403,13 +474,14 @@ export async function resolveImageLayersForSelectedOptions(
       and m.option_label = s.option_label
       and m.option_value = s.option_value
       and m.is_active = true
-    order by s.selection_order
+    order by coalesce(m.feature_layer_order, ${IMAGE_LAYER_ORDER_DEFAULT}) desc, s.selection_order, m.id
   `) as Array<{
     selection_order: number;
     feature_label: string;
     option_label: string;
     option_value: string;
     match_id: number | null;
+    feature_layer_order: number | null;
     picture_link_1: string | null;
     picture_link_2: string | null;
     picture_link_3: string | null;
@@ -439,6 +511,7 @@ export async function resolveImageLayersForSelectedOptions(
       if (!value) return;
       layers.push({
         ...selection,
+        featureLayerOrder: row.feature_layer_order ?? IMAGE_LAYER_ORDER_DEFAULT,
         slot: (index + 1) as 1 | 2 | 3 | 4,
         pictureLink: value,
       });

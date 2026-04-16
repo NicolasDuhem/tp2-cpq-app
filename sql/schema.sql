@@ -95,6 +95,7 @@ create table if not exists cpq_image_management (
   feature_label text not null,
   option_label text not null,
   option_value text not null,
+  feature_layer_order integer not null default 10,
   ignore_during_configure boolean not null default false,
   picture_link_1 text,
   picture_link_2 text,
@@ -112,3 +113,23 @@ create index if not exists cpq_image_management_lookup_idx
 
 alter table if exists cpq_image_management
   add column if not exists ignore_during_configure boolean not null default false;
+
+alter table if exists cpq_image_management
+  add column if not exists feature_layer_order integer not null default 10;
+
+update cpq_image_management
+set feature_layer_order = 10
+where feature_layer_order is null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'cpq_image_management_feature_layer_order_chk'
+  ) then
+    alter table cpq_image_management
+      add constraint cpq_image_management_feature_layer_order_chk
+      check (feature_layer_order between 1 and 20);
+  end if;
+end$$;

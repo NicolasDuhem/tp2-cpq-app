@@ -28,6 +28,7 @@ type ImageManagementRow = {
   feature_label: string;
   option_label: string;
   option_value: string;
+  feature_layer_order: number;
   ignore_during_configure: boolean;
   picture_link_1: string | null;
   picture_link_2: string | null;
@@ -103,6 +104,7 @@ export default function CpqSetupPage() {
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
   const [selectedFeature, setSelectedFeature] = useState('');
   const [pictureDraft, setPictureDraft] = useState<PictureDraft | null>(null);
+  const [featureLayerOrderDraft, setFeatureLayerOrderDraft] = useState<number>(10);
 
   const canSubmitAccount = useMemo(
     () =>
@@ -183,6 +185,19 @@ export default function CpqSetupPage() {
     () => featureRows.some((row) => row.ignore_during_configure),
     [featureRows],
   );
+  const featureLayerOrder = useMemo(
+    () => featureRows[0]?.feature_layer_order ?? 10,
+    [featureRows],
+  );
+  const featureHasMixedLayerOrder = useMemo(() => {
+    if (featureRows.length < 2) return false;
+    const distinct = new Set(featureRows.map((row) => row.feature_layer_order));
+    return distinct.size > 1;
+  }, [featureRows]);
+
+  useEffect(() => {
+    setFeatureLayerOrderDraft(featureLayerOrder);
+  }, [featureLayerOrder, selectedFeature]);
 
   const featureSummary = useMemo(() => {
     const total = featureRows.length;
@@ -311,13 +326,13 @@ export default function CpqSetupPage() {
     setPictureDraft(null);
   };
 
-  const setFeatureIgnoreFlag = async (featureLabel: string, ignoreDuringConfigure: boolean) => {
+  const setFeatureSettings = async (featureLabel: string, patch: { ignore_during_configure?: boolean; feature_layer_order?: number }) => {
     const res = await fetch('/api/cpq/setup/picture-management/feature-flags', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         feature_label: featureLabel,
-        ignore_during_configure: ignoreDuringConfigure,
+        ...patch,
       }),
     });
     const payload = await res.json().catch(() => ({}));
@@ -327,13 +342,26 @@ export default function CpqSetupPage() {
     }
 
     setImageRows((curr) =>
-      curr.map((row) => (row.feature_label === featureLabel ? { ...row, ignore_during_configure: ignoreDuringConfigure } : row)),
+      curr.map((row) =>
+        row.feature_label === featureLabel
+          ? {
+            ...row,
+            ignore_during_configure: patch.ignore_during_configure ?? row.ignore_during_configure,
+            feature_layer_order: patch.feature_layer_order ?? row.feature_layer_order,
+          }
+          : row,
+      ),
     );
-    setStatus(
-      ignoreDuringConfigure
-        ? `Feature "${featureLabel}" will be ignored during Configure all ticked items.`
-        : `Feature "${featureLabel}" will be included during Configure all ticked items.`,
-    );
+    if (typeof patch.feature_layer_order === 'number') {
+      setFeatureLayerOrderDraft(patch.feature_layer_order);
+      setStatus(`Feature "${featureLabel}" layer order saved as ${patch.feature_layer_order} (1 = top layer).`);
+      return;
+    }
+
+    const ignoreDuringConfigure = patch.ignore_during_configure ?? false;
+    setStatus(ignoreDuringConfigure
+      ? `Feature "${featureLabel}" will be ignored during Configure all ticked items.`
+      : `Feature "${featureLabel}" will be included during Configure all ticked items.`);
     setPictureDraft((current) =>
       current && current.feature_label === featureLabel ? { ...current, ignore_during_configure: ignoreDuringConfigure } : current,
     );
@@ -558,10 +586,38 @@ export default function CpqSetupPage() {
                 <input
                   type="checkbox"
                   checked={featureIgnoreDuringConfigure}
-                  onChange={(event) => void setFeatureIgnoreFlag(selectedFeature, event.target.checked)}
+                  onChange={(event) => void setFeatureSettings(selectedFeature, { ignore_during_configure: event.target.checked })}
                 />
                 Ignore during /configure
               </label>
+            </div>
+          )}
+          {selectedFeature && (
+            <div className="note compactNote" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <strong>Layer order (1 = top layer)</strong>
+                <div style={{ fontSize: 12, color: '#475569' }}>
+                  Feature-level setting used by Bike Builder layered preview. Lower number draws on top of higher numbers.
+                </div>
+                {featureHasMixedLayerOrder ? (
+                  <div style={{ fontSize: 12, color: '#b45309' }}>
+                    This feature currently has mixed values. Save once to normalize all rows for this feature.
+                  </div>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={featureLayerOrderDraft}
+                  onChange={(event) => setFeatureLayerOrderDraft(Math.max(1, Math.min(20, Number(event.target.value) || 1)))}
+                  style={{ width: 90 }}
+                />
+                <button className="primary" onClick={() => void setFeatureSettings(selectedFeature, { feature_layer_order: featureLayerOrderDraft })}>
+                  Save layer order
+                </button>
+              </div>
             </div>
           )}
 

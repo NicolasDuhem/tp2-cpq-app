@@ -113,7 +113,7 @@ const entries: UiDocEntry[] = [
     purpose: 'Small optional debug/trace panel for mapping and ordering transparency.',
     codeSource: 'components/cpq/bike-builder-page.tsx',
     dataSource: 'Lists matched selection triplets and current layer ordering rule.',
-    notes: 'Order rule: current selected-option order, then picture_link_1..4 slot order.',
+    notes: 'Order rule: feature layer order from cpq_image_management.feature_layer_order (1 = top, rendered last), then picture_link_1..4 slot order.',
   },
 
   {
@@ -226,6 +226,16 @@ const entries: UiDocEntry[] = [
     codeSource: 'components/setup/cpq-setup-page.tsx',
     dataSource: 'Local state: tab.',
     notes: 'Tab key: pictures',
+  },
+  {
+    page: 'CPQ Setup',
+    section: 'Picture management',
+    subsection: 'Feature-level behavior',
+    label: 'Layer order (1 = top layer)',
+    purpose: 'Maintains one feature-level display order used by layered Bike Builder preview.',
+    codeSource: 'components/setup/cpq-setup-page.tsx',
+    dataSource: 'PUT /api/cpq/setup/picture-management/feature-flags -> cpq_image_management.feature_layer_order.',
+    notes: 'Single save updates all rows under one feature label. Integer range 1..20. Default 10.',
   },
   {
     page: 'CPQ Setup',

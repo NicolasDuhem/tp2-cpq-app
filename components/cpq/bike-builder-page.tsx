@@ -51,6 +51,7 @@ type ImageLayer = {
   featureLabel: string;
   optionLabel: string;
   optionValue: string;
+  featureLayerOrder: number;
   slot: 1 | 2 | 3 | 4;
   pictureLink: string;
 };
@@ -1598,10 +1599,17 @@ export default function BikeBuilderPage() {
     }));
   };
 
-  const orderedPreviewLayers = imageLayerResolution.layers.map((layer, index) => ({
-    ...layer,
-    order: index + 1,
-  }));
+  const orderedPreviewLayers = [...imageLayerResolution.layers]
+    .sort((left, right) => {
+      if (left.featureLayerOrder !== right.featureLayerOrder) return right.featureLayerOrder - left.featureLayerOrder;
+      if (left.featureLabel !== right.featureLabel) return left.featureLabel.localeCompare(right.featureLabel);
+      if (left.optionLabel !== right.optionLabel) return left.optionLabel.localeCompare(right.optionLabel);
+      return left.slot - right.slot;
+    })
+    .map((layer, index) => ({
+      ...layer,
+      order: index + 1,
+    }));
   const activeFailedRowDiagnostic = failedRowModalId ? combinationRowDiagnostics[failedRowModalId] ?? null : null;
 
   const handleDownloadCurrentPreview = async () => {
@@ -1845,7 +1853,7 @@ export default function BikeBuilderPage() {
           <details style={styles.previewDetails}>
             <summary>Preview matching details</summary>
             <div style={styles.previewDetailsBody}>
-              <div>Layer ordering rule: selected option order from current configuration, then picture link slot 1 → 4.</div>
+              <div>Layer ordering rule: feature layer order (20 drawn first … 1 drawn last on top), then picture link slot 1 → 4.</div>
               <div>
                 Matched rows:
                 {imageLayerResolution.matchedSelections.length === 0

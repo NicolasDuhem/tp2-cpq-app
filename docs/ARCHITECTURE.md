@@ -40,6 +40,7 @@ Additional route aliases:
   - Ruleset CRUD (`cpq_setup_ruleset`).
   - Feature-tabbed picture management and modal editing (`cpq_image_management`).
   - Feature-level `ignore_during_configure` toggling.
+  - Feature-level `feature_layer_order` maintenance (`Layer order (1 = top layer)`).
   - Sync from sampler results into picture management.
 
 ### `/cpq/results`
@@ -102,7 +103,7 @@ Additional route aliases:
 - `lib/cpq/setup/service.ts`
   - setup CRUD data services.
   - sampler-to-picture sync.
-  - image layer resolution query.
+  - image layer resolution query ordered by feature layer order (`feature_layer_order`).
 - `lib/cpq/results/service.ts`
   - results matrix read-model for `/cpq/results`.
 - `lib/db/client.ts`

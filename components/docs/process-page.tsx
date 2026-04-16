@@ -83,6 +83,14 @@ export default function ProcessPage() {
         </p>
         <ol>
           <li>Select a feature tab.</li>
+          <li>
+            Maintain <strong>Layer order (1 = top layer)</strong> at feature level.
+            <ul>
+              <li>Lower number means the feature is rendered closer to the top in bike preview.</li>
+              <li>Allowed values: integers <strong>1 to 20</strong>; default is <strong>10</strong>.</li>
+              <li>This field is owned by CPQ admin and must be maintained for correct visual stacking.</li>
+            </ul>
+          </li>
           <li>Review each option tile.</li>
           <li>
             Status indicator:
@@ -101,6 +109,10 @@ export default function ProcessPage() {
           <strong>Advanced setting:</strong> <strong>Ignore during /configure</strong> is feature-level and affects
           automated configure behavior. Use this only when needed to prevent known failures (for example, specific
           gearing scenarios).
+        </div>
+        <div className="processCallout processCalloutInfo">
+          <strong>Preview stacking rule:</strong> in Bike Builder layered preview, feature order <strong>1</strong> is
+          the top-most layer, then 2, then 3, and so on.
         </div>
       </section>
 
@@ -175,7 +187,7 @@ export default function ProcessPage() {
             <h3>CPQ admin</h3>
             <ul>
               <li>Maintains account code and ruleset master data.</li>
-              <li>Maintains picture links and advanced configure exclusions.</li>
+              <li>Maintains picture links, feature layer order, and advanced configure exclusions.</li>
               <li>Keeps setup quality high so downstream execution is reliable.</li>
             </ul>
           </article>
