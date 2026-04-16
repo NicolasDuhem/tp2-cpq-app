@@ -94,6 +94,7 @@ const STOCK_BIKE_IMG_MODEL_YEAR_MAP: Record<string, number> = {
 const Stock_bike_img_normalize_token = (value: string) => value.trim().toUpperCase();
 
 const Stock_bike_img_as_text = (value: unknown) => String(value ?? '').trim();
+const Stock_bike_img_normalize_category = (value: unknown) => Stock_bike_img_as_text(value).toUpperCase();
 
 const Stock_bike_img_normalize_allowed_values = (value: unknown): string[] => {
   const raw = Array.isArray(value)
@@ -139,14 +140,16 @@ export const Stock_bike_img_normalize_conditions = (value: unknown): Stock_bike_
   const normalized = source
     .map((entry) => {
       const raw = (entry ?? {}) as Record<string, unknown>;
-      const position = Number(raw.position ?? raw.stock_bike_img_position);
+      const position = Number(raw.position ?? raw.stock_bike_img_position ?? raw.stock_bike_img_digit_position ?? raw.digitPosition);
       if (!Number.isInteger(position) || position < 1 || position > STOCK_BIKE_IMG_SKU_LENGTH) {
         throw new Error('Condition position must be an integer between 1 and 30.');
       }
 
       return {
         position,
-        allowedValues: Stock_bike_img_normalize_allowed_values(raw.allowedValues ?? raw.stock_bike_img_allowed_values),
+        allowedValues: Stock_bike_img_normalize_allowed_values(
+          raw.allowedValues ?? raw.stock_bike_img_allowed_values ?? raw.values ?? raw.stock_bike_img_digit_values,
+        ),
       };
     })
     .sort((a, b) => a.position - b.position);
@@ -217,11 +220,12 @@ const STOCK_BIKE_IMG_RULE_SELECT = sql`
 export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: number, stock_bike_img_rule_category?: string) {
   const year = Number(stock_bike_img_model_year ?? 0);
   const category = Stock_bike_img_as_text(stock_bike_img_rule_category);
+  const normalizedCategory = Stock_bike_img_normalize_category(category);
 
   const rows =
     year && category
       ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
-          where r.stock_bike_img_rule_category = ${category}
+          where upper(trim(r.stock_bike_img_rule_category)) = ${normalizedCategory}
             and (r.stock_bike_img_model_year = ${year} or r.stock_bike_img_model_year is null)
           order by r.stock_bike_img_layer_order, r.stock_bike_img_rule_category, r.id
         `
@@ -232,7 +236,7 @@ export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: numb
           `
         : category
           ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
-              where r.stock_bike_img_rule_category = ${category}
+              where upper(trim(r.stock_bike_img_rule_category)) = ${normalizedCategory}
               order by r.stock_bike_img_model_year nulls first, r.stock_bike_img_layer_order, r.id
             `
           : await sql`${STOCK_BIKE_IMG_RULE_SELECT}
@@ -244,11 +248,12 @@ export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: numb
 
 export async function Stock_bike_img_list_digit_reference_rows(stock_bike_img_rule_category_name?: string) {
   const category = Stock_bike_img_as_text(stock_bike_img_rule_category_name);
+  const normalizedCategory = Stock_bike_img_normalize_category(category);
   const rows = category
     ? await sql`
         select *
         from stock_bike_img_digit_reference
-        where stock_bike_img_rule_category_name = ${category}
+        where upper(trim(stock_bike_img_rule_category_name)) = ${normalizedCategory}
         order by stock_bike_img_digit_position, stock_bike_img_digit_value, id
       `
     : await sql`
@@ -271,7 +276,7 @@ export async function Stock_bike_img_list_reference_categories(): Promise<Stock_
   `) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
-    stock_bike_img_rule_category_name: String(row.stock_bike_img_rule_category_name ?? ''),
+    stock_bike_img_rule_category_name: Stock_bike_img_as_text(row.stock_bike_img_rule_category_name),
     stock_bike_img_digit_positions: Array.isArray(row.stock_bike_img_digit_positions)
       ? row.stock_bike_img_digit_positions.map((entry) => Number(entry))
       : [],
@@ -315,7 +320,7 @@ export async function Stock_bike_img_list_rule_families(): Promise<Stock_bike_im
       ? String(row.stock_bike_img_family_description)
       : null,
     stock_bike_img_categories: Array.isArray(row.stock_bike_img_categories)
-      ? row.stock_bike_img_categories.map((entry) => String(entry))
+      ? row.stock_bike_img_categories.map((entry) => Stock_bike_img_as_text(entry)).filter(Boolean)
       : [],
     stock_bike_img_groups: Array.isArray(row.stock_bike_img_groups)
       ? row.stock_bike_img_groups.map((group) => ({
@@ -344,6 +349,7 @@ const Stock_bike_img_parse_optional_model_year = (value: unknown): number | null
 };
 
 const Stock_bike_img_validate_family_and_group = async (familyId: number, groupId: number | null, category: string) => {
+  const normalizedCategory = Stock_bike_img_normalize_category(category);
   const rows = (await sql`
     select
       f.id,
@@ -352,7 +358,7 @@ const Stock_bike_img_validate_family_and_group = async (familyId: number, groupI
         select 1
         from stock_bike_img_rule_family_category fc
         where fc.stock_bike_img_rule_family_id = f.id
-          and fc.stock_bike_img_rule_category_name = ${category}
+          and upper(trim(fc.stock_bike_img_rule_category_name)) = ${normalizedCategory}
       ) as stock_bike_img_category_allowed,
       g.id as stock_bike_img_group_id,
       g.stock_bike_img_group_name
