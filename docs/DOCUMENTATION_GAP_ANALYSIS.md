@@ -1,116 +1,127 @@
-# Documentation gap analysis (repo-wide reconciliation)
+# DOCUMENTATION_GAP_ANALYSIS (stable vs stock-bike-img reconciliation)
 
-## Audit scope executed
-Reviewed current markdown docs against:
-1. code behavior (`app/**`, `components/**`, `lib/**`, `types/**`, root config files),
-2. live Neon schema CSV exports (`table.csv`, `columns.csv`, `fieldrequired.csv`, `constraints.csv`, `indexes.csv`),
-3. active route/UI/API behavior.
+## Audit method and source-of-truth policy
+This audit was performed against current code and active SQL in repo:
+- `app/**`
+- `components/**`
+- `lib/**`
+- `types/**`
+- `sql/schema.sql`, `sql/seed.sql`
+- existing `docs/**`
+
+Critical policy applied:
+- root schema CSV files (`table.csv`, `columns.csv`, `fieldrequired.csv`, `constraints.csv`, `indexes.csv`) were **not treated as authoritative** for this reconciliation.
+
+---
 
 ## 1) Docs reviewed
 
-Root:
-- `README.md`
-
-`docs/`:
-- `ARCHITECTURE.md`
-- `CANONICAL_SAVE_CAPABILITY_GAP.md`
-- `CPQ_API_PAYLOADS.md`
-- `CPQ_DATABASE_SAVE_FLOW.md`
-- `CPQ_MANUAL_LIFECYCLE.md`
-- `DATABASE.md`
-- `EXTRACTION_REPORT.md`
-- `PROCESSDATA.md`
-- `README.md`
-- `REPO_STRUCTURE.md`
-- `RETRIEVE_AND_REFERENCE_FLOW.md`
-
-## 2) Stale/contradictory docs found
-
-### CopyConfiguration claims were stale
-- Previous docs claimed active copy-backed canonical save and HTTP 501 behavior when copy capability is missing.
-- Current runtime routes do not call `copy-configuration.ts`.
-- Updated docs now mark copy capability as historical/future-only.
-
-### SQL baseline treated as authoritative (stale)
-- Previous DB docs did not consistently prioritize live CSV exports.
-- Updated docs now treat CSV exports as schema source of truth and explicitly call out SQL drift.
-
-### Overlap without clear scope
-- Several lifecycle docs repeated similar content with slight variations.
-- Updated docs now separate concerns:
-  - architecture/layout,
-  - process flows,
-  - strict manual lifecycle,
-  - DB save/retrieve semantics,
-  - payload contracts.
-
-## 3) Missing topics found (now addressed)
-
-- Explicit Neon CSV source-of-truth statement.
-- Formal mismatch section: live schema vs `sql/schema.sql`.
-- Clear canonical-vs-secondary table role definitions.
-- Bulk row failure diagnostics and post-run row retention behavior.
-- Explicit preview layer ordering and image matching contract.
-- Governance statement tying UI changes to `/cpq/ui-docs` updates.
-
-## 4) Docs updated
-
-- `README.md`
+### Core docs reviewed
 - `docs/README.md`
 - `docs/ARCHITECTURE.md`
-- `docs/DATABASE.md`
 - `docs/PROCESSDATA.md`
 - `docs/CPQ_MANUAL_LIFECYCLE.md`
 - `docs/CPQ_DATABASE_SAVE_FLOW.md`
 - `docs/RETRIEVE_AND_REFERENCE_FLOW.md`
 - `docs/CPQ_API_PAYLOADS.md`
+- `docs/DATABASE.md`
 - `docs/REPO_STRUCTURE.md`
+- `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
 - `docs/CANONICAL_SAVE_CAPABILITY_GAP.md`
 - `docs/EXTRACTION_REPORT.md`
 
-## 5) Docs added
+### Also reviewed for entrypoint context
+- root `README.md`
 
-- `docs/DOCUMENTATION_GAP_ANALYSIS.md` (this report)
+---
 
-## 6) Merged/superseded framing decisions
+## 2) Biggest stale/inaccurate areas found
 
-No files were deleted. Instead:
-- `CANONICAL_SAVE_CAPABILITY_GAP.md` was reframed as historical note (not active contract).
-- `EXTRACTION_REPORT.md` was reframed as historical context (not runtime truth source).
-- `docs/README.md` was restructured to mark authoritative vs historical docs.
+1. **Source-of-truth mismatch in docs index**
+   - `docs/README.md` explicitly stated Neon CSV exports as reconciled truth.
+   - This conflicts with current instruction for this exercise and can mislead future maintenance when CSVs drift.
 
-## 7) DB truth used from Neon CSV exports
+2. **Stable vs experiment blending risk**
+   - Existing architecture/process docs were mostly stable-focused but did not provide a dedicated, deep stable-only reference with an explicit experiment boundary contract.
 
-Used all five CSV exports for reconciliation:
-- table inventory,
-- per-table column inventory,
-- insert requirement status,
-- constraints,
-- indexes.
+3. **Stock-bike doc lacked explicit removal/integration playbooks**
+   - Existing experiment doc covered architecture/logic well but removal and integration guidance needed to be more operational and surgical.
 
-## 8) Mismatches found between live CSV schema and `sql/schema.sql`
+---
 
-### `cpq_configuration_references` columns missing from baseline SQL
-- `canonical_header_id`
-- `canonical_detail_id`
-- `source_working_detail_id`
-- `source_session_id`
+## 3) Documentation split performed
 
-These are used by current runtime save/retrieve code, so baseline SQL is incomplete for full current behavior.
+## Track A (stable app, experiment excluded)
+Added:
+- `docs/MAIN_APP_DEEP_DIVE.md`
 
-## 9) Remaining uncertainties (explicit)
+This new stable-track deep dive now centralizes:
+- route/page architecture,
+- CPQ manual lifecycle,
+- canonical save/retrieve semantics,
+- sampler flow and separation,
+- picture-management and layered preview behavior,
+- combinations/bulk row-country execution,
+- stable tables and stable API map,
+- proven vs inferred notes.
 
-### Proven from code/schema
-- save-source rule (configure > start, never finalize body)
-- canonical save target table
-- retrieve by reference route behavior
-- sampler sync mechanics
-- image layer matching + ordering
-- bulk remap/feature-scoped option matching semantics
+## Track B (stock-bike-img experiment only)
+Refreshed:
+- `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
 
-### Inferred / unverified from code alone
-- Exact external CPQ service-side semantics beyond request/response handling (e.g., server-side side effects in Infor CPQ).
-- Whether every deployment has applied DB migrations equivalent to live CSV schema drift (outside this repo baseline SQL).
+This now isolates and deepens:
+- purpose and architecture,
+- data model by concern (reference/family/group/rules),
+- rule logic (digit 20 model year, digit 17 bike type, group filtering),
+- authoring/runtime flow,
+- limitations,
+- explicit removal strategy,
+- possible future integration strategy.
 
-## Maintenance rule going forward
-- Any UI/API/DB behavior change must include same-change doc reconciliation and (for visible labels/sections) `/cpq/ui-docs` mapping updates.
+---
+
+## 4) Files updated in this reconciliation
+- `docs/README.md`
+- `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
+- `docs/DOCUMENTATION_GAP_ANALYSIS.md`
+
+## 5) Files added in this reconciliation
+- `docs/MAIN_APP_DEEP_DIVE.md`
+
+---
+
+## 6) Stable vs experiment ownership map
+
+### Stable documentation ownership
+Primary stable deep reference:
+- `docs/MAIN_APP_DEEP_DIVE.md`
+
+Stable routes/tables/services:
+- `/cpq`, `/cpq/setup`, `/cpq/results`, `/cpq/process`, `/cpq/ui-docs`
+- `/api/cpq/*`
+- `CPQ_*` + `cpq_*` stable tables
+
+### Experimental documentation ownership
+Primary experiment reference:
+- `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
+
+Experiment routes/tables/services:
+- `/cpq/stock-bike-img`
+- `/api/stock_bike_img_rules/*`
+- `lib/Stock_bike_img_service.ts`
+- `stock_bike_img_*` tables
+
+---
+
+## 7) What remains uncertain from code
+1. External Infor CPQ backend-side semantics beyond request/response contracts in this repo.
+2. Whether all target environments have applied every SQL migration implied by `sql/schema.sql` and runtime assumptions.
+
+No additional unresolved ambiguity found in stable-vs-experiment boundaries.
+
+---
+
+## 8) Practical outcome
+This split makes future decisions straightforward:
+- **Remove experiment**: follow the dedicated deletion checklist in `STOCK_BIKE_IMG_EXPERIMENT.md`.
+- **Integrate experiment**: use the listed schema/runtime/UI touchpoints without polluting current stable-process docs.

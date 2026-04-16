@@ -1,122 +1,200 @@
-# STOCK_BIKE_IMG_EXPERIMENT
+# STOCK_BIKE_IMG_EXPERIMENT (isolated module deep dive)
 
-## Purpose
-`Stock_bike_img_` remains an **isolated experimental** stock-bike image rule engine that runs in parallel to the stable CPQ picture-management process.
+## 1) Purpose and isolation contract
+`stock-bike-img` is an **admin-only experimental image-rule engine** intended to explore SKU-digit-based layered image matching without modifying the stable CPQ picture-management pipeline.
 
-## Scope and isolation
-- Dedicated page: `/cpq/stock-bike-img`
-- Dedicated APIs: `/api/stock_bike_img_rules/*`
-- Dedicated service: `lib/Stock_bike_img_service.ts`
-- Dedicated SQL objects, all prefixed with `stock_bike_img_`
-- Existing stable CPQ process (`/cpq`, `/cpq/setup`, `/api/cpq/*`) is not part of this experiment
+Isolation boundary is explicit by naming and placement:
+- route: `/cpq/stock-bike-img`
+- APIs: `/api/stock_bike_img_rules`, `/api/stock_bike_img_rules/[id]`, `/api/stock_bike_img_rules/test`
+- service: `lib/Stock_bike_img_service.ts`
+- UI: `components/stock_bike_img_/Stock_bike_img_ExperimentPage.tsx`
+- DB: `stock_bike_img_*` tables only
 
-## Admin-only access
-- Navigation entry is admin-only.
-- `/cpq/stock-bike-img` enforces admin mode and redirects non-admin users to `/cpq`.
+No stable `/api/cpq/*` endpoint depends on these tables.
 
-## Selector loading flow (category-first)
-The authoring flow is category-first and loads from Neon-backed tables in this sequence:
+---
 
-1. **Category selector**
-   - Loaded from `stock_bike_img_digit_reference`.
-   - API now computes an explicit internal category key:
-     - `stock_bike_img_rule_category_key = UPPER(REGEXP_REPLACE(TRIM(stock_bike_img_rule_category_name), '\s+', ' ', 'g'))`
-   - Dropdown value is this key; label remains human-readable `stock_bike_img_rule_category_name`.
-2. **Rule family selector**
-   - Loaded from `stock_bike_img_rule_family` + `stock_bike_img_rule_family_category`.
-   - Frontend filters families by the same normalized category key logic to avoid case/spacing mismatches across tables.
-3. **Bike-type group selector**
-   - Loaded from `stock_bike_img_family_bike_group` for selected family.
-4. **Rules table**
-   - Loaded from `stock_bike_img_rule` filtered by model year (selected year + `NULL`) and selected category key.
-5. **Reference metadata panel**
-   - Loaded from `stock_bike_img_digit_reference` for selected category key (digit positions, values, and meanings).
+## 2) Access and architecture
 
-## Root-cause fix for empty selectors
-### Root cause
-The category feed and lookups were using **free-form category text** across different tables and UI state. Although there was some `trim + uppercase` normalization, there was still no explicit authoritative key shared end-to-end. Category text variants with spacing differences could still cause frontend selection/category lookup drift and empty metadata state in the builder.
+### Access model
+- Navigation tab is admin-only.
+- Page enforces admin mode (`useAdminMode`): non-admin users are redirected to `/cpq`.
 
-Fixes:
-- Introduced an explicit stock-bike-only category key derived from `stock_bike_img_digit_reference`.
-- Category lookups in rules/reference/family validation now normalize with whitespace collapsing (`UPPER(REGEXP_REPLACE(TRIM(...), '\s+', ' ', 'g'))`).
-- Frontend category state now tracks the category key (not ambiguous label text).
-- Builder and metadata calls now request by category key (`stock_bike_img_rule_category_key`).
-- API now returns debug payload showing selected key, metadata row count, and available keys.
+### Page behavior
+The experiment page combines:
+- filtered rule listing (model year + category),
+- category/family/group-aware authoring form,
+- guided condition builder from digit references,
+- duplicate/edit/delete actions,
+- runtime SKU test area to evaluate rule matching.
 
-## Condition authoring UX (guided builder)
-Raw input like `1=S,M;2=2,3` is no longer the primary authoring path.
+### API/service flow
+- `GET /api/stock_bike_img_rules`: returns rules + reference categories + digit rows + families/groups.
+- `POST /api/stock_bike_img_rules`: create rule with validation and duplicate protection.
+- `PUT /api/stock_bike_img_rules/[id]`: update rule.
+- `DELETE /api/stock_bike_img_rules/[id]`: delete rule.
+- `POST /api/stock_bike_img_rules/test`: evaluate a 30-char SKU against active rules.
 
-### Builder behavior
-- “Build conditions” opens a modal.
-- Modal groups options by digit position for the selected category.
-- Each option shows:
-  - digit value
-  - business meaning (`stock_bike_img_value_meaning`)
-- Multi-select is supported per digit position.
-- Selections are converted to canonical internal signature text (`position=value1,value2;...`) and then saved as normalized condition JSON.
+---
 
-### Source of truth
-The builder is driven exclusively by `stock_bike_img_digit_reference` for:
-- available digit positions
-- available values per position
-- value meaning labels
+## 3) Data model (experiment-only)
 
-If metadata is missing for a category, the modal shows an empty-state helper message instead of failing.
-The empty state also includes lightweight diagnostics (selected key, matched row count, available keys).
+## Reference tables
+- `stock_bike_img_digit_reference`:
+  - defines valid digit positions, allowed values, and business meaning text by category.
+- `stock_bike_img_business_bike_type`:
+  - business bike-type master.
+- `stock_bike_img_business_bike_type_digit_map`:
+  - maps specific digit value (position currently resolved at 17 in runtime) to business bike type.
 
-## Create, edit, and duplicate compatibility
-- **Create**: starts with empty condition signature; builder fills it.
-- **Edit**: existing stored condition JSON is converted back to signature text and preloaded in builder checkboxes.
-- **Duplicate**: cloned draft keeps condition selections and opens editable copy (`(copy)` name suffix).
+## Rule grouping tables
+- `stock_bike_img_rule_family`:
+  - high-level family partition.
+- `stock_bike_img_rule_family_category`:
+  - allowed category membership per family.
+- `stock_bike_img_family_bike_group`:
+  - optional bike-type groups under a family.
+- `stock_bike_img_family_bike_group_member`:
+  - membership table linking business bike types to groups.
 
-## Rule authoring model
-A rule is authored against:
-- category
-- rule family
-- bike-type group (optional; `NULL` means all groups in family)
-- optional model year
-- SKU digit conditions (JSON)
-- picture outputs + layer order
+## Rule table
+- `stock_bike_img_rule`:
+  - optional model year (`NULL` = all years),
+  - category,
+  - family,
+  - optional bike-type group (`NULL` = all groups),
+  - rule metadata,
+  - conditions JSON + normalized signature,
+  - layer order,
+  - picture links 1..3,
+  - active flag.
 
-Duplicate rule prevention signature includes:
-- model year (with `NULL` normalized)
-- category
-- family
-- bike-type group (with `NULL` normalized)
-- normalized condition signature
+### Duplicate prevention
+Unique index enforces signature uniqueness across:
+- coalesced model year,
+- category,
+- family,
+- coalesced group,
+- conditions signature.
 
-## Runtime matching flow
-Given a 30-char SKU:
-1. Validate SKU length.
-2. Resolve model year from char 20.
-3. Resolve business bike type from char 17 mapping table.
-4. Load active candidate rules filtered by:
-   - model year = exact or `NULL`
-   - bike-type group membership for resolved business bike type (or group `NULL`)
-5. Evaluate condition JSON against SKU digits.
-6. Return matched rules and layered picture links ordered by layer/category/id.
+---
 
-## Efficiency notes
-- Runtime candidate filtering is done in SQL (year + group membership), reducing JS-side checks.
-- Relevant indexes exist on rule runtime columns and bike-type digit mapping columns.
+## 4) Rule logic and runtime matching
 
-## SQL data model (experiment-only tables)
-- Existing retained:
-  - `stock_bike_img_digit_reference`
-  - `stock_bike_img_rule` (extended)
-- Added:
-  - `stock_bike_img_business_bike_type`
-  - `stock_bike_img_business_bike_type_digit_map`
-  - `stock_bike_img_rule_family`
-  - `stock_bike_img_rule_family_category`
-  - `stock_bike_img_family_bike_group`
-  - `stock_bike_img_family_bike_group_member`
+### Model year from digit 20
+`Stock_bike_img_resolve_model_year_from_sku`:
+- requires SKU length exactly 30.
+- reads char index `19` (digit 20).
+- maps digits `1..9` to MY `2020..2028`.
 
-## Removability
-Experiment remains removable with localized changes:
-1. Remove stock-bike page/API/service files.
-2. Remove navigation link.
-3. Drop `stock_bike_img_*` tables.
-4. Remove experiment seed blocks and this doc.
+### When model year is optional
+Rule row `stock_bike_img_model_year = NULL` applies across all model years.
+Matching SQL includes either exact year or null-year fallback.
 
-No stable CPQ table or route is required by this module.
+### Business bike type concept
+`Stock_bike_img_resolve_business_bike_type` reads char index `16` (digit 17) and resolves through `stock_bike_img_business_bike_type_digit_map` (position 17).
+
+### Family/group logic
+Candidate rules are filtered by:
+- active flag,
+- year match (exact or null),
+- group membership condition:
+  - if rule group is null => applicable to all groups in family,
+  - else business bike type must belong to that group.
+
+### Digit reference usage
+Authoring-side condition builder is metadata-driven from `stock_bike_img_digit_reference` by selected category key.
+
+### Category behavior
+Category keys are normalized (`trim + whitespace collapse + uppercase`) to reduce drift between tables and UI state.
+
+### Runtime condition matching
+After SQL candidate pre-filtering, each rule validates all conditions:
+- for each condition position, SKU digit must be in `allowedValues`.
+- only fully matched rules are returned.
+
+### Layer output behavior
+Matched rules are flattened into layered images using picture links 1..3 with per-rule layer order.
+
+---
+
+## 5) Current authoring flow
+
+1. Select model-year filter (for list display).
+2. Select category (normalized key internally, human label shown).
+3. Choose rule family (limited to families mapped to category).
+4. Optionally choose bike-type group (or all groups).
+5. Set model-year scope (specific year or all years).
+6. Build condition signature via modal:
+   - grouped by digit position,
+   - checkbox values with meaning labels.
+7. Fill rule metadata and picture links.
+8. Save create/update.
+
+Other actions:
+- duplicate existing rule (loads editable copy with `(copy)` suffix),
+- delete rule,
+- test runtime with a SKU string.
+
+Known guardrails in code:
+- condition positions limited to 1..30,
+- unique positions in a condition set,
+- non-empty allowed values,
+- layer order 1..999,
+- family/category/group consistency validated server-side.
+
+---
+
+## 6) Current limitations / gaps
+- Admin mode is UI/session based (not hardened server auth).
+- Model year mapping is hardcoded to 2020..2028 digit map.
+- Runtime test route is manual and page-centric; no integration into stable Bike Builder preview pipeline.
+- Output supports 3 picture links per rule (stable picture-management supports 4 links per option row).
+
+---
+
+## 7) Removal strategy (surgical)
+If removing the experiment entirely, delete in this order:
+
+1. **Navigation/UI route wiring**
+   - remove admin tab link in `components/shared/app-navigation.tsx`.
+   - remove page file `app/cpq/stock-bike-img/page.tsx`.
+   - remove component `components/stock_bike_img_/Stock_bike_img_ExperimentPage.tsx`.
+
+2. **API surface**
+   - delete `app/api/stock_bike_img_rules/route.ts`.
+   - delete `app/api/stock_bike_img_rules/[id]/route.ts`.
+   - delete `app/api/stock_bike_img_rules/test/route.ts`.
+
+3. **Service layer**
+   - delete `lib/Stock_bike_img_service.ts`.
+
+4. **Database**
+   - drop all `stock_bike_img_*` tables and related indexes/constraints.
+
+5. **Docs cleanup**
+   - remove this file and references in docs index/audit docs.
+
+Stable `/cpq`, `/cpq/setup`, `/cpq/results`, `/api/cpq/*` behavior remains intact because it does not call experiment services.
+
+---
+
+## 8) Possible future integration path (instead of deletion)
+If integrating experiment concepts into stable picture-management later, likely touchpoints are:
+
+1. **Data model convergence**
+   - decide whether to enrich `cpq_image_management` with rule predicates or map experiment outputs into it.
+
+2. **Runtime resolver integration**
+   - augment `/api/cpq/image-layers` to optionally evaluate SKU/rule logic before/alongside exact option tuple lookup.
+
+3. **Authoring UX merge**
+   - bring condition-builder patterns into `/cpq/setup` picture management if business users need digit-based rule authoring.
+
+4. **Identity consistency**
+   - standardize layer-slot support (experiment currently 3 links vs stable 4 links) and layer ordering semantics.
+
+5. **Operational controls**
+   - align with existing feature-level controls (`ignore_during_configure`, `feature_layer_order`) to avoid dual governance models.
+
+Integration should be done as an explicit migration project; do not partially cross-wire routes/tables without a deliberate schema and UX contract.
