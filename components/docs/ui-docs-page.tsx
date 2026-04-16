@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useAdminMode } from '@/components/shared/admin-mode-context';
 
 type UiDocEntry = {
   page: string;
@@ -114,6 +115,68 @@ const entries: UiDocEntry[] = [
     dataSource: 'Lists matched selection triplets and current layer ordering rule.',
     notes: 'Order rule: current selected-option order, then picture_link_1..4 slot order.',
   },
+
+  {
+    page: 'Global navigation',
+    section: 'Primary navigation',
+    subsection: 'Admin mode controls',
+    label: 'Open as admin',
+    purpose: 'Prompts for internal admin password and enables admin mode visibility.',
+    codeSource: 'components/shared/app-navigation.tsx',
+    dataSource: 'Client-side password check (`Br0mpt0n`) + sessionStorage admin flag.',
+    notes: 'UI visibility gate only (not enterprise authentication).',
+  },
+  {
+    page: 'Global navigation',
+    section: 'Primary navigation',
+    subsection: 'Admin mode controls',
+    label: 'Admin mode / Close admin mode',
+    purpose: 'Shows active admin state and allows returning to standard mode.',
+    codeSource: 'components/shared/app-navigation.tsx',
+    dataSource: 'AdminMode context state from components/shared/admin-mode-context.tsx.',
+    notes: 'In standard mode only Process/Bike Builder/Setup tabs are shown.',
+  },
+  {
+    page: 'CPQ - Bike Builder',
+    section: 'Manual lifecycle header',
+    subsection: 'Compact control strip',
+    label: 'Account code / Ruleset / primary actions',
+    purpose: 'Compact top control area tuned for practical desktop usage.',
+    codeSource: 'components/cpq/bike-builder-page.tsx',
+    dataSource: 'Account contexts, rulesets, and existing lifecycle actions.',
+    notes: 'Keeps existing flow actions while reducing vertical space use.',
+  },
+  {
+    page: 'CPQ - Bike Builder',
+    section: 'Main workspace',
+    subsection: 'Two-column layout',
+    label: 'Configurator (left) + Layered Product Preview (right)',
+    purpose: 'Keeps selection workflow and visual preview visible together.',
+    codeSource: 'components/cpq/bike-builder-page.tsx',
+    dataSource: 'Configurator from normalized CPQ state + image layer API results.',
+    notes: 'Configurator and combinations each use internal scroll containers as needed.',
+  },
+  {
+    page: 'CPQ - Bike Builder',
+    section: 'Manual lifecycle status',
+    subsection: 'Admin-only technical details',
+    label: 'Session / DetailId / IPN / Save-Retrieve-Bulk internals',
+    purpose: 'Shows technical runtime diagnostics only for admin troubleshooting.',
+    codeSource: 'components/cpq/bike-builder-page.tsx',
+    dataSource: 'In-memory runtime state and CPQ API response trackers.',
+    notes: 'Hidden in non-admin mode to keep business UI lighter.',
+  },
+  {
+    page: 'CPQ - Bike Builder',
+    section: 'Debug',
+    subsection: 'Admin-only timeline',
+    label: 'CPQ debug timeline',
+    purpose: 'Displays recent CPQ request/response debug entries for diagnostics.',
+    codeSource: 'components/cpq/bike-builder-page.tsx',
+    dataSource: 'Local debugEntries collection (when NEXT_PUBLIC_CPQ_DEBUG=true).',
+    notes: 'Timeline visibility additionally requires admin mode.',
+  },
+
   {
     page: 'CPQ - Process',
     section: 'Process SOP',
@@ -437,7 +500,18 @@ const entries: UiDocEntry[] = [
 ];
 
 export default function UiDocsPage() {
+  const { isAdminMode } = useAdminMode();
   const [query, setQuery] = useState('');
+
+  if (!isAdminMode) {
+    return (
+      <main className="page">
+        <h1 style={{ marginTop: 0 }}>CPQ UI Docs</h1>
+        <p className="subtle">This page is admin-only. Use <strong>Open as admin</strong> in the top ribbon to access UI mapping details.</p>
+      </main>
+    );
+  }
+
 
   const filteredEntries = useMemo(() => {
     const value = query.trim().toLowerCase();

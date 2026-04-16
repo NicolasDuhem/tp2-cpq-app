@@ -116,3 +116,28 @@ Per selected **row-country** pair:
 - Row statuses: `pending`, `running`, `configured`, `finalized`, `saved`, `failed`.
 - Failed rows preserve execution metadata including country code and execution key.
 - **Inspect failure** modal includes stage, summary, trace/session IDs, country, and last two requests/responses.
+
+
+## 6) Admin visibility gating
+- Top ribbon includes **Open as admin** (password `Br0mpt0n`) for internal UI visibility control.
+- Non-admin users see only operational routes in nav: Process, Bike Builder, Setup.
+- Admin-only Bike Builder runtime/technical lines:
+  - Session
+  - DetailId
+  - IPN
+  - Save status
+  - Save source tracker
+  - Last finalize response tracked
+  - Sampler save status
+  - Retrieve status
+  - Bulk run
+  - Bulk current session
+  - Bulk current feature
+- CPQ debug timeline is admin-only.
+
+## 7) Bike Builder layout + scroll behavior
+- Top controls are compacted (account/ruleset selectors + primary action buttons + retrieve input).
+- Main workspace uses a desktop two-column layout: configurator (left) and layered preview (right).
+- Configurator has internal scroll for long feature lists.
+- Generated combinations table remains in a bounded scroll container for horizontal/vertical overflow.
+- Admin mode can increase page height due to extra technical/debug areas; standard mode is optimized for compact usage around 1920x1080.

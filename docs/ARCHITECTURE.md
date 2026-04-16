@@ -1,7 +1,7 @@
 # Architecture (current implementation)
 
 ## 1) Application scope
-This app is a CPQ-focused Next.js application with five primary user-facing areas:
+This app is a CPQ-focused Next.js application with five primary user-facing areas. The top ribbon runs in two visibility modes (standard/admin):
 
 - `/cpq` — core Bike Builder manual lifecycle page.
 - `/cpq/setup` — setup/admin page for account contexts, rulesets, and picture management.
@@ -29,6 +29,8 @@ Additional route aliases:
     - pre-run row-country validation,
     - row-country execution queue with fresh StartConfiguration per unit.
   - In-page debug timeline and per-row/per-country failure diagnostics.
+  - Non-admin compact desktop layout: compact control strip + two-column workspace (configurator left, layered preview right).
+  - Admin-only Bike Builder technical runtime block (session/detail/IPN/save/retrieve/bulk internals).
 
 ### `/cpq/setup`
 - Route file: `app/cpq/setup/page.tsx`.
@@ -121,3 +123,11 @@ Additional route aliases:
 - API and CPQ/client layers emit structured logs using trace IDs (`x-cpq-trace-id` propagation).
 - `/cpq` maintains a local debug timeline of recent calls when `NEXT_PUBLIC_CPQ_DEBUG=true`.
 - Bulk run failures keep row-local diagnostics (stage, error, last requests/responses) shown via **Inspect failure** modal.
+
+
+## 7) Admin mode visibility model
+- Implemented client-side with `AdminModeProvider` (`components/shared/admin-mode-context.tsx`) and ribbon controls in `components/shared/app-navigation.tsx`.
+- **Open as admin** uses password dialog (`Br0mpt0n`) and stores enabled state in `sessionStorage` for the active browser tab/session.
+- Non-admin navigation surfaces: `/cpq/process`, `/cpq`, `/cpq/setup`.
+- Admin navigation additionally exposes `/cpq/results` and `/cpq/ui-docs` (UI docs page body is also gated).
+- Bike Builder debug timeline + technical runtime details are hidden unless admin mode is enabled.
