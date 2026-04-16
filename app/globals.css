@@ -259,3 +259,27 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 .apiDocsExcluded { border:1px dashed #c7d3eb; border-radius:12px; padding:10px; background:#f8faff; }
 .apiDocsExcluded h3 { margin:0 0 8px; }
 .apiDocsExcluded ul { margin:0; padding-left:18px; display:grid; gap:4px; }
+
+.processPage { display:grid; gap:12px; max-width:1200px; margin:0 auto; }
+.processHeader h1 { margin:0 0 6px; }
+.processHeader p { margin:0; color:var(--muted); max-width:950px; line-height:1.5; }
+.processAnchorNav { display:flex; flex-wrap:wrap; gap:8px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#f8faff; }
+.processAnchorLink { border:1px solid #d6e1fb; border-radius:999px; background:#fff; color:#264276; padding:6px 10px; font-size:12px; font-weight:700; }
+.processAnchorLink:hover { border-color:#9fb5ea; }
+.processSectionCard { border:1px solid var(--line); border-radius:12px; background:#fff; padding:12px; display:grid; gap:8px; }
+.processSectionCard h2 { margin:0; font-size:18px; }
+.processSectionCard h3 { margin:0; font-size:15px; color:#223864; }
+.processSectionCard p { margin:0; line-height:1.5; }
+.processSectionCard ul, .processSectionCard ol { margin:0; padding-left:20px; display:grid; gap:6px; }
+.processMiniGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; }
+.processMiniCard { border:1px solid #dbe4f7; border-radius:12px; background:#fafcff; padding:10px; display:grid; gap:8px; }
+.processCallout { border-radius:10px; padding:9px 10px; font-size:13px; line-height:1.45; }
+.processCalloutInfo { border:1px solid #b9d0f7; background:#edf4ff; color:#1f3d76; }
+.processCalloutWarn { border:1px solid #ebc999; background:#fff7ea; color:#6c4c1e; }
+.processRoleGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px; }
+.processRoleCard { border:1px solid #d9e3f8; border-radius:12px; background:#f8fbff; padding:10px; display:grid; gap:8px; }
+
+@media (max-width: 860px) {
+  .processPage { gap:10px; }
+  .processSectionCard { padding:10px; }
+}

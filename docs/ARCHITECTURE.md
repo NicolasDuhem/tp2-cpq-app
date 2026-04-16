@@ -1,11 +1,12 @@
 # Architecture (current implementation)
 
 ## 1) Application scope
-This app is a CPQ-focused Next.js application with four primary user-facing areas:
+This app is a CPQ-focused Next.js application with five primary user-facing areas:
 
 - `/cpq` — core Bike Builder manual lifecycle page.
 - `/cpq/setup` — setup/admin page for account contexts, rulesets, and picture management.
 - `/cpq/results` — sampler results matrix/pivot exploration page.
+- `/cpq/process` — business SOP/instruction page for setup and configuration workflows.
 - `/cpq/ui-docs` — internal UI label/code/data mapping reference.
 
 Additional route aliases:
@@ -48,6 +49,14 @@ Additional route aliases:
   - Build a matrix from `CPQ_sampler_result` + ruleset lookup metadata.
   - Group rows by `(sku_code + ruleset + selected feature signature)`.
   - Pivot `detail_id` values across country columns.
+
+
+### `/cpq/process`
+- Route file: `app/cpq/process/page.tsx`.
+- Main component: `components/docs/process-page.tsx`.
+- Responsibility:
+  - Business-facing SOP guide for role ownership, setup dependencies, manual single-bike flow, and bulk execution flow.
+  - Read-only instructional content with anchored section navigation.
 
 ### `/cpq/ui-docs`
 - Route file: `app/cpq/ui-docs/page.tsx`.
