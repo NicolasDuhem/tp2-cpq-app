@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 type AdminModeContextValue = {
   isAdminMode: boolean;
+  isAdminModeReady: boolean;
   enableAdminMode: () => void;
   disableAdminMode: () => void;
 };
@@ -14,15 +15,18 @@ const AdminModeContext = createContext<AdminModeContextValue | undefined>(undefi
 
 export function AdminModeProvider({ children }: { children: React.ReactNode }) {
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminModeReady, setIsAdminModeReady] = useState(false);
 
   useEffect(() => {
     const persisted = window.sessionStorage.getItem(STORAGE_KEY);
     setIsAdminMode(persisted === 'true');
+    setIsAdminModeReady(true);
   }, []);
 
   const value = useMemo<AdminModeContextValue>(
     () => ({
       isAdminMode,
+      isAdminModeReady,
       enableAdminMode: () => {
         setIsAdminMode(true);
         window.sessionStorage.setItem(STORAGE_KEY, 'true');
@@ -32,7 +36,7 @@ export function AdminModeProvider({ children }: { children: React.ReactNode }) {
         window.sessionStorage.removeItem(STORAGE_KEY);
       },
     }),
-    [isAdminMode],
+    [isAdminMode, isAdminModeReady],
   );
 
   return <AdminModeContext.Provider value={value}>{children}</AdminModeContext.Provider>;

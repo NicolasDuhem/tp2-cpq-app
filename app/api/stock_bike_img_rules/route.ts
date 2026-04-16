@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Stock_bike_img_create_rule, Stock_bike_img_list_rules } from '@/lib/Stock_bike_img_service';
+import {
+  Stock_bike_img_create_rule,
+  Stock_bike_img_list_digit_reference_rows,
+  Stock_bike_img_list_reference_categories,
+  Stock_bike_img_list_rules,
+} from '@/lib/Stock_bike_img_service';
 
 export async function GET(req: NextRequest) {
   const modelYear = Number(req.nextUrl.searchParams.get('stock_bike_img_model_year') ?? 0);
-  const rows = await Stock_bike_img_list_rules(Number.isInteger(modelYear) && modelYear > 0 ? modelYear : undefined);
-  return NextResponse.json({ rows });
+  const category = String(req.nextUrl.searchParams.get('stock_bike_img_rule_category') ?? '').trim();
+  const safeModelYear = Number.isInteger(modelYear) && modelYear > 0 ? modelYear : undefined;
+  const safeCategory = category.length > 0 ? category : undefined;
+
+  const [rows, categories, referenceRows] = await Promise.all([
+    Stock_bike_img_list_rules(safeModelYear, safeCategory),
+    Stock_bike_img_list_reference_categories(),
+    Stock_bike_img_list_digit_reference_rows(safeCategory),
+  ]);
+
+  return NextResponse.json({
+    rows,
+    stock_bike_img_reference_categories: categories,
+    stock_bike_img_reference_rows: referenceRows,
+  });
 }
 
 export async function POST(req: NextRequest) {

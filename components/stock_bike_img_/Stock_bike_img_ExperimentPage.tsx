@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAdminMode } from '@/components/shared/admin-mode-context';
 
 type Stock_bike_img_condition = {
   position: number;
@@ -19,6 +21,19 @@ type Stock_bike_img_rule_row = {
   stock_bike_img_picture_link_2: string | null;
   stock_bike_img_picture_link_3: string | null;
   stock_bike_img_is_active: boolean;
+};
+
+type Stock_bike_img_reference_category = {
+  stock_bike_img_rule_category_name: string;
+  stock_bike_img_digit_positions: number[];
+};
+
+type Stock_bike_img_reference_row = {
+  id: number;
+  stock_bike_img_digit_position: number;
+  stock_bike_img_rule_category_name: string;
+  stock_bike_img_digit_value: string;
+  stock_bike_img_value_meaning: string;
 };
 
 type Stock_bike_img_draft = {
@@ -64,10 +79,14 @@ const Stock_bike_img_parse_conditions_text = (value: string): Stock_bike_img_con
       throw new Error(`Invalid condition position: ${rawPosition}`);
     }
 
-    const allowedValues = [...new Set(String(rawValues ?? '')
-      .split(',')
-      .map((entry) => entry.trim().toUpperCase())
-      .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const allowedValues = [
+      ...new Set(
+        String(rawValues ?? '')
+          .split(',')
+          .map((entry) => entry.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
 
     if (allowedValues.length === 0) {
       throw new Error(`Condition ${position} must contain at least one value.`);
@@ -90,25 +109,82 @@ const Stock_bike_img_parse_conditions_text = (value: string): Stock_bike_img_con
 const Stock_bike_img_conditions_to_text = (conditions: Stock_bike_img_condition[]) =>
   conditions.map((condition) => `${condition.position}=${condition.allowedValues.join(',')}`).join(';');
 
+const Stock_bike_img_to_draft_from_rule = (rule: Stock_bike_img_rule_row): Stock_bike_img_draft => ({
+  stock_bike_img_model_year: rule.stock_bike_img_model_year,
+  stock_bike_img_rule_category: rule.stock_bike_img_rule_category,
+  stock_bike_img_rule_name: rule.stock_bike_img_rule_name,
+  stock_bike_img_rule_description: rule.stock_bike_img_rule_description ?? '',
+  stock_bike_img_layer_order: rule.stock_bike_img_layer_order,
+  stock_bike_img_conditions_text: Stock_bike_img_conditions_to_text(rule.stock_bike_img_conditions_json),
+  stock_bike_img_picture_link_1: rule.stock_bike_img_picture_link_1 ?? '',
+  stock_bike_img_picture_link_2: rule.stock_bike_img_picture_link_2 ?? '',
+  stock_bike_img_picture_link_3: rule.stock_bike_img_picture_link_3 ?? '',
+  stock_bike_img_is_active: rule.stock_bike_img_is_active,
+});
+
 export default function Stock_bike_img_ExperimentPage() {
+  const router = useRouter();
+  const { isAdminMode, isAdminModeReady } = useAdminMode();
   const [stock_bike_img_rows, setStock_bike_img_rows] = useState<Stock_bike_img_rule_row[]>([]);
+  const [stock_bike_img_reference_categories, setStock_bike_img_reference_categories] = useState<Stock_bike_img_reference_category[]>([]);
+  const [stock_bike_img_reference_rows, setStock_bike_img_reference_rows] = useState<Stock_bike_img_reference_row[]>([]);
   const [stock_bike_img_model_year_filter, setStock_bike_img_model_year_filter] = useState<number>(2026);
+  const [stock_bike_img_selected_category, setStock_bike_img_selected_category] = useState<string>('');
   const [stock_bike_img_draft, setStock_bike_img_draft] = useState<Stock_bike_img_draft>(Stock_bike_img_default_draft);
   const [stock_bike_img_editing_rule_id, setStock_bike_img_editing_rule_id] = useState<number | null>(null);
   const [stock_bike_img_status, setStock_bike_img_status] = useState('');
   const [stock_bike_img_test_sku, setStock_bike_img_test_sku] = useState('');
   const [stock_bike_img_test_result, setStock_bike_img_test_result] = useState<any>(null);
 
-  const Stock_bike_img_load_rules = async () => {
+  const Stock_bike_img_reset_draft = (categoryOverride?: string) => {
+    const category = categoryOverride ?? stock_bike_img_selected_category;
+    setStock_bike_img_editing_rule_id(null);
+    setStock_bike_img_draft({
+      ...Stock_bike_img_default_draft,
+      stock_bike_img_model_year: stock_bike_img_model_year_filter,
+      stock_bike_img_rule_category: category,
+    });
+  };
+
+  const Stock_bike_img_load_rules_and_reference = async (category: string) => {
     const params = new URLSearchParams({ stock_bike_img_model_year: String(stock_bike_img_model_year_filter) });
+    if (category.trim()) {
+      params.set('stock_bike_img_rule_category', category.trim());
+    }
+
     const response = await fetch(`/api/stock_bike_img_rules?${params.toString()}`);
-    const payload = await response.json().catch(() => ({ rows: [] }));
-    setStock_bike_img_rows(payload.rows ?? []);
+    const payload = await response.json().catch(() => ({}));
+
+    const categories = (payload.stock_bike_img_reference_categories ?? []) as Stock_bike_img_reference_category[];
+    const rows = (payload.rows ?? []) as Stock_bike_img_rule_row[];
+    const referenceRows = (payload.stock_bike_img_reference_rows ?? []) as Stock_bike_img_reference_row[];
+
+    setStock_bike_img_reference_categories(categories);
+    setStock_bike_img_rows(rows);
+    setStock_bike_img_reference_rows(referenceRows);
+
+    if (!category && categories.length > 0) {
+      const firstCategory = categories[0].stock_bike_img_rule_category_name;
+      setStock_bike_img_selected_category(firstCategory);
+      setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_category: firstCategory }));
+    }
   };
 
   useEffect(() => {
-    void Stock_bike_img_load_rules();
-  }, [stock_bike_img_model_year_filter]);
+    if (isAdminModeReady && !isAdminMode) {
+      router.replace('/cpq');
+    }
+  }, [isAdminMode, isAdminModeReady, router]);
+
+  useEffect(() => {
+    if (!isAdminMode) return;
+    void Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
+  }, [isAdminMode, stock_bike_img_model_year_filter, stock_bike_img_selected_category]);
+
+  const stock_bike_img_selected_category_metadata = useMemo(
+    () => stock_bike_img_reference_categories.find((entry) => entry.stock_bike_img_rule_category_name === stock_bike_img_selected_category),
+    [stock_bike_img_reference_categories, stock_bike_img_selected_category],
+  );
 
   const stock_bike_img_can_submit = useMemo(
     () =>
@@ -117,11 +193,6 @@ export default function Stock_bike_img_ExperimentPage() {
       stock_bike_img_draft.stock_bike_img_conditions_text.trim().length > 0,
     [stock_bike_img_draft],
   );
-
-  const Stock_bike_img_reset_draft = () => {
-    setStock_bike_img_editing_rule_id(null);
-    setStock_bike_img_draft({ ...Stock_bike_img_default_draft, stock_bike_img_model_year: stock_bike_img_model_year_filter });
-  };
 
   const Stock_bike_img_save_rule = async () => {
     if (!stock_bike_img_can_submit) {
@@ -147,19 +218,21 @@ export default function Stock_bike_img_ExperimentPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...stock_bike_img_draft,
+        stock_bike_img_rule_category: stock_bike_img_selected_category,
         stock_bike_img_conditions_json,
       }),
     });
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStock_bike_img_status(payload.error ?? 'Save failed');
+      const conflictHelp = response.status === 409 ? ' Change category/model year/conditions before saving duplicate logic.' : '';
+      setStock_bike_img_status(`${payload.error ?? 'Save failed'}${conflictHelp}`);
       return;
     }
 
     setStock_bike_img_status(stock_bike_img_editing_rule_id ? 'Rule updated.' : 'Rule created.');
-    Stock_bike_img_reset_draft();
-    await Stock_bike_img_load_rules();
+    Stock_bike_img_reset_draft(stock_bike_img_selected_category);
+    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
   };
 
   const Stock_bike_img_delete_rule = async (id: number) => {
@@ -170,8 +243,19 @@ export default function Stock_bike_img_ExperimentPage() {
       return;
     }
     setStock_bike_img_status('Rule deleted.');
-    if (stock_bike_img_editing_rule_id === id) Stock_bike_img_reset_draft();
-    await Stock_bike_img_load_rules();
+    if (stock_bike_img_editing_rule_id === id) Stock_bike_img_reset_draft(stock_bike_img_selected_category);
+    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
+  };
+
+  const Stock_bike_img_duplicate_rule = (row: Stock_bike_img_rule_row) => {
+    setStock_bike_img_editing_rule_id(null);
+    setStock_bike_img_draft({
+      ...Stock_bike_img_to_draft_from_rule(row),
+      stock_bike_img_rule_name: `${row.stock_bike_img_rule_name} (copy)`,
+    });
+    setStock_bike_img_status(
+      'Duplicate draft loaded. Adjust conditions/category/model year before saving to avoid unique-signature conflicts.',
+    );
   };
 
   const Stock_bike_img_test_runtime = async () => {
@@ -190,6 +274,14 @@ export default function Stock_bike_img_ExperimentPage() {
     setStock_bike_img_status(`SKU evaluated for model year ${payload.stock_bike_img_model_year}.`);
     setStock_bike_img_test_result(payload);
   };
+
+  if (!isAdminModeReady) {
+    return <div className="pageRoot stockBikeImgPage">Checking admin mode…</div>;
+  }
+
+  if (!isAdminMode) {
+    return <div className="pageRoot stockBikeImgPage">Admin mode required. Redirecting…</div>;
+  }
 
   return (
     <div className="pageRoot stockBikeImgPage">
@@ -218,6 +310,25 @@ export default function Stock_bike_img_ExperimentPage() {
         </label>
 
         <label>
+          Category
+          <select
+            value={stock_bike_img_selected_category}
+            onChange={(event) => {
+              const category = event.target.value;
+              setStock_bike_img_selected_category(category);
+              setStock_bike_img_editing_rule_id(null);
+              setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_category: category }));
+            }}
+          >
+            {stock_bike_img_reference_categories.map((category) => (
+              <option key={category.stock_bike_img_rule_category_name} value={category.stock_bike_img_rule_category_name}>
+                {category.stock_bike_img_rule_category_name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
           Test 30-digit SKU
           <input
             value={stock_bike_img_test_sku}
@@ -233,17 +344,18 @@ export default function Stock_bike_img_ExperimentPage() {
       </section>
 
       <section className="card compactCard stockBikeImgEditor">
-        <h3>{stock_bike_img_editing_rule_id ? `Edit Stock_bike_img_ rule #${stock_bike_img_editing_rule_id}` : 'Create Stock_bike_img_ rule'}</h3>
+        <h3>
+          {stock_bike_img_editing_rule_id
+            ? `Edit Stock_bike_img_ rule #${stock_bike_img_editing_rule_id}`
+            : `Create Stock_bike_img_ rule in ${stock_bike_img_selected_category || 'selected category'}`}
+        </h3>
+        <div className="subtle" style={{ marginBottom: 12 }}>
+          Category digit positions: {stock_bike_img_selected_category_metadata?.stock_bike_img_digit_positions.join(', ') || 'n/a'}
+        </div>
         <div className="stockBikeImgFormGrid">
           <label>
             Rule category
-            <input
-              value={stock_bike_img_draft.stock_bike_img_rule_category}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_category: event.target.value }))
-              }
-              placeholder="Main frame colour"
-            />
+            <input value={stock_bike_img_selected_category} disabled />
           </label>
           <label>
             Rule name
@@ -326,11 +438,9 @@ export default function Stock_bike_img_ExperimentPage() {
           <button className="primary" type="button" disabled={!stock_bike_img_can_submit} onClick={Stock_bike_img_save_rule}>
             {stock_bike_img_editing_rule_id ? 'Update rule' : 'Create rule'}
           </button>
-          {stock_bike_img_editing_rule_id ? (
-            <button type="button" onClick={Stock_bike_img_reset_draft}>
-              Cancel edit
-            </button>
-          ) : null}
+          <button type="button" onClick={() => Stock_bike_img_reset_draft(stock_bike_img_selected_category)}>
+            {stock_bike_img_editing_rule_id ? 'Cancel edit' : 'Reset draft'}
+          </button>
         </div>
       </section>
 
@@ -368,21 +478,13 @@ export default function Stock_bike_img_ExperimentPage() {
                       type="button"
                       onClick={() => {
                         setStock_bike_img_editing_rule_id(row.id);
-                        setStock_bike_img_draft({
-                          stock_bike_img_model_year: row.stock_bike_img_model_year,
-                          stock_bike_img_rule_category: row.stock_bike_img_rule_category,
-                          stock_bike_img_rule_name: row.stock_bike_img_rule_name,
-                          stock_bike_img_rule_description: row.stock_bike_img_rule_description ?? '',
-                          stock_bike_img_layer_order: row.stock_bike_img_layer_order,
-                          stock_bike_img_conditions_text: Stock_bike_img_conditions_to_text(row.stock_bike_img_conditions_json),
-                          stock_bike_img_picture_link_1: row.stock_bike_img_picture_link_1 ?? '',
-                          stock_bike_img_picture_link_2: row.stock_bike_img_picture_link_2 ?? '',
-                          stock_bike_img_picture_link_3: row.stock_bike_img_picture_link_3 ?? '',
-                          stock_bike_img_is_active: row.stock_bike_img_is_active,
-                        });
+                        setStock_bike_img_draft(Stock_bike_img_to_draft_from_rule(row));
                       }}
                     >
                       Edit
+                    </button>
+                    <button type="button" onClick={() => Stock_bike_img_duplicate_rule(row)}>
+                      Duplicate
                     </button>
                     <button type="button" className="dangerAction" onClick={() => Stock_bike_img_delete_rule(row.id)}>
                       Delete
@@ -394,12 +496,44 @@ export default function Stock_bike_img_ExperimentPage() {
             {stock_bike_img_rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="subtle">
-                  No rules found for selected model year.
+                  No rules found for selected model year/category.
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
+      </section>
+
+      <section className="card compactCard">
+        <h3>Category reference metadata (CSV driven)</h3>
+        <div className="subtle">Allowed values for {stock_bike_img_selected_category || 'selected category'}.</div>
+        <div className="tableWrap" style={{ marginTop: 8 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Digit position</th>
+                <th>Value</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stock_bike_img_reference_rows.map((reference) => (
+                <tr key={reference.id}>
+                  <td>{reference.stock_bike_img_digit_position}</td>
+                  <td className="codeCell">{reference.stock_bike_img_digit_value}</td>
+                  <td>{reference.stock_bike_img_value_meaning}</td>
+                </tr>
+              ))}
+              {stock_bike_img_reference_rows.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="subtle">
+                    No reference metadata found for this category.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {stock_bike_img_test_result ? (
