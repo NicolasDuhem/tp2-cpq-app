@@ -25,13 +25,21 @@ Canonical save and sampler snapshot payloads are sourced from:
 
 ## Bulk combinations flow
 - Generate combinations from active state on `/cpq`.
+- Operational grid controls:
+  - `Show selected only` toggle filters table to ticked rows.
+  - `Columns` picker can show/hide feature and dynamic country columns.
+  - Dynamic country checkbox columns are sourced from active `cpq_setup_account_context.country_code`.
+- Validation rule before run:
+  - every selected row must have at least one country selected,
+  - invalid rows are highlighted and bulk run is blocked with a message.
 - Run **Configure all ticked items**:
-  - fresh StartConfiguration per row,
+  - fresh StartConfiguration per **row-country pair** (no session reuse across rows/countries),
+  - country-specific setup context resolution (`account_code`, `customer_id`, `currency`, `language`, `country_code`) for each execution,
   - stable feature identity remap to fresh session,
   - feature-scoped option resolution,
   - skip ignored features (`ignore_during_configure`),
-  - finalize + canonical save + sampler support save per row,
-  - row-level failure diagnostics in-table.
+  - finalize + canonical save + sampler support save per row-country execution,
+  - row-level failure diagnostics include country execution context.
 
 ## Database source of truth
 For schema truth, use live Neon CSV exports in repo root:

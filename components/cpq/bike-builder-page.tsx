@@ -125,6 +125,7 @@ type CombinationCell = CombinationFeatureColumn & {
 type CombinationRow = {
   id: string;
   selected: boolean;
+  countries: Record<string, boolean>;
   cellsByFeatureKey: Record<string, CombinationCell>;
 };
 
@@ -155,6 +156,8 @@ type RowDiagnosticEvent = {
 };
 type RowFailureDiagnostics = {
   rowId: string;
+  executionKey?: string;
+  countryCode?: string | null;
   status: RowExecutionStatus;
   currentStage: BulkExecutionStage | null;
   errorSummary: string | null;
@@ -168,9 +171,13 @@ type RowFailureDiagnostics = {
 
 type BulkProgress = {
   running: boolean;
-  totalSelected: number;
+  totalSelectedRows: number;
+  totalCountryAssignments: number;
+  totalExecutions: number;
+  currentExecutionIndex: number;
   currentRowIndex: number;
   currentRowId: string | null;
+  currentCountryCode: string | null;
   currentSessionId: string | null;
   currentFeatureKey: string | null;
   succeeded: number;
@@ -258,15 +265,25 @@ export default function BikeBuilderPage() {
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
   const [combinationDataset, setCombinationDataset] = useState<CombinationDataset | null>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [showSelectedRowsOnly, setShowSelectedRowsOnly] = useState(false);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [hiddenFeatureColumnKeys, setHiddenFeatureColumnKeys] = useState<Record<string, boolean>>({});
+  const [hiddenCountryColumns, setHiddenCountryColumns] = useState<Record<string, boolean>>({});
+  const [bulkValidationMessage, setBulkValidationMessage] = useState<string | null>(null);
+  const [invalidBulkRowIds, setInvalidBulkRowIds] = useState<string[]>([]);
   const [combinationRowStatuses, setCombinationRowStatuses] = useState<Record<string, RowExecutionStatus>>({});
   const [combinationRowDiagnostics, setCombinationRowDiagnostics] = useState<Record<string, RowFailureDiagnostics>>({});
   const [failedRowModalId, setFailedRowModalId] = useState<string | null>(null);
   const [ignoredFeatureLabels, setIgnoredFeatureLabels] = useState<string[]>([]);
   const [bulkProgress, setBulkProgress] = useState<BulkProgress>({
     running: false,
-    totalSelected: 0,
+    totalSelectedRows: 0,
+    totalCountryAssignments: 0,
+    totalExecutions: 0,
+    currentExecutionIndex: 0,
     currentRowIndex: 0,
     currentRowId: null,
+    currentCountryCode: null,
     currentSessionId: null,
     currentFeatureKey: null,
     succeeded: 0,
@@ -294,6 +311,12 @@ export default function BikeBuilderPage() {
   const selectedAccount = useMemo(
     () => accountContexts.find((entry) => entry.account_code === accountCode) ?? null,
     [accountCode, accountContexts],
+  );
+  const availableCountryCodes = useMemo(
+    () =>
+      [...new Set(accountContexts.map((entry) => entry.country_code?.trim().toUpperCase()).filter((entry): entry is string => Boolean(entry)))]
+        .sort((a, b) => a.localeCompare(b)),
+    [accountContexts],
   );
   const previewSelectedOptions = useMemo(() => (state ? buildPreviewSelectedOptions(state) : []), [state]);
 
@@ -460,14 +483,24 @@ export default function BikeBuilderPage() {
   useEffect(() => {
     setCombinationDataset(null);
     setColumnFilters({});
+    setShowSelectedRowsOnly(false);
+    setColumnPickerOpen(false);
+    setHiddenFeatureColumnKeys({});
+    setHiddenCountryColumns({});
+    setBulkValidationMessage(null);
+    setInvalidBulkRowIds([]);
     setCombinationRowStatuses({});
     setCombinationRowDiagnostics({});
     setFailedRowModalId(null);
     setBulkProgress({
       running: false,
-      totalSelected: 0,
+      totalSelectedRows: 0,
+      totalCountryAssignments: 0,
+      totalExecutions: 0,
+      currentExecutionIndex: 0,
       currentRowIndex: 0,
       currentRowId: null,
+      currentCountryCode: null,
       currentSessionId: null,
       currentFeatureKey: null,
       succeeded: 0,
@@ -577,7 +610,7 @@ export default function BikeBuilderPage() {
       return;
     }
 
-    let rows: CombinationRow[] = [{ id: 'row-0', selected: false, cellsByFeatureKey: {} }];
+    let rows: CombinationRow[] = [{ id: 'row-0', selected: false, countries: {}, cellsByFeatureKey: {} }];
 
     for (const featureEntry of optionsByFeature) {
       const nextRows: CombinationRow[] = [];
@@ -589,6 +622,7 @@ export default function BikeBuilderPage() {
           nextRows.push({
             id: `${row.id}::${featureEntry.stableFeatureKey}:${option.optionId}`,
             selected: false,
+            countries: { ...row.countries },
             cellsByFeatureKey: {
               ...row.cellsByFeatureKey,
               [featureEntry.stableFeatureKey]: {
@@ -621,12 +655,16 @@ export default function BikeBuilderPage() {
       }, {}),
     );
     setColumnFilters({});
+    setShowSelectedRowsOnly(false);
+    setBulkValidationMessage(null);
+    setInvalidBulkRowIds([]);
   };
 
   const filteredCombinationRows = useMemo(() => {
     if (!combinationDataset) return [];
 
     return combinationDataset.rows.filter((row) =>
+      (!showSelectedRowsOnly || row.selected) &&
       combinationDataset.columns.every((column) => {
         const filterValue = columnFilters[column.stableFeatureKey]?.trim().toLowerCase();
         if (!filterValue) return true;
@@ -636,7 +674,17 @@ export default function BikeBuilderPage() {
         return searchableValue.includes(filterValue);
       }),
     );
-  }, [columnFilters, combinationDataset]);
+  }, [columnFilters, combinationDataset, showSelectedRowsOnly]);
+
+  const visibleFeatureColumns = useMemo(
+    () => (combinationDataset?.columns ?? []).filter((column) => !hiddenFeatureColumnKeys[column.stableFeatureKey]),
+    [combinationDataset?.columns, hiddenFeatureColumnKeys],
+  );
+
+  const visibleCountryColumns = useMemo(
+    () => availableCountryCodes.filter((countryCode) => !hiddenCountryColumns[countryCode]),
+    [availableCountryCodes, hiddenCountryColumns],
+  );
 
   const configureOption = async (featureId: string, option: BikeBuilderFeatureOption) => {
     if (!state?.sessionId || manualSessionClosedRef.current) {
@@ -1115,6 +1163,8 @@ export default function BikeBuilderPage() {
           ...previous,
           ...patch,
           ignoredFeatures: patch.ignoredFeatures ?? previous.ignoredFeatures,
+          executionKey: patch.executionKey ?? previous.executionKey,
+          countryCode: patch.countryCode ?? previous.countryCode,
         },
       };
     });
@@ -1152,8 +1202,31 @@ export default function BikeBuilderPage() {
     return result;
   };
 
-  const startFreshSessionForCombinationRow = async (rowId: string, traceId: string) => {
-    if (!selectedAccount) throw new Error('Select an account code to run bulk configuration.');
+  const resolveAccountContextForCountry = (countryCode: string) => {
+    const normalized = countryCode.trim().toUpperCase();
+    if (!normalized) return null;
+    const byCountry = accountContexts.filter((entry) => entry.country_code.trim().toUpperCase() === normalized);
+    if (byCountry.length === 0) return null;
+    return byCountry.find((entry) => entry.account_code === selectedAccount?.account_code) ?? byCountry[0];
+  };
+
+  const buildCpqContextFromAccount = (account: AccountContextRecord) =>
+    ({
+      accountCode: account.account_code,
+      company: account.account_code,
+      accountType: 'Dealer',
+      customerId: account.customer_id,
+      currency: account.currency,
+      language: account.language,
+      countryCode: account.country_code,
+      customerLocation: account.country_code,
+    }) satisfies Partial<BikeBuilderContext>;
+
+  const startFreshSessionForCombinationRowCountry = async (
+    rowId: string,
+    traceId: string,
+    countryContext: AccountContextRecord,
+  ) => {
 
     const activeRuleset = selectedRuleset ?? {
       ...fallbackRuleset,
@@ -1167,16 +1240,7 @@ export default function BikeBuilderPage() {
       detailId: crypto.randomUUID(),
       sourceHeaderId: '',
       sourceDetailId: '',
-      context: {
-        accountCode: selectedAccount.account_code,
-        company: selectedAccount.account_code,
-        accountType: 'Dealer',
-        customerId: selectedAccount.customer_id,
-        currency: selectedAccount.currency,
-        language: selectedAccount.language,
-        countryCode: selectedAccount.country_code,
-        customerLocation: selectedAccount.country_code,
-      } satisfies Partial<BikeBuilderContext>,
+      context: buildCpqContextFromAccount(countryContext),
     };
 
     const { response, payload: responsePayload } = await trackedBulkFetch<CpqRouteResponse>(
@@ -1194,11 +1258,12 @@ export default function BikeBuilderPage() {
     return responsePayload.parsed;
   };
 
-  const finalizeAndSaveCombinationRow = async (rowId: string, traceId: string, rowState: NormalizedBikeBuilderState) => {
-    if (!selectedAccount) {
-      throw new Error('Missing account context for save.');
-    }
-
+  const finalizeAndSaveCombinationRowCountry = async (
+    rowId: string,
+    traceId: string,
+    rowState: NormalizedBikeBuilderState,
+    countryContext: AccountContextRecord,
+  ) => {
     const finalizePayload: FinalizeConfigurationRequest = { sessionID: rowState.sessionId };
     const finalizeResult = await trackedBulkFetch<CpqRouteResponse>(
       rowId,
@@ -1242,14 +1307,14 @@ export default function BikeBuilderPage() {
         source_session_id: rowState.sessionId,
         source_header_id: rowState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
         source_detail_id: rowState.sourceDetailId ?? null,
-        account_code: selectedAccount.account_code,
-        customer_id: selectedAccount.customer_id,
+        account_code: countryContext.account_code,
+        customer_id: countryContext.customer_id,
         account_type: 'Dealer',
-        company: selectedAccount.account_code,
-        currency: selectedAccount.currency,
-        language: selectedAccount.language,
-        country_code: selectedAccount.country_code,
-        customer_location: selectedAccount.country_code,
+        company: countryContext.account_code,
+        currency: countryContext.currency,
+        language: countryContext.language,
+        country_code: countryContext.country_code,
+        customer_location: countryContext.country_code,
         application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
         application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
         finalized_session_id: rowState.sessionId,
@@ -1278,7 +1343,7 @@ export default function BikeBuilderPage() {
       payload: { sessionId: rowState.sessionId, source: bulkSaveSourceSnapshot.source },
       traceId,
     });
-    await saveSamplerSnapshot(traceId, 'Bulk:AutoSaveSamplerAfterCanonicalSave', bulkSaveSourceSnapshot, selectedAccount);
+    await saveSamplerSnapshot(traceId, 'Bulk:AutoSaveSamplerAfterCanonicalSave', bulkSaveSourceSnapshot, countryContext);
     pushRowDiagnosticEvent(rowId, {
       timestamp: new Date().toISOString(),
       stage: 'Save to CPQ_sampler_result',
@@ -1313,6 +1378,29 @@ export default function BikeBuilderPage() {
       setBulkProgress((current) => ({ ...current, message: 'No rows are ticked.' }));
       return;
     }
+    const invalidRows = selectedRows.filter(
+      (row) => !Object.entries(row.countries ?? {}).some(([countryCode, isChecked]) => isChecked && !!resolveAccountContextForCountry(countryCode)),
+    );
+    if (invalidRows.length > 0) {
+      setInvalidBulkRowIds(invalidRows.map((row) => row.id));
+      setBulkValidationMessage('Please select at least one valid country for each selected row (missing country).');
+      setBulkProgress((current) => ({ ...current, message: 'Validation failed: missing country selection.' }));
+      return;
+    }
+    setInvalidBulkRowIds([]);
+    setBulkValidationMessage(null);
+
+    const executionQueue = selectedRows.flatMap((row) =>
+      Object.entries(row.countries ?? {})
+        .filter(([, isChecked]) => isChecked)
+        .map(([countryCode]) => ({ row, countryCode: countryCode.trim().toUpperCase() }))
+        .filter((entry) => Boolean(resolveAccountContextForCountry(entry.countryCode))),
+    );
+    const totalAssignments = executionQueue.length;
+    if (totalAssignments === 0) {
+      setBulkProgress((current) => ({ ...current, message: 'No country assignment is selected.' }));
+      return;
+    }
 
     const nextStatuses = combinationDataset.rows.reduce<Record<string, RowExecutionStatus>>((acc, row) => {
       acc[row.id] = row.selected ? 'pending' : combinationRowStatuses[row.id] ?? 'pending';
@@ -1338,9 +1426,13 @@ export default function BikeBuilderPage() {
     );
     setBulkProgress({
       running: true,
-      totalSelected: selectedRows.length,
+      totalSelectedRows: selectedRows.length,
+      totalCountryAssignments: totalAssignments,
+      totalExecutions: totalAssignments,
+      currentExecutionIndex: 0,
       currentRowIndex: 0,
       currentRowId: null,
+      currentCountryCode: null,
       currentSessionId: null,
       currentFeatureKey: null,
       succeeded: 0,
@@ -1353,22 +1445,48 @@ export default function BikeBuilderPage() {
     let failed = 0;
     let saved = 0;
 
-    for (const [rowIndex, row] of selectedRows.entries()) {
+    for (const [executionIndex, execution] of executionQueue.entries()) {
+      const { row, countryCode } = execution;
+      const rowIndex = selectedRows.findIndex((entry) => entry.id === row.id);
       const traceId = createTraceId();
+      const executionKey = `${row.id}::${countryCode}::${executionIndex + 1}`;
+      const countryContext = resolveAccountContextForCountry(countryCode);
+      if (!countryContext) {
+        failed += 1;
+        setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'failed' }));
+        setRowDiagnosticStatus(row.id, {
+          executionKey,
+          countryCode,
+          status: 'failed',
+          errorSummary: `No account context found for country ${countryCode}.`,
+          errorDetails: `Setup account context is missing an active row for country ${countryCode}.`,
+        });
+        continue;
+      }
       setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'running' }));
-      setRowDiagnosticStatus(row.id, { status: 'running', traceId, currentStage: 'StartConfiguration', errorSummary: null, errorDetails: null });
+      setRowDiagnosticStatus(row.id, {
+        executionKey,
+        countryCode,
+        status: 'running',
+        traceId,
+        currentStage: 'StartConfiguration',
+        errorSummary: null,
+        errorDetails: null,
+      });
       setBulkProgress((current) => ({
         ...current,
+        currentExecutionIndex: executionIndex + 1,
         currentRowIndex: rowIndex + 1,
         currentRowId: row.id,
+        currentCountryCode: countryCode,
         currentSessionId: null,
         currentFeatureKey: null,
-        message: `Processing row ${rowIndex + 1}/${selectedRows.length}`,
+        message: `Processing execution ${executionIndex + 1}/${executionQueue.length} (row ${rowIndex + 1}, country ${countryCode})`,
       }));
 
       try {
-        let workingState = await startFreshSessionForCombinationRow(row.id, traceId);
-        setRowDiagnosticStatus(row.id, { sessionId: workingState.sessionId });
+        let workingState = await startFreshSessionForCombinationRowCountry(row.id, traceId, countryContext);
+        setRowDiagnosticStatus(row.id, { executionKey, countryCode, sessionId: workingState.sessionId });
         setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
 
         const ignoredFeaturesForRow: string[] = [];
@@ -1416,11 +1534,11 @@ export default function BikeBuilderPage() {
               optionValue: targetOptionValue,
               ruleset,
               context: {
-                accountCode: selectedAccount.account_code,
-                customerId: selectedAccount.customer_id,
-                currency: selectedAccount.currency,
-                language: selectedAccount.language,
-                countryCode: selectedAccount.country_code,
+                accountCode: countryContext.account_code,
+                customerId: countryContext.customer_id,
+                currency: countryContext.currency,
+                language: countryContext.language,
+                countryCode: countryContext.country_code,
               },
             },
           );
@@ -1429,17 +1547,17 @@ export default function BikeBuilderPage() {
             throw new Error(payload.error ?? 'Bulk configure failed');
           }
           workingState = payload.parsed;
-          setRowDiagnosticStatus(row.id, { sessionId: workingState.sessionId });
+          setRowDiagnosticStatus(row.id, { executionKey, countryCode, sessionId: workingState.sessionId });
           setBulkProgress((current) => ({ ...current, currentSessionId: workingState.sessionId }));
         }
 
-        setRowDiagnosticStatus(row.id, { ignoredFeatures: ignoredFeaturesForRow });
+        setRowDiagnosticStatus(row.id, { executionKey, countryCode, ignoredFeatures: ignoredFeaturesForRow });
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'configured' }));
-        setRowDiagnosticStatus(row.id, { status: 'configured', currentStage: 'FinalizeConfiguration' });
-        const { finalizedState, savedRow } = await finalizeAndSaveCombinationRow(row.id, traceId, workingState);
+        setRowDiagnosticStatus(row.id, { executionKey, countryCode, status: 'configured', currentStage: 'FinalizeConfiguration' });
+        const { finalizedState, savedRow } = await finalizeAndSaveCombinationRowCountry(row.id, traceId, workingState, countryContext);
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'finalized' }));
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'saved' }));
-        setRowDiagnosticStatus(row.id, { status: 'saved', currentStage: null, errorSummary: null, errorDetails: null });
+        setRowDiagnosticStatus(row.id, { executionKey, countryCode, status: 'saved', currentStage: null, errorSummary: null, errorDetails: null });
         setLastSavedReference(savedRow);
         succeeded += 1;
         saved += 1;
@@ -1448,38 +1566,32 @@ export default function BikeBuilderPage() {
           currentSessionId: finalizedState.sessionId,
           succeeded,
           saved,
-          message: `Row ${rowIndex + 1}/${selectedRows.length} saved (${savedRow.configuration_reference}).`,
+          message: `Execution ${executionIndex + 1}/${executionQueue.length} saved (${savedRow.configuration_reference}).`,
         }));
       } catch (error) {
         failed += 1;
         setCombinationRowStatuses((current) => ({ ...current, [row.id]: 'failed' }));
         setRowDiagnosticStatus(row.id, {
+          executionKey,
+          countryCode,
           status: 'failed',
-          errorSummary: error instanceof Error ? error.message : `Row ${rowIndex + 1} failed.`,
+          errorSummary: error instanceof Error ? error.message : `Execution ${executionIndex + 1} failed.`,
           errorDetails: error instanceof Error ? error.stack ?? error.message : String(error),
         });
         setBulkProgress((current) => ({
           ...current,
           failed,
-          message: error instanceof Error ? error.message : `Row ${rowIndex + 1} failed.`,
+          message: error instanceof Error ? error.message : `Execution ${executionIndex + 1} failed.`,
         }));
       }
     }
-
-    setCombinationDataset((current) =>
-      current
-        ? {
-            ...current,
-            rows: current.rows.filter((row) => row.selected),
-          }
-        : current,
-    );
 
     setBulkProgress((current) => ({
       ...current,
       running: false,
       currentFeatureKey: null,
       currentSessionId: null,
+      currentCountryCode: null,
       message: `Bulk run finished: ${succeeded} succeeded, ${failed} failed, ${saved} saved.`,
     }));
   };
@@ -1644,8 +1756,10 @@ export default function BikeBuilderPage() {
           ) : null}
           <div>Retrieve status: {retrieveMessage}</div>
           <div>
-            Bulk run: {bulkProgress.message} (selected: {bulkProgress.totalSelected}, row: {bulkProgress.currentRowIndex || '-'}, succeeded:{' '}
-            {bulkProgress.succeeded}, failed: {bulkProgress.failed}, saved: {bulkProgress.saved})
+            Bulk run: {bulkProgress.message} (rows: {bulkProgress.totalSelectedRows}, assignments: {bulkProgress.totalCountryAssignments},
+            executions: {bulkProgress.totalExecutions}, current execution: {bulkProgress.currentExecutionIndex || '-'}, row:{' '}
+            {bulkProgress.currentRowIndex || '-'}, country: {bulkProgress.currentCountryCode ?? '-'}, succeeded: {bulkProgress.succeeded}, failed:{' '}
+            {bulkProgress.failed}, saved: {bulkProgress.saved})
           </div>
           <div>Bulk current session: {bulkProgress.currentSessionId ?? '-'}</div>
           <div>Bulk current feature: {bulkProgress.currentFeatureKey ?? '-'}</div>
@@ -1782,6 +1896,65 @@ export default function BikeBuilderPage() {
               <div>
                 Rows: {filteredCombinationRows.length} filtered / {combinationDataset.rows.length} total
               </div>
+              <div>Countries in setup context: {availableCountryCodes.length > 0 ? availableCountryCodes.join(', ') : '-'}</div>
+              <div>
+                Bulk progress: rows {bulkProgress.totalSelectedRows} · country assignments {bulkProgress.totalCountryAssignments} · executions{' '}
+                {bulkProgress.totalExecutions}
+              </div>
+              {bulkProgress.currentRowId ? (
+                <div>
+                  Running: execution {bulkProgress.currentExecutionIndex}/{bulkProgress.totalExecutions} · row {bulkProgress.currentRowIndex} ·
+                  country {bulkProgress.currentCountryCode ?? '-'} · feature {bulkProgress.currentFeatureKey ?? '-'}
+                </div>
+              ) : null}
+            </div>
+            <div style={styles.row}>
+              <label style={styles.inlineCheck}>
+                <input
+                  type="checkbox"
+                  checked={showSelectedRowsOnly}
+                  onChange={(event) => setShowSelectedRowsOnly(event.target.checked)}
+                  disabled={bulkProgress.running}
+                />
+                Show selected only
+              </label>
+              <details open={columnPickerOpen} onToggle={(event) => setColumnPickerOpen(event.currentTarget.open)} style={styles.columnPicker}>
+                <summary>Columns</summary>
+                <div style={styles.columnPickerBody}>
+                  <strong style={styles.columnPickerTitle}>Feature columns</strong>
+                  {combinationDataset.columns.map((column) => (
+                    <label key={`pick-feature-${column.stableFeatureKey}`} style={styles.inlineCheck}>
+                      <input
+                        type="checkbox"
+                        checked={!hiddenFeatureColumnKeys[column.stableFeatureKey]}
+                        onChange={(event) =>
+                          setHiddenFeatureColumnKeys((current) => ({
+                            ...current,
+                            [column.stableFeatureKey]: !event.target.checked,
+                          }))
+                        }
+                      />
+                      {column.featureLabel}
+                    </label>
+                  ))}
+                  <strong style={styles.columnPickerTitle}>Country columns</strong>
+                  {availableCountryCodes.map((countryCode) => (
+                    <label key={`pick-country-${countryCode}`} style={styles.inlineCheck}>
+                      <input
+                        type="checkbox"
+                        checked={!hiddenCountryColumns[countryCode]}
+                        onChange={(event) =>
+                          setHiddenCountryColumns((current) => ({
+                            ...current,
+                            [countryCode]: !event.target.checked,
+                          }))
+                        }
+                      />
+                      {countryCode}
+                    </label>
+                  ))}
+                </div>
+              </details>
             </div>
             <div style={styles.row}>
               <button
@@ -1791,7 +1964,9 @@ export default function BikeBuilderPage() {
                     current
                       ? {
                           ...current,
-                          rows: current.rows.map((row) => (filteredCombinationRows.some((entry) => entry.id === row.id) ? { ...row, selected: true } : row)),
+                          rows: current.rows.map((row) =>
+                            filteredCombinationRows.some((entry) => entry.id === row.id) ? { ...row, selected: true } : row,
+                          ),
                         }
                       : current,
                   )
@@ -1807,7 +1982,7 @@ export default function BikeBuilderPage() {
                     current
                       ? {
                           ...current,
-                          rows: current.rows.map((row) => ({ ...row, selected: false })),
+                          rows: current.rows.map((row) => ({ ...row, selected: false, countries: {} })),
                         }
                       : current,
                   )
@@ -1824,13 +1999,17 @@ export default function BikeBuilderPage() {
                 {bulkProgress.running ? 'Configuring ticked items…' : 'Configure all ticked items'}
               </button>
             </div>
+            {bulkValidationMessage ? <div style={styles.error}>{bulkValidationMessage}</div> : null}
             <div style={styles.tableWrap}>
               <table style={styles.table}>
                 <thead>
                   <tr>
                     <th style={styles.tableHeader}>Select</th>
                     <th style={styles.tableHeader}>Status</th>
-                    {combinationDataset.columns.map((column) => (
+                    {visibleCountryColumns.map((countryCode) => (
+                      <th key={`country-${countryCode}`} style={styles.tableHeaderCompact}>{countryCode}</th>
+                    ))}
+                    {visibleFeatureColumns.map((column) => (
                       <th key={`header-${column.stableFeatureKey}`} style={styles.tableHeader}>
                         <div>{column.featureLabel}</div>
                         <input
@@ -1850,7 +2029,7 @@ export default function BikeBuilderPage() {
                 </thead>
                 <tbody>
                   {filteredCombinationRows.map((row) => (
-                    <tr key={row.id}>
+                    <tr key={row.id} style={invalidBulkRowIds.includes(row.id) ? styles.invalidRow : undefined}>
                       <td style={styles.tableCell}>
                         <input
                           type="checkbox"
@@ -1873,6 +2052,7 @@ export default function BikeBuilderPage() {
                       <td style={styles.tableCell}>
                         <div>
                           {combinationRowStatuses[row.id] ?? 'pending'}
+                          {combinationRowDiagnostics[row.id]?.countryCode ? ` · ${combinationRowDiagnostics[row.id]?.countryCode}` : ''}
                           {combinationRowDiagnostics[row.id]?.currentStage ? ` · ${combinationRowDiagnostics[row.id]?.currentStage}` : ''}
                         </div>
                         {combinationRowDiagnostics[row.id]?.ignoredFeatures.length ? (
@@ -1889,7 +2069,36 @@ export default function BikeBuilderPage() {
                           </>
                         ) : null}
                       </td>
-                      {combinationDataset.columns.map((column) => {
+                      {visibleCountryColumns.map((countryCode) => (
+                        <td key={`${row.id}-country-${countryCode}`} style={styles.tableCellCompact}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row.countries?.[countryCode])}
+                            disabled={!row.selected || bulkProgress.running}
+                            onChange={(event) =>
+                              setCombinationDataset((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      rows: current.rows.map((entry) =>
+                                        entry.id === row.id
+                                          ? {
+                                              ...entry,
+                                              countries: {
+                                                ...entry.countries,
+                                                [countryCode]: event.target.checked,
+                                              },
+                                            }
+                                          : entry,
+                                      ),
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                        </td>
+                      ))}
+                      {visibleFeatureColumns.map((column) => {
                         const cell = row.cellsByFeatureKey[column.stableFeatureKey];
                         return (
                           <td key={`${row.id}-${column.stableFeatureKey}`} style={styles.tableCell}>
@@ -1903,7 +2112,7 @@ export default function BikeBuilderPage() {
                   ))}
                   {filteredCombinationRows.length === 0 ? (
                     <tr>
-                      <td colSpan={combinationDataset.columns.length + 2} style={styles.emptyCell}>
+                      <td colSpan={visibleFeatureColumns.length + visibleCountryColumns.length + 2} style={styles.emptyCell}>
                         No rows match current filters.
                       </td>
                     </tr>
@@ -1920,6 +2129,8 @@ export default function BikeBuilderPage() {
             <h3 style={{ margin: 0 }}>Bulk row failure details</h3>
             <div>Row: {activeFailedRowDiagnostic.rowId}</div>
             <div>Status: {activeFailedRowDiagnostic.status}</div>
+            <div>Execution: {activeFailedRowDiagnostic.executionKey ?? '-'}</div>
+            <div>Country: {activeFailedRowDiagnostic.countryCode ?? '-'}</div>
             <div>Stage: {activeFailedRowDiagnostic.currentStage ?? '-'}</div>
             <div>TraceId: {activeFailedRowDiagnostic.traceId ?? '-'}</div>
             <div>SessionId: {activeFailedRowDiagnostic.sessionId ?? '-'}</div>
@@ -2092,14 +2303,16 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '0.9rem',
   },
   tableWrap: {
-    overflowX: 'auto',
+    overflow: 'auto',
     border: '1px solid #d4d4d8',
     borderRadius: 8,
+    maxHeight: '65vh',
+    width: '100%',
   },
   table: {
-    width: '100%',
+    width: 'max-content',
     borderCollapse: 'collapse',
-    minWidth: 720,
+    minWidth: '100%',
   },
   tableHeader: {
     borderBottom: '1px solid #d4d4d8',
@@ -2111,12 +2324,57 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '0.85rem',
     minWidth: 170,
   },
+  tableHeaderCompact: {
+    borderBottom: '1px solid #d4d4d8',
+    borderRight: '1px solid #e4e4e7',
+    padding: '0.5rem',
+    verticalAlign: 'top',
+    textAlign: 'center',
+    background: '#fafafa',
+    fontSize: '0.82rem',
+    minWidth: 70,
+  },
   tableCell: {
     borderBottom: '1px solid #f1f5f9',
     borderRight: '1px solid #f1f5f9',
     padding: '0.45rem 0.5rem',
     verticalAlign: 'top',
     fontSize: '0.85rem',
+  },
+  tableCellCompact: {
+    borderBottom: '1px solid #f1f5f9',
+    borderRight: '1px solid #f1f5f9',
+    padding: '0.45rem 0.5rem',
+    textAlign: 'center',
+    verticalAlign: 'middle',
+    fontSize: '0.82rem',
+  },
+  inlineCheck: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  columnPicker: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 8,
+    padding: '0.3rem 0.5rem',
+    background: '#fafafa',
+  },
+  columnPickerBody: {
+    display: 'grid',
+    gap: '0.35rem',
+    marginTop: '0.4rem',
+    maxHeight: 240,
+    overflow: 'auto',
+  },
+  columnPickerTitle: {
+    fontSize: '0.78rem',
+    color: '#3f3f46',
+    marginTop: '0.2rem',
+  },
+  invalidRow: {
+    background: '#fef2f2',
+    outline: '1px solid #fca5a5',
   },
   cellMeta: {
     color: '#52525b',

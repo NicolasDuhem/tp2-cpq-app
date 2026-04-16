@@ -22,8 +22,12 @@ Additional route aliases:
   - Manual sampler save support action.
   - Configuration reference retrieval.
   - Layered preview resolution/download.
-  - Combination generation + bulk configure orchestration.
-  - In-page debug timeline and per-row failure diagnostics.
+  - Combination generation + bulk configure orchestration with operational-grid controls:
+    - selected-only row filter,
+    - column picker (feature + dynamic country columns),
+    - pre-run row-country validation,
+    - row-country execution queue with fresh StartConfiguration per unit.
+  - In-page debug timeline and per-row/per-country failure diagnostics.
 
 ### `/cpq/setup`
 - Route file: `app/cpq/setup/page.tsx`.
