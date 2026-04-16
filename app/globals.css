@@ -334,3 +334,52 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 @media (max-width: 760px) {
   .stockBikeImgWide { grid-column: span 1; }
 }
+.stockBikeImgConditionCard {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+.stockBikeImgBuilderModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: 12px;
+}
+.stockBikeImgBuilderPanel {
+  width: min(920px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+.stockBikeImgBuilderGrid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.stockBikeImgBuilderGrid fieldset {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 0;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+.stockBikeImgBuilderGrid legend {
+  font-weight: 700;
+  font-size: 12px;
+  color: #1f3257;
+  padding: 0 4px;
+}
+.stockBikeImgBuilderOption {
+  display: grid !important;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: none !important;
+}

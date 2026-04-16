@@ -14,43 +14,54 @@
 - Navigation entry is admin-only.
 - `/cpq/stock-bike-img` enforces admin mode and redirects non-admin users to `/cpq`.
 
-## Key business concepts now supported
+## Selector loading flow (category-first)
+The authoring flow is category-first and loads from Neon-backed tables in this sequence:
 
-### 1) Model year (char 20) with optional rule scope
-- SKU digit position 20 maps to model year:
-  - `1`→2020, `2`→2021, ..., `9`→2028
-- Rule column `stock_bike_img_model_year` is now nullable:
-  - `NULL` = applies to all model years
-  - specific year (e.g. 2025) = applies only to that year
+1. **Category selector**
+   - Loaded from `stock_bike_img_digit_reference` grouped by `stock_bike_img_rule_category_name`.
+2. **Rule family selector**
+   - Loaded from `stock_bike_img_rule_family` + `stock_bike_img_rule_family_category`.
+   - Frontend filters families by selected category using normalized matching (`trim + uppercase`) to avoid case/spacing mismatches across tables.
+3. **Bike-type group selector**
+   - Loaded from `stock_bike_img_family_bike_group` for selected family.
+4. **Rules table**
+   - Loaded from `stock_bike_img_rule` filtered by model year (selected year + `NULL`) and selected category.
+5. **Reference metadata panel**
+   - Loaded from `stock_bike_img_digit_reference` for selected category (digit positions, values, and meanings).
 
-### 2) Business bike type dictionary
-Raw char 17 values are now normalized into a controlled dictionary (`stock_bike_img_business_bike_type`) via `stock_bike_img_business_bike_type_digit_map`.
+## Root-cause fix for empty selectors
+The page previously depended on strict string equality between category values from different tables. In populated environments this could fail because of category text formatting inconsistencies (case/whitespace), which then produced empty dependent selectors (families/groups) and unusable authoring.
 
-This allows multiple raw SKU values to map to one business type (for example demos and editions collapsing into `C Line`).
+Fixes:
+- Category filtering in service queries is normalized (`upper(trim(...))`) for rules and digit reference lookups.
+- Family/category validation for create/update now uses normalized matching.
+- Frontend family filtering also normalizes category values before matching.
+- Frontend load now handles non-200 API responses explicitly and shows clear status.
 
-### 3) Rule family / constraint family
-`stock_bike_img_rule_family` defines grouping logic context.
+## Condition authoring UX (guided builder)
+Raw input like `1=S,M;2=2,3` is no longer the primary authoring path.
 
-Examples seeded:
-- `MAIN_FRAME_FAMILY`
-- `DIGIT_2_FAMILY`
-- `DEFAULT_FAMILY`
+### Builder behavior
+- “Build conditions” opens a modal.
+- Modal groups options by digit position for the selected category.
+- Each option shows:
+  - digit value
+  - business meaning (`stock_bike_img_value_meaning`)
+- Multi-select is supported per digit position.
+- Selections are converted to canonical internal signature text (`position=value1,value2;...`) and then saved as normalized condition JSON.
 
-A family can be mapped to categories through `stock_bike_img_rule_family_category`.
+### Source of truth
+The builder is driven exclusively by `stock_bike_img_digit_reference` for:
+- available digit positions
+- available values per position
+- value meaning labels
 
-### 4) Family-specific bike-type groups
-`stock_bike_img_family_bike_group` + `stock_bike_img_family_bike_group_member` define how business bike types are grouped **inside each family**.
+If metadata is missing for a category, the modal shows an empty-state helper message instead of failing.
 
-This enables different grouping behavior for the same bike type depending on family.
-
-## `stock_bike_img_digit_reference` usage
-The preloaded `stock_bike_img_digit_reference` table is the authoring reference source for:
-- category list
-- digit positions per category
-- allowed values
-- value meanings
-
-UI reads this table via API and displays guidance panel so users can author conditions with business wording.
+## Create, edit, and duplicate compatibility
+- **Create**: starts with empty condition signature; builder fills it.
+- **Edit**: existing stored condition JSON is converted back to signature text and preloaded in builder checkboxes.
+- **Duplicate**: cloned draft keeps condition selections and opens editable copy (`(copy)` name suffix).
 
 ## Rule authoring model
 A rule is authored against:
@@ -61,7 +72,7 @@ A rule is authored against:
 - SKU digit conditions (JSON)
 - picture outputs + layer order
 
-Duplicate rule prevention signature now includes:
+Duplicate rule prevention signature includes:
 - model year (with `NULL` normalized)
 - category
 - family
@@ -74,12 +85,12 @@ Given a 30-char SKU:
 2. Resolve model year from char 20.
 3. Resolve business bike type from char 17 mapping table.
 4. Load active candidate rules filtered by:
-   - model year = exact or NULL
-   - bike-type group membership for resolved business bike type (or group NULL)
+   - model year = exact or `NULL`
+   - bike-type group membership for resolved business bike type (or group `NULL`)
 5. Evaluate condition JSON against SKU digits.
 6. Return matched rules and layered picture links ordered by layer/category/id.
 
-### Efficiency notes
+## Efficiency notes
 - Runtime candidate filtering is done in SQL (year + group membership), reducing JS-side checks.
 - Relevant indexes exist on rule runtime columns and bike-type digit mapping columns.
 
