@@ -89,19 +89,30 @@ On `/cpq/setup` Picture management tab:
 ## Generation
 - Uses active configurator state to generate row combinations.
 - Stores stable feature identity metadata to survive session-specific feature IDs.
+- Builds one checkbox country column per distinct active setup-account `country_code`.
+- Exposes operational-grid UX: selected-only filter, per-column show/hide, and scrollable table container.
+
+## Validation before bulk run
+- A row with main `Select` checked must have at least one country checked.
+- Missing-country rows are highlighted and bulk run is blocked with a user-facing validation message.
 
 ## Bulk run (`Configure all ticked items`)
-Per selected row:
+Per selected **row-country** pair:
 1. Start fresh session.
-2. Re-map feature identity to fresh-session feature.
-3. Resolve option inside mapped feature scope (no global matching).
-4. Skip features flagged ignore-during-configure.
-5. Skip configure call if target option already selected.
-6. Finalize session.
-7. Save canonical reference row.
-8. Auto-save sampler support row.
+2. Resolve setup account context by selected country.
+3. Build StartConfiguration context from that country row (`account_code/company`, `customer_id`, `currency`, `language`, `country_code/customerLocation`, dealer account type).
+4. Re-map feature identity to fresh-session feature.
+5. Resolve option inside mapped feature scope (no global matching).
+6. Skip features flagged ignore-during-configure.
+7. Skip configure call if target option already selected.
+8. Finalize session.
+9. Save canonical reference row.
+10. Auto-save sampler support row.
+
+## Progress model
+- Bulk progress is tracked on row-country executions (not just rows): selected rows, country assignments, total executions, current row/country/feature, succeeded/failed/saved counters.
 
 ## Diagnostics
 - Row statuses: `pending`, `running`, `configured`, `finalized`, `saved`, `failed`.
-- Failed rows expose **Inspect failure** modal with stage, summary, trace/session IDs, and last two requests/responses.
-- After run completion, combination table keeps only originally ticked rows.
+- Failed rows preserve execution metadata including country code and execution key.
+- **Inspect failure** modal includes stage, summary, trace/session IDs, country, and last two requests/responses.
