@@ -35,6 +35,19 @@ export type Stock_bike_img_match_result = {
   }>;
 };
 
+export type Stock_bike_img_digit_reference_row = {
+  id: number;
+  stock_bike_img_digit_position: number;
+  stock_bike_img_rule_category_name: string;
+  stock_bike_img_digit_value: string;
+  stock_bike_img_value_meaning: string;
+};
+
+export type Stock_bike_img_reference_category = {
+  stock_bike_img_rule_category_name: string;
+  stock_bike_img_digit_positions: number[];
+};
+
 const STOCK_BIKE_IMG_SKU_LENGTH = 30;
 
 const STOCK_BIKE_IMG_MODEL_YEAR_MAP: Record<string, number> = {
@@ -142,23 +155,84 @@ const Stock_bike_img_parse_rule_row = (row: Record<string, unknown>): Stock_bike
   updated_at: String(row.updated_at ?? ''),
 });
 
-export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: number) {
-  const year = Number(stock_bike_img_model_year ?? 0);
+const Stock_bike_img_parse_digit_reference_row = (row: Record<string, unknown>): Stock_bike_img_digit_reference_row => ({
+  id: Number(row.id),
+  stock_bike_img_digit_position: Number(row.stock_bike_img_digit_position),
+  stock_bike_img_rule_category_name: String(row.stock_bike_img_rule_category_name ?? ''),
+  stock_bike_img_digit_value: String(row.stock_bike_img_digit_value ?? ''),
+  stock_bike_img_value_meaning: String(row.stock_bike_img_value_meaning ?? ''),
+});
 
-  const rows = year
+export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: number, stock_bike_img_rule_category?: string) {
+  const year = Number(stock_bike_img_model_year ?? 0);
+  const category = Stock_bike_img_as_text(stock_bike_img_rule_category);
+
+  const rows =
+    year && category
+      ? await sql`
+          select *
+          from stock_bike_img_rule
+          where stock_bike_img_model_year = ${year}
+            and stock_bike_img_rule_category = ${category}
+          order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+        `
+      : year
+        ? await sql`
+            select *
+            from stock_bike_img_rule
+            where stock_bike_img_model_year = ${year}
+            order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+          `
+        : category
+          ? await sql`
+              select *
+              from stock_bike_img_rule
+              where stock_bike_img_rule_category = ${category}
+              order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+            `
+          : await sql`
+              select *
+              from stock_bike_img_rule
+              order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+            `;
+
+  return (rows as Record<string, unknown>[]).map(Stock_bike_img_parse_rule_row);
+}
+
+export async function Stock_bike_img_list_digit_reference_rows(stock_bike_img_rule_category_name?: string) {
+  const category = Stock_bike_img_as_text(stock_bike_img_rule_category_name);
+  const rows = category
     ? await sql`
         select *
-        from stock_bike_img_rule
-        where stock_bike_img_model_year = ${year}
-        order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+        from stock_bike_img_digit_reference
+        where stock_bike_img_rule_category_name = ${category}
+        order by stock_bike_img_digit_position, stock_bike_img_digit_value, id
       `
     : await sql`
         select *
-        from stock_bike_img_rule
-        order by stock_bike_img_model_year, stock_bike_img_layer_order, stock_bike_img_rule_category, id
+        from stock_bike_img_digit_reference
+        order by stock_bike_img_rule_category_name, stock_bike_img_digit_position, stock_bike_img_digit_value, id
       `;
 
-  return (rows as Record<string, unknown>[]).map(Stock_bike_img_parse_rule_row);
+  return (rows as Record<string, unknown>[]).map(Stock_bike_img_parse_digit_reference_row);
+}
+
+export async function Stock_bike_img_list_reference_categories(): Promise<Stock_bike_img_reference_category[]> {
+  const rows = (await sql`
+    select
+      stock_bike_img_rule_category_name,
+      array_agg(distinct stock_bike_img_digit_position order by stock_bike_img_digit_position) as stock_bike_img_digit_positions
+    from stock_bike_img_digit_reference
+    group by stock_bike_img_rule_category_name
+    order by stock_bike_img_rule_category_name
+  `) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    stock_bike_img_rule_category_name: String(row.stock_bike_img_rule_category_name ?? ''),
+    stock_bike_img_digit_positions: Array.isArray(row.stock_bike_img_digit_positions)
+      ? row.stock_bike_img_digit_positions.map((entry) => Number(entry))
+      : [],
+  }));
 }
 
 export async function Stock_bike_img_create_rule(input: Record<string, unknown>) {
