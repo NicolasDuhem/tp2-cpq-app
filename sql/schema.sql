@@ -133,3 +133,36 @@ begin
       check (feature_layer_order between 1 and 20);
   end if;
 end$$;
+
+-- Stock_bike_img_ isolated experimental rule engine
+
+create table if not exists stock_bike_img_rule (
+  id bigserial primary key,
+  stock_bike_img_model_year integer not null,
+  stock_bike_img_rule_category text not null,
+  stock_bike_img_rule_name text not null,
+  stock_bike_img_rule_description text,
+  stock_bike_img_conditions_json jsonb not null default '[]'::jsonb,
+  stock_bike_img_conditions_signature text not null,
+  stock_bike_img_layer_order integer not null default 100,
+  stock_bike_img_picture_link_1 text,
+  stock_bike_img_picture_link_2 text,
+  stock_bike_img_picture_link_3 text,
+  stock_bike_img_is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint stock_bike_img_rule_model_year_chk check (stock_bike_img_model_year between 2020 and 2028),
+  constraint stock_bike_img_rule_layer_order_chk check (stock_bike_img_layer_order between 1 and 999),
+  constraint stock_bike_img_rule_conditions_type_chk check (jsonb_typeof(stock_bike_img_conditions_json) = 'array'),
+  constraint stock_bike_img_rule_unique_signature unique (
+    stock_bike_img_model_year,
+    stock_bike_img_rule_category,
+    stock_bike_img_conditions_signature
+  )
+);
+
+create index if not exists stock_bike_img_rule_runtime_idx
+  on stock_bike_img_rule (stock_bike_img_model_year, stock_bike_img_is_active, stock_bike_img_layer_order, id);
+
+create index if not exists stock_bike_img_rule_category_idx
+  on stock_bike_img_rule (stock_bike_img_model_year, stock_bike_img_rule_category, stock_bike_img_rule_name);

@@ -292,3 +292,45 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
   .processPage { gap:10px; }
   .processSectionCard { padding:10px; }
 }
+
+.stockBikeImgPage { gap: 8px; }
+.stockBikeImgPage h3 { margin: 0 0 8px; }
+.stockBikeImgControls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.stockBikeImgControls label,
+.stockBikeImgFormGrid label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.stockBikeImgFormGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stockBikeImgWide { grid-column: span 2; }
+.stockBikeImgToggle {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  text-transform: none !important;
+}
+.stockBikeImgToggle input { margin: 0; }
+.stockBikeImgRuntime ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .stockBikeImgWide { grid-column: span 1; }
+}
