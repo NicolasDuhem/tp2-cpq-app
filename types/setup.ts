@@ -28,6 +28,7 @@ export type CpqImageManagementRecord = {
   feature_label: string;
   option_label: string;
   option_value: string;
+  feature_layer_order: number;
   ignore_during_configure: boolean;
   picture_link_1: string | null;
   picture_link_2: string | null;
@@ -48,6 +49,7 @@ export type CpqResolvedImageLayer = {
   featureLabel: string;
   optionLabel: string;
   optionValue: string;
+  featureLayerOrder: number;
   slot: 1 | 2 | 3 | 4;
   pictureLink: string;
 };

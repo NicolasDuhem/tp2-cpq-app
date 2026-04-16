@@ -41,6 +41,14 @@ Canonical save and sampler snapshot payloads are sourced from:
   - finalize + canonical save + sampler support save per row-country execution,
   - row-level failure diagnostics include country execution context.
 
+## Picture management layer order (feature-level)
+- Stored on `cpq_image_management.feature_layer_order` (integer, default `10`, valid `1..20`).
+- Maintained from **CPQ Setup → Picture management** at feature level via **Layer order (1 = top layer)**.
+- One save updates all rows for the selected feature, so admins do not repeat the same value per option tile.
+- Bike Builder preview sorts matched layers by feature order before rendering:
+  - higher numbers are drawn first (deeper),
+  - `1` is drawn last and is therefore the top-most visual layer.
+
 ## Database source of truth
 For schema truth, use live Neon CSV exports in repo root:
 - `table.csv`, `columns.csv`, `fieldrequired.csv`, `constraints.csv`, `indexes.csv`

@@ -30,7 +30,7 @@ This document treats the Neon CSV exports as source of truth:
   - Manual/support snapshots used for historical matrixing and image-management seeding.
   - Not canonical retrieve source.
 - `cpq_image_management`
-  - Mapping table for layered product preview and feature-level bulk ignore flags.
+  - Mapping table for layered product preview and feature-level admin controls (`ignore_during_configure`, `feature_layer_order`).
 - `cpq_setup_account_context`
   - Setup master data for CPQ account/customer/currency/language/country context.
 - `cpq_setup_ruleset`
@@ -39,7 +39,7 @@ This document treats the Neon CSV exports as source of truth:
 ## 3) Live column counts (from `columns.csv`)
 
 - `cpq_configuration_references`: 30 columns
-- `cpq_image_management`: 12 columns
+- `cpq_image_management`: 13 columns
 - `cpq_sampler_result`: 16 columns
 - `cpq_setup_account_context`: 9 columns
 - `cpq_setup_ruleset`: 10 columns
@@ -52,7 +52,7 @@ This document treats the Neon CSV exports as source of truth:
 
 ### `cpq_image_management`
 - Required-on-insert: `feature_label`, `option_label`, `option_value`
-- Auto/defaulted: `id`, `is_active`, `created_at`, `updated_at`, `ignore_during_configure`
+- Auto/defaulted: `id`, `is_active`, `created_at`, `updated_at`, `ignore_during_configure`, `feature_layer_order`
 
 ### `cpq_sampler_result`
 - Required-on-insert: `ruleset`, `account_code`
@@ -73,6 +73,7 @@ This document treats the Neon CSV exports as source of truth:
 - `cpq_setup_account_context.account_code` unique.
 - `cpq_setup_ruleset.cpq_ruleset` unique.
 - `cpq_image_management` unique composite key on `(feature_label, option_label, option_value)`.
+- `cpq_image_management.feature_layer_order` check constraint: integer range `1..20`.
 - `cpq_setup_account_context.country_code` check constraint enforcing two-letter uppercase code.
 
 ## Key indexes

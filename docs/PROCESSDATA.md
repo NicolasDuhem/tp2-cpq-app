@@ -72,6 +72,9 @@ On `/cpq/setup` Picture management tab:
   - fully complete (4/4)
 - Tile click opens modal editor for picture links + activation/ignore flags.
 - Feature-level **Ignore during /configure** toggle updates all rows of that feature.
+- Feature-level **Layer order (1 = top layer)** updates all rows of that feature.
+  - Validation: integer only, `1..20`.
+  - Default/backfill: `10`.
 
 ## 4) Layered preview flow
 
@@ -80,7 +83,7 @@ On `/cpq/setup` Picture management tab:
 - Server performs exact match on active `cpq_image_management` rows:
   - `(feature_label, option_label, option_value)` + `is_active=true`
 - Output ordering rule:
-  1. selected-option traversal order from current state,
+  1. feature layer order (`feature_layer_order`) descending for render traversal (so `1` draws last and appears on top),
   2. within each match, `picture_link_1..4` slot order.
 - Download action composes resolved layers client-side into a PNG.
 
