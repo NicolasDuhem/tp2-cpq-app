@@ -30,8 +30,10 @@ type Stock_bike_img_rule_row = {
 };
 
 type Stock_bike_img_reference_category = {
+  stock_bike_img_rule_category_key: string;
   stock_bike_img_rule_category_name: string;
   stock_bike_img_digit_positions: number[];
+  stock_bike_img_row_count: number;
 };
 
 type Stock_bike_img_reference_row = {
@@ -90,7 +92,7 @@ const Stock_bike_img_default_draft: Stock_bike_img_draft = {
 
 const STOCK_BIKE_IMG_MODEL_YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028];
 
-const Stock_bike_img_normalize_category_key = (value: string) => value.trim().toUpperCase();
+const Stock_bike_img_normalize_category_key = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase();
 
 const Stock_bike_img_parse_conditions_text = (value: string): Stock_bike_img_condition[] => {
   const segments = value
@@ -162,7 +164,7 @@ export default function Stock_bike_img_ExperimentPage() {
   const [stock_bike_img_reference_rows, setStock_bike_img_reference_rows] = useState<Stock_bike_img_reference_row[]>([]);
   const [stock_bike_img_rule_families, setStock_bike_img_rule_families] = useState<Stock_bike_img_rule_family[]>([]);
   const [stock_bike_img_model_year_filter, setStock_bike_img_model_year_filter] = useState<number>(2026);
-  const [stock_bike_img_selected_category, setStock_bike_img_selected_category] = useState<string>('');
+  const [stock_bike_img_selected_category_key, setStock_bike_img_selected_category_key] = useState<string>('');
   const [stock_bike_img_draft, setStock_bike_img_draft] = useState<Stock_bike_img_draft>(Stock_bike_img_default_draft);
   const [stock_bike_img_editing_rule_id, setStock_bike_img_editing_rule_id] = useState<number | null>(null);
   const [stock_bike_img_status, setStock_bike_img_status] = useState('');
@@ -170,6 +172,18 @@ export default function Stock_bike_img_ExperimentPage() {
   const [stock_bike_img_test_result, setStock_bike_img_test_result] = useState<any>(null);
   const [stock_bike_img_is_loading, setStock_bike_img_is_loading] = useState(false);
   const [stock_bike_img_is_builder_open, setStock_bike_img_is_builder_open] = useState(false);
+  const [stock_bike_img_reference_debug, setStock_bike_img_reference_debug] = useState<{
+    stock_bike_img_selected_category_key: string;
+    stock_bike_img_reference_row_count: number;
+    stock_bike_img_reference_category_count: number;
+    stock_bike_img_available_category_keys: string[];
+  } | null>(null);
+
+  const stock_bike_img_selected_category_entry = useMemo(
+    () => stock_bike_img_reference_categories.find((entry) => entry.stock_bike_img_rule_category_key === stock_bike_img_selected_category_key) ?? null,
+    [stock_bike_img_reference_categories, stock_bike_img_selected_category_key],
+  );
+  const stock_bike_img_selected_category = stock_bike_img_selected_category_entry?.stock_bike_img_rule_category_name ?? '';
 
   const stock_bike_img_reference_rows_by_position = useMemo(() => {
     const grouped = new Map<number, Stock_bike_img_reference_row[]>();
@@ -190,13 +204,13 @@ export default function Stock_bike_img_ExperimentPage() {
   }, [stock_bike_img_reference_rows]);
 
   const stock_bike_img_available_families = useMemo(() => {
-    const normalizedCategory = Stock_bike_img_normalize_category_key(stock_bike_img_selected_category);
+    const normalizedCategory = stock_bike_img_selected_category_key;
     if (!normalizedCategory) return [];
 
     return stock_bike_img_rule_families.filter((family) =>
       family.stock_bike_img_categories.some((familyCategory) => Stock_bike_img_normalize_category_key(familyCategory) === normalizedCategory),
     );
-  }, [stock_bike_img_rule_families, stock_bike_img_selected_category]);
+  }, [stock_bike_img_rule_families, stock_bike_img_selected_category_key]);
 
   const stock_bike_img_selected_family = useMemo(
     () => stock_bike_img_rule_families.find((family) => family.id === stock_bike_img_draft.stock_bike_img_rule_family_id) ?? null,
@@ -206,9 +220,9 @@ export default function Stock_bike_img_ExperimentPage() {
   const stock_bike_img_selected_category_metadata = useMemo(
     () =>
       stock_bike_img_reference_categories.find(
-        (entry) => Stock_bike_img_normalize_category_key(entry.stock_bike_img_rule_category_name) === Stock_bike_img_normalize_category_key(stock_bike_img_selected_category),
+        (entry) => entry.stock_bike_img_rule_category_key === stock_bike_img_selected_category_key,
       ),
-    [stock_bike_img_reference_categories, stock_bike_img_selected_category],
+    [stock_bike_img_reference_categories, stock_bike_img_selected_category_key],
   );
 
   const stock_bike_img_conditions_preview = useMemo(() => {
@@ -230,7 +244,7 @@ export default function Stock_bike_img_ExperimentPage() {
   );
 
   const Stock_bike_img_reset_draft = (categoryOverride?: string) => {
-    const category = categoryOverride ?? stock_bike_img_selected_category;
+    const category = categoryOverride ?? stock_bike_img_selected_category_entry?.stock_bike_img_rule_category_name ?? '';
     const firstFamily = stock_bike_img_available_families[0] ?? null;
 
     setStock_bike_img_editing_rule_id(null);
@@ -258,12 +272,12 @@ export default function Stock_bike_img_ExperimentPage() {
     return allowedFamilies[0]?.id ?? 0;
   };
 
-  const Stock_bike_img_load_rules_and_reference = async (category: string) => {
+  const Stock_bike_img_load_rules_and_reference = async (categoryKey: string) => {
     setStock_bike_img_is_loading(true);
     const params = new URLSearchParams({ stock_bike_img_model_year: String(stock_bike_img_model_year_filter) });
-    const trimmedCategory = category.trim();
-    if (trimmedCategory) {
-      params.set('stock_bike_img_rule_category', trimmedCategory);
+    const trimmedCategoryKey = categoryKey.trim();
+    if (trimmedCategoryKey) {
+      params.set('stock_bike_img_rule_category_key', trimmedCategoryKey);
     }
 
     const response = await fetch(`/api/stock_bike_img_rules?${params.toString()}`);
@@ -279,15 +293,19 @@ export default function Stock_bike_img_ExperimentPage() {
     const rows = (payload.rows ?? []) as Stock_bike_img_rule_row[];
     const referenceRows = (payload.stock_bike_img_reference_rows ?? []) as Stock_bike_img_reference_row[];
     const families = (payload.stock_bike_img_rule_families ?? []) as Stock_bike_img_rule_family[];
+    setStock_bike_img_reference_debug((payload.stock_bike_img_reference_debug as any) ?? null);
 
     setStock_bike_img_reference_categories(categories);
     setStock_bike_img_rows(rows);
     setStock_bike_img_reference_rows(referenceRows);
     setStock_bike_img_rule_families(families);
 
-    const selectedCategory = trimmedCategory || categories[0]?.stock_bike_img_rule_category_name || '';
-    if (selectedCategory !== stock_bike_img_selected_category) {
-      setStock_bike_img_selected_category(selectedCategory);
+    const selectedCategoryEntry =
+      categories.find((entry) => entry.stock_bike_img_rule_category_key === trimmedCategoryKey) ?? categories[0] ?? null;
+    const selectedCategoryKey = selectedCategoryEntry?.stock_bike_img_rule_category_key ?? '';
+    const selectedCategory = selectedCategoryEntry?.stock_bike_img_rule_category_name ?? '';
+    if (selectedCategoryKey !== stock_bike_img_selected_category_key) {
+      setStock_bike_img_selected_category_key(selectedCategoryKey);
     }
 
     if (selectedCategory) {
@@ -325,8 +343,8 @@ export default function Stock_bike_img_ExperimentPage() {
 
   useEffect(() => {
     if (!isAdminMode) return;
-    void Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
-  }, [isAdminMode, stock_bike_img_model_year_filter, stock_bike_img_selected_category]);
+    void Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category_key);
+  }, [isAdminMode, stock_bike_img_model_year_filter, stock_bike_img_selected_category_key]);
 
   const Stock_bike_img_save_rule = async () => {
     if (!stock_bike_img_can_submit) {
@@ -366,7 +384,7 @@ export default function Stock_bike_img_ExperimentPage() {
 
     setStock_bike_img_status(stock_bike_img_editing_rule_id ? 'Rule updated.' : 'Rule created.');
     Stock_bike_img_reset_draft(stock_bike_img_selected_category);
-    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
+    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category_key);
   };
 
   const Stock_bike_img_delete_rule = async (id: number) => {
@@ -378,12 +396,12 @@ export default function Stock_bike_img_ExperimentPage() {
     }
     setStock_bike_img_status('Rule deleted.');
     if (stock_bike_img_editing_rule_id === id) Stock_bike_img_reset_draft(stock_bike_img_selected_category);
-    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category);
+    await Stock_bike_img_load_rules_and_reference(stock_bike_img_selected_category_key);
   };
 
   const Stock_bike_img_duplicate_rule = (row: Stock_bike_img_rule_row) => {
     setStock_bike_img_editing_rule_id(null);
-    setStock_bike_img_selected_category(row.stock_bike_img_rule_category);
+    setStock_bike_img_selected_category_key(Stock_bike_img_normalize_category_key(row.stock_bike_img_rule_category));
     setStock_bike_img_draft({
       ...Stock_bike_img_to_draft_from_rule(row),
       stock_bike_img_rule_name: `${row.stock_bike_img_rule_name} (copy)`,
@@ -467,15 +485,17 @@ export default function Stock_bike_img_ExperimentPage() {
         <label>
           Category
           <select
-            value={stock_bike_img_selected_category}
+            value={stock_bike_img_selected_category_key}
             onChange={(event) => {
-              const category = event.target.value;
-              const familyId = Stock_bike_img_sync_family_for_category(stock_bike_img_rule_families, category);
-              setStock_bike_img_selected_category(category);
+              const categoryKey = event.target.value;
+              const category = stock_bike_img_reference_categories.find((entry) => entry.stock_bike_img_rule_category_key === categoryKey)
+                ?.stock_bike_img_rule_category_name;
+              const familyId = Stock_bike_img_sync_family_for_category(stock_bike_img_rule_families, category ?? '');
+              setStock_bike_img_selected_category_key(categoryKey);
               setStock_bike_img_editing_rule_id(null);
               setStock_bike_img_draft((prev) => ({
                 ...prev,
-                stock_bike_img_rule_category: category,
+                stock_bike_img_rule_category: category ?? '',
                 stock_bike_img_rule_family_id: familyId,
                 stock_bike_img_bike_type_group_id: null,
               }));
@@ -483,7 +503,7 @@ export default function Stock_bike_img_ExperimentPage() {
           >
             {!stock_bike_img_reference_categories.length ? <option value="">No categories available</option> : null}
             {stock_bike_img_reference_categories.map((category) => (
-              <option key={category.stock_bike_img_rule_category_name} value={category.stock_bike_img_rule_category_name}>
+              <option key={category.stock_bike_img_rule_category_key} value={category.stock_bike_img_rule_category_key}>
                 {category.stock_bike_img_rule_category_name}
               </option>
             ))}
@@ -680,7 +700,11 @@ export default function Stock_bike_img_ExperimentPage() {
               Select one or more allowed values by digit position. Meaning labels come from stock_bike_img_digit_reference.
             </div>
             {!stock_bike_img_reference_rows.length ? (
-              <div className="note">No reference metadata found for this category, so guided condition building is unavailable.</div>
+              <div className="note">
+                No reference metadata found for this category, so guided condition building is unavailable. Selected category key:{' '}
+                <span className="codeCell">{stock_bike_img_selected_category_key || '(empty)'}</span>. Matching metadata rows:{' '}
+                <span className="codeCell">{String(stock_bike_img_reference_debug?.stock_bike_img_reference_row_count ?? 0)}</span>.
+              </div>
             ) : (
               <div className="stockBikeImgBuilderGrid">
                 {Array.from(stock_bike_img_reference_rows_by_position.entries())
@@ -762,7 +786,7 @@ export default function Stock_bike_img_ExperimentPage() {
                       type="button"
                       onClick={() => {
                         setStock_bike_img_editing_rule_id(row.id);
-                        setStock_bike_img_selected_category(row.stock_bike_img_rule_category);
+                        setStock_bike_img_selected_category_key(Stock_bike_img_normalize_category_key(row.stock_bike_img_rule_category));
                         setStock_bike_img_draft(Stock_bike_img_to_draft_from_rule(row));
                       }}
                     >
@@ -792,6 +816,15 @@ export default function Stock_bike_img_ExperimentPage() {
       <section className="card compactCard">
         <h3>Category reference metadata (from stock_bike_img_digit_reference)</h3>
         <div className="subtle">Allowed values and meanings for {stock_bike_img_selected_category || 'selected category'}.</div>
+        {!stock_bike_img_reference_rows.length ? (
+          <div className="subtle" style={{ marginTop: 8 }}>
+            Debug: selected key <span className="codeCell">{stock_bike_img_selected_category_key || '(empty)'}</span>; API returned{' '}
+            <span className="codeCell">{String(stock_bike_img_reference_debug?.stock_bike_img_reference_row_count ?? 0)}</span> rows. Available keys:{' '}
+            <span className="codeCell">
+              {(stock_bike_img_reference_debug?.stock_bike_img_available_category_keys ?? []).slice(0, 10).join(', ') || '(none)'}
+            </span>
+          </div>
+        ) : null}
         <div className="tableWrap" style={{ marginTop: 8 }}>
           <table>
             <thead>

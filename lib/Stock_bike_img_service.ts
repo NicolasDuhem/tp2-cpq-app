@@ -57,8 +57,10 @@ export type Stock_bike_img_digit_reference_row = {
 };
 
 export type Stock_bike_img_reference_category = {
+  stock_bike_img_rule_category_key: string;
   stock_bike_img_rule_category_name: string;
   stock_bike_img_digit_positions: number[];
+  stock_bike_img_row_count: number;
 };
 
 export type Stock_bike_img_family_group = {
@@ -91,10 +93,11 @@ const STOCK_BIKE_IMG_MODEL_YEAR_MAP: Record<string, number> = {
   '9': 2028,
 };
 
-const Stock_bike_img_normalize_token = (value: string) => value.trim().toUpperCase();
+const Stock_bike_img_normalize_whitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
+const Stock_bike_img_normalize_token = (value: string) => Stock_bike_img_normalize_whitespace(value).toUpperCase();
 
 const Stock_bike_img_as_text = (value: unknown) => String(value ?? '').trim();
-const Stock_bike_img_normalize_category = (value: unknown) => Stock_bike_img_as_text(value).toUpperCase();
+const Stock_bike_img_normalize_category = (value: unknown) => Stock_bike_img_normalize_token(Stock_bike_img_as_text(value));
 
 const Stock_bike_img_normalize_allowed_values = (value: unknown): string[] => {
   const raw = Array.isArray(value)
@@ -225,7 +228,7 @@ export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: numb
   const rows =
     year && category
       ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
-          where upper(trim(r.stock_bike_img_rule_category)) = ${normalizedCategory}
+          where upper(regexp_replace(trim(r.stock_bike_img_rule_category), '\s+', ' ', 'g')) = ${normalizedCategory}
             and (r.stock_bike_img_model_year = ${year} or r.stock_bike_img_model_year is null)
           order by r.stock_bike_img_layer_order, r.stock_bike_img_rule_category, r.id
         `
@@ -236,7 +239,7 @@ export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: numb
           `
         : category
           ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
-              where upper(trim(r.stock_bike_img_rule_category)) = ${normalizedCategory}
+              where upper(regexp_replace(trim(r.stock_bike_img_rule_category), '\s+', ' ', 'g')) = ${normalizedCategory}
               order by r.stock_bike_img_model_year nulls first, r.stock_bike_img_layer_order, r.id
             `
           : await sql`${STOCK_BIKE_IMG_RULE_SELECT}
@@ -253,7 +256,7 @@ export async function Stock_bike_img_list_digit_reference_rows(stock_bike_img_ru
     ? await sql`
         select *
         from stock_bike_img_digit_reference
-        where upper(trim(stock_bike_img_rule_category_name)) = ${normalizedCategory}
+        where upper(regexp_replace(trim(stock_bike_img_rule_category_name), '\s+', ' ', 'g')) = ${normalizedCategory}
         order by stock_bike_img_digit_position, stock_bike_img_digit_value, id
       `
     : await sql`
@@ -268,18 +271,23 @@ export async function Stock_bike_img_list_digit_reference_rows(stock_bike_img_ru
 export async function Stock_bike_img_list_reference_categories(): Promise<Stock_bike_img_reference_category[]> {
   const rows = (await sql`
     select
-      stock_bike_img_rule_category_name,
+      upper(regexp_replace(trim(stock_bike_img_rule_category_name), '\s+', ' ', 'g')) as stock_bike_img_rule_category_key,
+      min(trim(stock_bike_img_rule_category_name)) as stock_bike_img_rule_category_name,
       array_agg(distinct stock_bike_img_digit_position order by stock_bike_img_digit_position) as stock_bike_img_digit_positions
+      ,
+      count(*)::int as stock_bike_img_row_count
     from stock_bike_img_digit_reference
-    group by stock_bike_img_rule_category_name
-    order by stock_bike_img_rule_category_name
+    group by upper(regexp_replace(trim(stock_bike_img_rule_category_name), '\s+', ' ', 'g'))
+    order by min(trim(stock_bike_img_rule_category_name))
   `) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
+    stock_bike_img_rule_category_key: Stock_bike_img_as_text(row.stock_bike_img_rule_category_key),
     stock_bike_img_rule_category_name: Stock_bike_img_as_text(row.stock_bike_img_rule_category_name),
     stock_bike_img_digit_positions: Array.isArray(row.stock_bike_img_digit_positions)
       ? row.stock_bike_img_digit_positions.map((entry) => Number(entry))
       : [],
+    stock_bike_img_row_count: Number(row.stock_bike_img_row_count ?? 0),
   }));
 }
 
@@ -358,7 +366,7 @@ const Stock_bike_img_validate_family_and_group = async (familyId: number, groupI
         select 1
         from stock_bike_img_rule_family_category fc
         where fc.stock_bike_img_rule_family_id = f.id
-          and upper(trim(fc.stock_bike_img_rule_category_name)) = ${normalizedCategory}
+          and upper(regexp_replace(trim(fc.stock_bike_img_rule_category_name), '\s+', ' ', 'g')) = ${normalizedCategory}
       ) as stock_bike_img_category_allowed,
       g.id as stock_bike_img_group_id,
       g.stock_bike_img_group_name
