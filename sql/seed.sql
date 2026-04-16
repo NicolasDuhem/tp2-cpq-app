@@ -423,3 +423,182 @@ values
 on conflict (stock_bike_img_digit_position, stock_bike_img_rule_category_name, stock_bike_img_digit_value) do update
 set stock_bike_img_value_meaning = excluded.stock_bike_img_value_meaning,
     updated_at = now();
+
+-- Stock_bike_img_ grouping dictionaries
+insert into stock_bike_img_business_bike_type (stock_bike_img_bike_type_key, stock_bike_img_bike_type_name, stock_bike_img_sort_order)
+values
+  ('C_LINE', 'C Line', 10),
+  ('C_LINE_ELEC_ACTON', 'C Line elec Acton', 20),
+  ('C_LINE_ELEC_BRIXTON', 'C Line elec Brixton', 30),
+  ('P_LINE', 'P Line', 40),
+  ('P_LINE_ELEC_ACTON', 'P Line elec Acton', 50),
+  ('P_LINE_ELEC_BRIXTON', 'P Line elec Brixton', 60),
+  ('G_LINE', 'G Line', 70),
+  ('G_LINE_ELEC_BRIXTON', 'G Line elec Brixton', 80),
+  ('T_LINE', 'T Line', 90),
+  ('T_LINE_ELEC_BRIXTON', 'T Line elec Brixton', 100),
+  ('A_LINE', 'A Line', 110)
+on conflict (stock_bike_img_bike_type_key) do update
+set stock_bike_img_bike_type_name = excluded.stock_bike_img_bike_type_name,
+    stock_bike_img_sort_order = excluded.stock_bike_img_sort_order,
+    updated_at = now();
+
+insert into stock_bike_img_business_bike_type_digit_map (
+  stock_bike_img_business_bike_type_id,
+  stock_bike_img_digit_position,
+  stock_bike_img_digit_value
+)
+select bt.id, 17, mapping.stock_bike_img_digit_value
+from (
+  values
+    ('C_LINE', '0'), ('C_LINE', '1'), ('C_LINE', '4'), ('C_LINE', '5'), ('C_LINE', '6'), ('C_LINE', '7'), ('C_LINE', '8'),
+    ('C_LINE', '9'), ('C_LINE', 'B'), ('C_LINE', 'C'), ('C_LINE', 'N'), ('C_LINE', 'O'), ('C_LINE', 'R'), ('C_LINE', 'Y'),
+    ('C_LINE_ELEC_ACTON', 'E'), ('C_LINE_ELEC_ACTON', 'F'), ('C_LINE_ELEC_ACTON', '3'),
+    ('C_LINE_ELEC_BRIXTON', 'D'),
+    ('P_LINE', '2'), ('P_LINE', 'I'), ('P_LINE', 'K'), ('P_LINE', 'L'), ('P_LINE', 'P'),
+    ('P_LINE_ELEC_ACTON', 'J'), ('P_LINE_ELEC_ACTON', 'M'),
+    ('P_LINE_ELEC_BRIXTON', 'Q'),
+    ('G_LINE', 'G'), ('G_LINE', 'W'),
+    ('G_LINE_ELEC_BRIXTON', 'H'), ('G_LINE_ELEC_BRIXTON', 'S'),
+    ('T_LINE', 'T'), ('T_LINE', 'V'),
+    ('T_LINE_ELEC_BRIXTON', 'U'),
+    ('A_LINE', 'A')
+) as mapping(stock_bike_img_bike_type_key, stock_bike_img_digit_value)
+join stock_bike_img_business_bike_type bt
+  on bt.stock_bike_img_bike_type_key = mapping.stock_bike_img_bike_type_key
+on conflict (stock_bike_img_digit_position, stock_bike_img_digit_value) do update
+set stock_bike_img_business_bike_type_id = excluded.stock_bike_img_business_bike_type_id,
+    updated_at = now();
+
+insert into stock_bike_img_rule_family (stock_bike_img_family_key, stock_bike_img_family_name, stock_bike_img_family_description)
+values
+  ('MAIN_FRAME_FAMILY', 'Main frame family', 'Shared grouping used by digits 1,5,6,7,8,9,11,12,25,26,27,28 style constraints.'),
+  ('DIGIT_2_FAMILY', 'Digit 2 family', 'Alternative grouping for speed / digit 2 style constraints.'),
+  ('DEFAULT_FAMILY', 'Default family', 'Fallback grouping for categories not yet assigned to a specialized family.')
+on conflict (stock_bike_img_family_key) do update
+set stock_bike_img_family_name = excluded.stock_bike_img_family_name,
+    stock_bike_img_family_description = excluded.stock_bike_img_family_description,
+    updated_at = now();
+
+insert into stock_bike_img_rule_family_category (stock_bike_img_rule_family_id, stock_bike_img_rule_category_name)
+select f.id, c.stock_bike_img_rule_category_name
+from stock_bike_img_rule_family f
+join (
+  values
+    ('MAIN_FRAME_FAMILY', 'Handlebar Type'),
+    ('MAIN_FRAME_FAMILY', 'Main Frame Colour'),
+    ('MAIN_FRAME_FAMILY', 'Rear Frame Colour'),
+    ('MAIN_FRAME_FAMILY', 'Front Carrier Block'),
+    ('MAIN_FRAME_FAMILY', 'Lighting'),
+    ('MAIN_FRAME_FAMILY', 'Saddle Height'),
+    ('MAIN_FRAME_FAMILY', 'Saddle'),
+    ('MAIN_FRAME_FAMILY', 'Tyre'),
+    ('MAIN_FRAME_FAMILY', 'Handlebar Stem Colour'),
+    ('MAIN_FRAME_FAMILY', 'Handlebar Pin Colour'),
+    ('MAIN_FRAME_FAMILY', 'Front Frame Colour'),
+    ('MAIN_FRAME_FAMILY', 'Front Fork Colour'),
+    ('DIGIT_2_FAMILY', 'Speeds')
+) as c(stock_bike_img_family_key, stock_bike_img_rule_category_name)
+  on c.stock_bike_img_family_key = f.stock_bike_img_family_key
+on conflict (stock_bike_img_rule_family_id, stock_bike_img_rule_category_name) do nothing;
+
+insert into stock_bike_img_rule_family_category (stock_bike_img_rule_family_id, stock_bike_img_rule_category_name)
+select f.id, r.stock_bike_img_rule_category
+from stock_bike_img_rule_family f
+join (
+  select distinct stock_bike_img_rule_category
+  from stock_bike_img_rule
+) r on true
+where f.stock_bike_img_family_key = 'DEFAULT_FAMILY'
+on conflict (stock_bike_img_rule_family_id, stock_bike_img_rule_category_name) do nothing;
+
+insert into stock_bike_img_family_bike_group (
+  stock_bike_img_rule_family_id,
+  stock_bike_img_group_key,
+  stock_bike_img_group_name,
+  stock_bike_img_group_description
+)
+select f.id, groups.stock_bike_img_group_key, groups.stock_bike_img_group_name, groups.stock_bike_img_group_description
+from stock_bike_img_rule_family f
+join (
+  values
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'C/P shared set', 'C Line + C Line elec Acton + C Line elec Brixton + P Line + P Line elec Acton'),
+    ('MAIN_FRAME_FAMILY', 'P_ELEC_BRIXTON', 'P elec Brixton', 'P Line elec Brixton isolated behavior.'),
+    ('MAIN_FRAME_FAMILY', 'T_SHARED', 'T shared set', 'T Line + T Line elec Brixton.'),
+    ('MAIN_FRAME_FAMILY', 'G_SHARED', 'G shared set', 'G Line + G Line elec Brixton.'),
+    ('MAIN_FRAME_FAMILY', 'A_ONLY', 'A Line', 'A Line isolated behavior.'),
+    ('DIGIT_2_FAMILY', 'C_P_NON_ELEC', 'C + P non-elec', 'C Line and P Line grouped together.'),
+    ('DIGIT_2_FAMILY', 'C_P_ELEC', 'C/P elec set', 'C Line elec Acton + C Line elec Brixton + P Line elec Acton + P Line elec Brixton.'),
+    ('DIGIT_2_FAMILY', 'T_ONLY', 'T Line', 'T Line only.'),
+    ('DIGIT_2_FAMILY', 'T_ELEC_ONLY', 'T Line elec', 'T Line elec Brixton only.'),
+    ('DIGIT_2_FAMILY', 'G_ONLY', 'G Line', 'G Line only.'),
+    ('DIGIT_2_FAMILY', 'G_ELEC_ONLY', 'G Line elec', 'G Line elec Brixton only.'),
+    ('DIGIT_2_FAMILY', 'A_ONLY', 'A Line', 'A Line only.'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'All bike types', 'Fallback group covering all business bike types.')
+) as groups(stock_bike_img_family_key, stock_bike_img_group_key, stock_bike_img_group_name, stock_bike_img_group_description)
+  on groups.stock_bike_img_family_key = f.stock_bike_img_family_key
+on conflict (stock_bike_img_rule_family_id, stock_bike_img_group_key) do update
+set stock_bike_img_group_name = excluded.stock_bike_img_group_name,
+    stock_bike_img_group_description = excluded.stock_bike_img_group_description,
+    updated_at = now();
+
+insert into stock_bike_img_family_bike_group_member (stock_bike_img_family_bike_group_id, stock_bike_img_business_bike_type_id)
+select g.id, bt.id
+from stock_bike_img_family_bike_group g
+join stock_bike_img_rule_family f on f.id = g.stock_bike_img_rule_family_id
+join (
+  values
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'C_LINE'),
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'C_LINE_ELEC_ACTON'),
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'C_LINE_ELEC_BRIXTON'),
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'P_LINE'),
+    ('MAIN_FRAME_FAMILY', 'C_P_SHARED', 'P_LINE_ELEC_ACTON'),
+    ('MAIN_FRAME_FAMILY', 'P_ELEC_BRIXTON', 'P_LINE_ELEC_BRIXTON'),
+    ('MAIN_FRAME_FAMILY', 'T_SHARED', 'T_LINE'),
+    ('MAIN_FRAME_FAMILY', 'T_SHARED', 'T_LINE_ELEC_BRIXTON'),
+    ('MAIN_FRAME_FAMILY', 'G_SHARED', 'G_LINE'),
+    ('MAIN_FRAME_FAMILY', 'G_SHARED', 'G_LINE_ELEC_BRIXTON'),
+    ('MAIN_FRAME_FAMILY', 'A_ONLY', 'A_LINE'),
+    ('DIGIT_2_FAMILY', 'C_P_NON_ELEC', 'C_LINE'),
+    ('DIGIT_2_FAMILY', 'C_P_NON_ELEC', 'P_LINE'),
+    ('DIGIT_2_FAMILY', 'C_P_ELEC', 'C_LINE_ELEC_ACTON'),
+    ('DIGIT_2_FAMILY', 'C_P_ELEC', 'C_LINE_ELEC_BRIXTON'),
+    ('DIGIT_2_FAMILY', 'C_P_ELEC', 'P_LINE_ELEC_ACTON'),
+    ('DIGIT_2_FAMILY', 'C_P_ELEC', 'P_LINE_ELEC_BRIXTON'),
+    ('DIGIT_2_FAMILY', 'T_ONLY', 'T_LINE'),
+    ('DIGIT_2_FAMILY', 'T_ELEC_ONLY', 'T_LINE_ELEC_BRIXTON'),
+    ('DIGIT_2_FAMILY', 'G_ONLY', 'G_LINE'),
+    ('DIGIT_2_FAMILY', 'G_ELEC_ONLY', 'G_LINE_ELEC_BRIXTON'),
+    ('DIGIT_2_FAMILY', 'A_ONLY', 'A_LINE'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'C_LINE'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'C_LINE_ELEC_ACTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'C_LINE_ELEC_BRIXTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'P_LINE'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'P_LINE_ELEC_ACTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'P_LINE_ELEC_BRIXTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'G_LINE'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'G_LINE_ELEC_BRIXTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'T_LINE'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'T_LINE_ELEC_BRIXTON'),
+    ('DEFAULT_FAMILY', 'ALL_TYPES', 'A_LINE')
+) as membership(stock_bike_img_family_key, stock_bike_img_group_key, stock_bike_img_bike_type_key)
+  on membership.stock_bike_img_family_key = f.stock_bike_img_family_key
+ and membership.stock_bike_img_group_key = g.stock_bike_img_group_key
+join stock_bike_img_business_bike_type bt
+  on bt.stock_bike_img_bike_type_key = membership.stock_bike_img_bike_type_key
+on conflict (stock_bike_img_family_bike_group_id, stock_bike_img_business_bike_type_id) do nothing;
+
+update stock_bike_img_rule r
+set stock_bike_img_rule_family_id = f.id
+from stock_bike_img_rule_family f
+where r.stock_bike_img_rule_family_id is null
+  and f.stock_bike_img_family_key = 'DEFAULT_FAMILY';
+
+update stock_bike_img_rule r
+set stock_bike_img_bike_type_group_id = g.id
+from stock_bike_img_family_bike_group g
+join stock_bike_img_rule_family f on f.id = g.stock_bike_img_rule_family_id
+where r.stock_bike_img_bike_type_group_id is null
+  and r.stock_bike_img_rule_family_id = f.id
+  and f.stock_bike_img_family_key = 'DEFAULT_FAMILY'
+  and g.stock_bike_img_group_key = 'ALL_TYPES';

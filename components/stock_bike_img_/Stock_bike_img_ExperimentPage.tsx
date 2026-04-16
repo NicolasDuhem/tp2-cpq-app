@@ -11,8 +11,14 @@ type Stock_bike_img_condition = {
 
 type Stock_bike_img_rule_row = {
   id: number;
-  stock_bike_img_model_year: number;
+  stock_bike_img_model_year: number | null;
   stock_bike_img_rule_category: string;
+  stock_bike_img_rule_family_id: number;
+  stock_bike_img_rule_family_key: string;
+  stock_bike_img_rule_family_name: string;
+  stock_bike_img_bike_type_group_id: number | null;
+  stock_bike_img_bike_type_group_key: string | null;
+  stock_bike_img_bike_type_group_name: string | null;
   stock_bike_img_rule_name: string;
   stock_bike_img_rule_description: string | null;
   stock_bike_img_conditions_json: Stock_bike_img_condition[];
@@ -36,9 +42,27 @@ type Stock_bike_img_reference_row = {
   stock_bike_img_value_meaning: string;
 };
 
+type Stock_bike_img_family_group = {
+  id: number;
+  stock_bike_img_group_key: string;
+  stock_bike_img_group_name: string;
+  stock_bike_img_group_description: string | null;
+};
+
+type Stock_bike_img_rule_family = {
+  id: number;
+  stock_bike_img_family_key: string;
+  stock_bike_img_family_name: string;
+  stock_bike_img_family_description: string | null;
+  stock_bike_img_categories: string[];
+  stock_bike_img_groups: Stock_bike_img_family_group[];
+};
+
 type Stock_bike_img_draft = {
-  stock_bike_img_model_year: number;
+  stock_bike_img_model_year: number | null;
   stock_bike_img_rule_category: string;
+  stock_bike_img_rule_family_id: number;
+  stock_bike_img_bike_type_group_id: number | null;
   stock_bike_img_rule_name: string;
   stock_bike_img_rule_description: string;
   stock_bike_img_layer_order: number;
@@ -50,17 +74,21 @@ type Stock_bike_img_draft = {
 };
 
 const Stock_bike_img_default_draft: Stock_bike_img_draft = {
-  stock_bike_img_model_year: 2026,
+  stock_bike_img_model_year: null,
   stock_bike_img_rule_category: '',
+  stock_bike_img_rule_family_id: 0,
+  stock_bike_img_bike_type_group_id: null,
   stock_bike_img_rule_name: '',
   stock_bike_img_rule_description: '',
   stock_bike_img_layer_order: 100,
-  stock_bike_img_conditions_text: '1=S;4=B;17=B,C,D',
+  stock_bike_img_conditions_text: '1=S;5=B',
   stock_bike_img_picture_link_1: '',
   stock_bike_img_picture_link_2: '',
   stock_bike_img_picture_link_3: '',
   stock_bike_img_is_active: true,
 };
+
+const STOCK_BIKE_IMG_MODEL_YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028];
 
 const Stock_bike_img_parse_conditions_text = (value: string): Stock_bike_img_condition[] => {
   const segments = value
@@ -112,6 +140,8 @@ const Stock_bike_img_conditions_to_text = (conditions: Stock_bike_img_condition[
 const Stock_bike_img_to_draft_from_rule = (rule: Stock_bike_img_rule_row): Stock_bike_img_draft => ({
   stock_bike_img_model_year: rule.stock_bike_img_model_year,
   stock_bike_img_rule_category: rule.stock_bike_img_rule_category,
+  stock_bike_img_rule_family_id: rule.stock_bike_img_rule_family_id,
+  stock_bike_img_bike_type_group_id: rule.stock_bike_img_bike_type_group_id,
   stock_bike_img_rule_name: rule.stock_bike_img_rule_name,
   stock_bike_img_rule_description: rule.stock_bike_img_rule_description ?? '',
   stock_bike_img_layer_order: rule.stock_bike_img_layer_order,
@@ -128,6 +158,7 @@ export default function Stock_bike_img_ExperimentPage() {
   const [stock_bike_img_rows, setStock_bike_img_rows] = useState<Stock_bike_img_rule_row[]>([]);
   const [stock_bike_img_reference_categories, setStock_bike_img_reference_categories] = useState<Stock_bike_img_reference_category[]>([]);
   const [stock_bike_img_reference_rows, setStock_bike_img_reference_rows] = useState<Stock_bike_img_reference_row[]>([]);
+  const [stock_bike_img_rule_families, setStock_bike_img_rule_families] = useState<Stock_bike_img_rule_family[]>([]);
   const [stock_bike_img_model_year_filter, setStock_bike_img_model_year_filter] = useState<number>(2026);
   const [stock_bike_img_selected_category, setStock_bike_img_selected_category] = useState<string>('');
   const [stock_bike_img_draft, setStock_bike_img_draft] = useState<Stock_bike_img_draft>(Stock_bike_img_default_draft);
@@ -136,13 +167,25 @@ export default function Stock_bike_img_ExperimentPage() {
   const [stock_bike_img_test_sku, setStock_bike_img_test_sku] = useState('');
   const [stock_bike_img_test_result, setStock_bike_img_test_result] = useState<any>(null);
 
+  const stock_bike_img_available_families = useMemo(
+    () => stock_bike_img_rule_families.filter((family) => family.stock_bike_img_categories.includes(stock_bike_img_selected_category)),
+    [stock_bike_img_rule_families, stock_bike_img_selected_category],
+  );
+
+  const stock_bike_img_selected_family = useMemo(
+    () => stock_bike_img_rule_families.find((family) => family.id === stock_bike_img_draft.stock_bike_img_rule_family_id) ?? null,
+    [stock_bike_img_rule_families, stock_bike_img_draft.stock_bike_img_rule_family_id],
+  );
+
   const Stock_bike_img_reset_draft = (categoryOverride?: string) => {
     const category = categoryOverride ?? stock_bike_img_selected_category;
+    const firstFamily = stock_bike_img_rule_families.find((family) => family.stock_bike_img_categories.includes(category)) ?? null;
+
     setStock_bike_img_editing_rule_id(null);
     setStock_bike_img_draft({
       ...Stock_bike_img_default_draft,
-      stock_bike_img_model_year: stock_bike_img_model_year_filter,
       stock_bike_img_rule_category: category,
+      stock_bike_img_rule_family_id: firstFamily?.id ?? 0,
     });
   };
 
@@ -158,15 +201,22 @@ export default function Stock_bike_img_ExperimentPage() {
     const categories = (payload.stock_bike_img_reference_categories ?? []) as Stock_bike_img_reference_category[];
     const rows = (payload.rows ?? []) as Stock_bike_img_rule_row[];
     const referenceRows = (payload.stock_bike_img_reference_rows ?? []) as Stock_bike_img_reference_row[];
+    const families = (payload.stock_bike_img_rule_families ?? []) as Stock_bike_img_rule_family[];
 
     setStock_bike_img_reference_categories(categories);
     setStock_bike_img_rows(rows);
     setStock_bike_img_reference_rows(referenceRows);
+    setStock_bike_img_rule_families(families);
 
     if (!category && categories.length > 0) {
       const firstCategory = categories[0].stock_bike_img_rule_category_name;
       setStock_bike_img_selected_category(firstCategory);
-      setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_category: firstCategory }));
+      const firstFamily = families.find((family) => family.stock_bike_img_categories.includes(firstCategory));
+      setStock_bike_img_draft((prev) => ({
+        ...prev,
+        stock_bike_img_rule_category: firstCategory,
+        stock_bike_img_rule_family_id: firstFamily?.id ?? 0,
+      }));
     }
   };
 
@@ -190,13 +240,14 @@ export default function Stock_bike_img_ExperimentPage() {
     () =>
       stock_bike_img_draft.stock_bike_img_rule_category.trim().length > 0 &&
       stock_bike_img_draft.stock_bike_img_rule_name.trim().length > 0 &&
-      stock_bike_img_draft.stock_bike_img_conditions_text.trim().length > 0,
+      stock_bike_img_draft.stock_bike_img_conditions_text.trim().length > 0 &&
+      stock_bike_img_draft.stock_bike_img_rule_family_id > 0,
     [stock_bike_img_draft],
   );
 
   const Stock_bike_img_save_rule = async () => {
     if (!stock_bike_img_can_submit) {
-      setStock_bike_img_status('Category, name and conditions are required.');
+      setStock_bike_img_status('Category, family, name and conditions are required.');
       return;
     }
 
@@ -225,7 +276,7 @@ export default function Stock_bike_img_ExperimentPage() {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const conflictHelp = response.status === 409 ? ' Change category/model year/conditions before saving duplicate logic.' : '';
+      const conflictHelp = response.status === 409 ? ' Change year/family/group/conditions before saving duplicate logic.' : '';
       setStock_bike_img_status(`${payload.error ?? 'Save failed'}${conflictHelp}`);
       return;
     }
@@ -253,9 +304,7 @@ export default function Stock_bike_img_ExperimentPage() {
       ...Stock_bike_img_to_draft_from_rule(row),
       stock_bike_img_rule_name: `${row.stock_bike_img_rule_name} (copy)`,
     });
-    setStock_bike_img_status(
-      'Duplicate draft loaded. Adjust conditions/category/model year before saving to avoid unique-signature conflicts.',
-    );
+    setStock_bike_img_status('Duplicate draft loaded. Change year/family/group or conditions before saving.');
   };
 
   const Stock_bike_img_test_runtime = async () => {
@@ -271,7 +320,9 @@ export default function Stock_bike_img_ExperimentPage() {
       return;
     }
 
-    setStock_bike_img_status(`SKU evaluated for model year ${payload.stock_bike_img_model_year}.`);
+    setStock_bike_img_status(
+      `SKU evaluated for model year ${payload.stock_bike_img_model_year} and bike type ${payload.stock_bike_img_resolved_bike_type?.name}.`,
+    );
     setStock_bike_img_test_result(payload);
   };
 
@@ -287,21 +338,17 @@ export default function Stock_bike_img_ExperimentPage() {
     <div className="pageRoot stockBikeImgPage">
       <header className="pageHeader">
         <h1>Stock_bike_img_ experiment</h1>
-        <p>Isolated rule engine by SKU digit conditions. Existing CPQ picture-management remains untouched.</p>
+        <p>
+          Isolated rule engine with category + family + bike-type group + optional model year. Existing CPQ picture-management remains
+          untouched.
+        </p>
       </header>
 
       <section className="card compactCard stockBikeImgControls">
         <label>
-          Model year
-          <select
-            value={stock_bike_img_model_year_filter}
-            onChange={(event) => {
-              const year = Number(event.target.value);
-              setStock_bike_img_model_year_filter(year);
-              setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_model_year: year }));
-            }}
-          >
-            {[2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028].map((year) => (
+          Model year filter
+          <select value={stock_bike_img_model_year_filter} onChange={(event) => setStock_bike_img_model_year_filter(Number(event.target.value))}>
+            {STOCK_BIKE_IMG_MODEL_YEARS.map((year) => (
               <option key={year} value={year}>
                 {year}
               </option>
@@ -317,7 +364,13 @@ export default function Stock_bike_img_ExperimentPage() {
               const category = event.target.value;
               setStock_bike_img_selected_category(category);
               setStock_bike_img_editing_rule_id(null);
-              setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_category: category }));
+              const firstFamily = stock_bike_img_rule_families.find((family) => family.stock_bike_img_categories.includes(category));
+              setStock_bike_img_draft((prev) => ({
+                ...prev,
+                stock_bike_img_rule_category: category,
+                stock_bike_img_rule_family_id: firstFamily?.id ?? 0,
+                stock_bike_img_bike_type_group_id: null,
+              }));
             }}
           >
             {stock_bike_img_reference_categories.map((category) => (
@@ -358,11 +411,72 @@ export default function Stock_bike_img_ExperimentPage() {
             <input value={stock_bike_img_selected_category} disabled />
           </label>
           <label>
+            Rule family
+            <select
+              value={stock_bike_img_draft.stock_bike_img_rule_family_id || ''}
+              onChange={(event) => {
+                const familyId = Number(event.target.value);
+                setStock_bike_img_draft((prev) => ({
+                  ...prev,
+                  stock_bike_img_rule_family_id: familyId,
+                  stock_bike_img_bike_type_group_id: null,
+                }));
+              }}
+            >
+              <option value="">Select family</option>
+              {stock_bike_img_available_families.map((family) => (
+                <option key={family.id} value={family.id}>
+                  {family.stock_bike_img_family_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Bike-type group
+            <select
+              value={stock_bike_img_draft.stock_bike_img_bike_type_group_id ?? 0}
+              onChange={(event) => {
+                const groupId = Number(event.target.value);
+                setStock_bike_img_draft((prev) => ({
+                  ...prev,
+                  stock_bike_img_bike_type_group_id: groupId > 0 ? groupId : null,
+                }));
+              }}
+            >
+              <option value={0}>All groups in family</option>
+              {(stock_bike_img_selected_family?.stock_bike_img_groups ?? []).map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.stock_bike_img_group_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Model year scope
+            <select
+              value={stock_bike_img_draft.stock_bike_img_model_year ?? 'all'}
+              onChange={(event) => {
+                const value = event.target.value;
+                setStock_bike_img_draft((prev) => ({
+                  ...prev,
+                  stock_bike_img_model_year: value === 'all' ? null : Number(value),
+                }));
+              }}
+            >
+              <option value="all">All model years</option>
+              {STOCK_BIKE_IMG_MODEL_YEARS.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Rule name
             <input
               value={stock_bike_img_draft.stock_bike_img_rule_name}
               onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_name: event.target.value }))}
-              placeholder="Handlebar A"
+              placeholder="Main frame black"
             />
           </label>
           <label>
@@ -378,7 +492,7 @@ export default function Stock_bike_img_ExperimentPage() {
             />
           </label>
           <label className="stockBikeImgWide">
-            Conditions (format: 1=S;4=B;17=B,C,D)
+            Conditions (format: 1=S;5=B)
             <input
               value={stock_bike_img_draft.stock_bike_img_conditions_text}
               onChange={(event) =>
@@ -390,49 +504,42 @@ export default function Stock_bike_img_ExperimentPage() {
             Description
             <input
               value={stock_bike_img_draft.stock_bike_img_rule_description}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_description: event.target.value }))
-              }
-              placeholder="Optional meaning/output"
+              onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_rule_description: event.target.value }))}
+              placeholder="Optional explanation"
             />
           </label>
           <label>
             Picture link 1
             <input
               value={stock_bike_img_draft.stock_bike_img_picture_link_1}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_1: event.target.value }))
-              }
+              onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_1: event.target.value }))}
             />
           </label>
           <label>
             Picture link 2
             <input
               value={stock_bike_img_draft.stock_bike_img_picture_link_2}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_2: event.target.value }))
-              }
+              onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_2: event.target.value }))}
             />
           </label>
           <label>
             Picture link 3
             <input
               value={stock_bike_img_draft.stock_bike_img_picture_link_3}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_3: event.target.value }))
-              }
+              onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_picture_link_3: event.target.value }))}
             />
           </label>
           <label className="stockBikeImgToggle">
             <input
               type="checkbox"
               checked={stock_bike_img_draft.stock_bike_img_is_active}
-              onChange={(event) =>
-                setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_is_active: event.target.checked }))
-              }
+              onChange={(event) => setStock_bike_img_draft((prev) => ({ ...prev, stock_bike_img_is_active: event.target.checked }))}
             />
             Active
           </label>
+        </div>
+        <div className="subtle" style={{ marginTop: 8 }}>
+          Family controls bike-type grouping behavior. Leave model year at "All model years" when logic is stable across MY changes.
         </div>
         <div className="rowButtons">
           <button className="primary" type="button" disabled={!stock_bike_img_can_submit} onClick={Stock_bike_img_save_rule}>
@@ -452,6 +559,9 @@ export default function Stock_bike_img_ExperimentPage() {
             <tr>
               <th>ID</th>
               <th>Category</th>
+              <th>Family</th>
+              <th>Group</th>
+              <th>MY</th>
               <th>Name</th>
               <th>Conditions</th>
               <th>Layer</th>
@@ -464,6 +574,9 @@ export default function Stock_bike_img_ExperimentPage() {
               <tr key={row.id} className={row.stock_bike_img_is_active ? '' : 'inactiveRow'}>
                 <td>{row.id}</td>
                 <td>{row.stock_bike_img_rule_category}</td>
+                <td>{row.stock_bike_img_rule_family_name}</td>
+                <td>{row.stock_bike_img_bike_type_group_name ?? 'All groups'}</td>
+                <td>{row.stock_bike_img_model_year ?? 'All'}</td>
                 <td>{row.stock_bike_img_rule_name}</td>
                 <td className="codeCell">{Stock_bike_img_conditions_to_text(row.stock_bike_img_conditions_json)}</td>
                 <td>{row.stock_bike_img_layer_order}</td>
@@ -495,7 +608,7 @@ export default function Stock_bike_img_ExperimentPage() {
             ))}
             {stock_bike_img_rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="subtle">
+                <td colSpan={10} className="subtle">
                   No rules found for selected model year/category.
                 </td>
               </tr>
@@ -505,8 +618,8 @@ export default function Stock_bike_img_ExperimentPage() {
       </section>
 
       <section className="card compactCard">
-        <h3>Category reference metadata (CSV driven)</h3>
-        <div className="subtle">Allowed values for {stock_bike_img_selected_category || 'selected category'}.</div>
+        <h3>Category reference metadata (from stock_bike_img_digit_reference)</h3>
+        <div className="subtle">Allowed values and meanings for {stock_bike_img_selected_category || 'selected category'}.</div>
         <div className="tableWrap" style={{ marginTop: 8 }}>
           <table>
             <thead>
@@ -540,7 +653,8 @@ export default function Stock_bike_img_ExperimentPage() {
         <section className="card compactCard stockBikeImgRuntime">
           <h3>Runtime result</h3>
           <div className="subtle">
-            SKU: {stock_bike_img_test_result.stock_bike_img_sku_code} | Model year: {stock_bike_img_test_result.stock_bike_img_model_year}
+            SKU: {stock_bike_img_test_result.stock_bike_img_sku_code} | Model year: {stock_bike_img_test_result.stock_bike_img_model_year} |
+            Bike type: {stock_bike_img_test_result.stock_bike_img_resolved_bike_type?.name}
           </div>
           <div>Matched rules: {stock_bike_img_test_result.stock_bike_img_matched_rules?.length ?? 0}</div>
           <ol>
