@@ -18,25 +18,30 @@
 The authoring flow is category-first and loads from Neon-backed tables in this sequence:
 
 1. **Category selector**
-   - Loaded from `stock_bike_img_digit_reference` grouped by `stock_bike_img_rule_category_name`.
+   - Loaded from `stock_bike_img_digit_reference`.
+   - API now computes an explicit internal category key:
+     - `stock_bike_img_rule_category_key = UPPER(REGEXP_REPLACE(TRIM(stock_bike_img_rule_category_name), '\s+', ' ', 'g'))`
+   - Dropdown value is this key; label remains human-readable `stock_bike_img_rule_category_name`.
 2. **Rule family selector**
    - Loaded from `stock_bike_img_rule_family` + `stock_bike_img_rule_family_category`.
-   - Frontend filters families by selected category using normalized matching (`trim + uppercase`) to avoid case/spacing mismatches across tables.
+   - Frontend filters families by the same normalized category key logic to avoid case/spacing mismatches across tables.
 3. **Bike-type group selector**
    - Loaded from `stock_bike_img_family_bike_group` for selected family.
 4. **Rules table**
-   - Loaded from `stock_bike_img_rule` filtered by model year (selected year + `NULL`) and selected category.
+   - Loaded from `stock_bike_img_rule` filtered by model year (selected year + `NULL`) and selected category key.
 5. **Reference metadata panel**
-   - Loaded from `stock_bike_img_digit_reference` for selected category (digit positions, values, and meanings).
+   - Loaded from `stock_bike_img_digit_reference` for selected category key (digit positions, values, and meanings).
 
 ## Root-cause fix for empty selectors
-The page previously depended on strict string equality between category values from different tables. In populated environments this could fail because of category text formatting inconsistencies (case/whitespace), which then produced empty dependent selectors (families/groups) and unusable authoring.
+### Root cause
+The category feed and lookups were using **free-form category text** across different tables and UI state. Although there was some `trim + uppercase` normalization, there was still no explicit authoritative key shared end-to-end. Category text variants with spacing differences could still cause frontend selection/category lookup drift and empty metadata state in the builder.
 
 Fixes:
-- Category filtering in service queries is normalized (`upper(trim(...))`) for rules and digit reference lookups.
-- Family/category validation for create/update now uses normalized matching.
-- Frontend family filtering also normalizes category values before matching.
-- Frontend load now handles non-200 API responses explicitly and shows clear status.
+- Introduced an explicit stock-bike-only category key derived from `stock_bike_img_digit_reference`.
+- Category lookups in rules/reference/family validation now normalize with whitespace collapsing (`UPPER(REGEXP_REPLACE(TRIM(...), '\s+', ' ', 'g'))`).
+- Frontend category state now tracks the category key (not ambiguous label text).
+- Builder and metadata calls now request by category key (`stock_bike_img_rule_category_key`).
+- API now returns debug payload showing selected key, metadata row count, and available keys.
 
 ## Condition authoring UX (guided builder)
 Raw input like `1=S,M;2=2,3` is no longer the primary authoring path.
@@ -57,6 +62,7 @@ The builder is driven exclusively by `stock_bike_img_digit_reference` for:
 - value meaning labels
 
 If metadata is missing for a category, the modal shows an empty-state helper message instead of failing.
+The empty state also includes lightweight diagnostics (selected key, matched row count, available keys).
 
 ## Create, edit, and duplicate compatibility
 - **Create**: starts with empty condition signature; builder fills it.

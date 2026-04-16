@@ -9,7 +9,11 @@ import {
 
 export async function GET(req: NextRequest) {
   const modelYear = Number(req.nextUrl.searchParams.get('stock_bike_img_model_year') ?? 0);
-  const category = String(req.nextUrl.searchParams.get('stock_bike_img_rule_category') ?? '').trim();
+  const categoryKeyParam =
+    req.nextUrl.searchParams.get('stock_bike_img_rule_category_key') ??
+    req.nextUrl.searchParams.get('stock_bike_img_rule_category') ??
+    '';
+  const category = String(categoryKeyParam).trim();
   const safeModelYear = Number.isInteger(modelYear) && modelYear > 0 ? modelYear : undefined;
   const safeCategory = category.length > 0 ? category : undefined;
 
@@ -25,6 +29,12 @@ export async function GET(req: NextRequest) {
     stock_bike_img_reference_categories: categories,
     stock_bike_img_reference_rows: referenceRows,
     stock_bike_img_rule_families: families,
+    stock_bike_img_reference_debug: {
+      stock_bike_img_selected_category_key: safeCategory ?? '',
+      stock_bike_img_reference_row_count: referenceRows.length,
+      stock_bike_img_reference_category_count: categories.length,
+      stock_bike_img_available_category_keys: categories.map((entry) => entry.stock_bike_img_rule_category_key),
+    },
   });
 }
 
