@@ -1,115 +1,105 @@
 # STOCK_BIKE_IMG_EXPERIMENT
 
 ## Purpose
-`Stock_bike_img_` is an isolated experimental stock-bike image logic path that runs **in parallel** to the existing CPQ picture-management process.
+`Stock_bike_img_` remains an **isolated experimental** stock-bike image rule engine that runs in parallel to the stable CPQ picture-management process.
 
-## Scope
+## Scope and isolation
 - Dedicated page: `/cpq/stock-bike-img`
-- Dedicated API namespace: `/api/stock_bike_img_rules/*`
-- Dedicated DB tables:
-  - `stock_bike_img_rule`
-  - `stock_bike_img_digit_reference` (CSV-backed metadata)
-- Dedicated service module: `lib/Stock_bike_img_service.ts`
-- Source metadata CSV: `data/stock_bike_img_/digit_reference.csv`
-
-No existing picture-management behavior is required by this module.
+- Dedicated APIs: `/api/stock_bike_img_rules/*`
+- Dedicated service: `lib/Stock_bike_img_service.ts`
+- Dedicated SQL objects, all prefixed with `stock_bike_img_`
+- Existing stable CPQ process (`/cpq`, `/cpq/setup`, `/api/cpq/*`) is not part of this experiment
 
 ## Admin-only access
-- Navigation link is admin-only (hidden for non-admin mode).
-- `/cpq/stock-bike-img` UI checks admin-mode context and redirects non-admin users to `/cpq`.
-- This reuses the same lightweight session-based admin-mode mechanism as the rest of the app.
+- Navigation entry is admin-only.
+- `/cpq/stock-bike-img` enforces admin mode and redirects non-admin users to `/cpq`.
 
-## Data model
-Isolated two-table design, still removable with a small footprint:
+## Key business concepts now supported
 
-- `stock_bike_img_rule`
-  - model year
-  - rule category/name/description
-  - JSON conditions array (`position` + `allowedValues[]`)
-  - up to 3 picture links
-  - active flag
-  - layer order
-  - normalized `stock_bike_img_conditions_signature` for duplicate prevention
-- `stock_bike_img_digit_reference`
-  - `stock_bike_img_digit_position`
-  - `stock_bike_img_rule_category_name`
-  - `stock_bike_img_digit_value`
-  - `stock_bike_img_value_meaning`
-  - unique key on `(digit_position, category_name, digit_value)` for idempotent CSV imports
+### 1) Model year (char 20) with optional rule scope
+- SKU digit position 20 maps to model year:
+  - `1`→2020, `2`→2021, ..., `9`→2028
+- Rule column `stock_bike_img_model_year` is now nullable:
+  - `NULL` = applies to all model years
+  - specific year (e.g. 2025) = applies only to that year
 
-## CSV metadata support
-- The CSV file `data/stock_bike_img_/digit_reference.csv` is the source of truth.
-- `sql/seed.sql` imports/upserts CSV rows into `stock_bike_img_digit_reference`.
-- Authoring UX reads category list + allowed values + meanings from `stock_bike_img_digit_reference` through `/api/stock_bike_img_rules`.
+### 2) Business bike type dictionary
+Raw char 17 values are now normalized into a controlled dictionary (`stock_bike_img_business_bike_type`) via `stock_bike_img_business_bike_type_digit_map`.
 
-## Category-first authoring UX
-- User selects category first.
-- Rules list is filtered to selected model year + selected category.
-- New/edit form is bound to selected category (pre-attached).
-- Category reference panel shows digit positions, allowed values, and value meanings to speed rule authoring.
+This allows multiple raw SKU values to map to one business type (for example demos and editions collapsing into `C Line`).
 
-## Rule duplication UX
-- Each rule row has a **Duplicate** action.
-- Duplicate creates a draft that copies:
-  - rule metadata
-  - model year
-  - conditions
-  - picture links
-  - layer order
-- Draft name is suffixed with `(copy)` and user can adjust before saving.
-- If unchanged duplicate logic conflicts with unique signature, API returns conflict and UI guides user to modify category/model year/conditions.
+### 3) Rule family / constraint family
+`stock_bike_img_rule_family` defines grouping logic context.
 
-## Model year logic (digit position 20)
-From the 30-character SKU code, char index 19 (digit position 20) maps to model year:
-- `1`→2020, `2`→2021, `3`→2022, `4`→2023, `5`→2024, `6`→2025, `7`→2026, `8`→2027, `9`→2028
+Examples seeded:
+- `MAIN_FRAME_FAMILY`
+- `DIGIT_2_FAMILY`
+- `DEFAULT_FAMILY`
 
-## Rule logic
-A rule is matched when **all** rule conditions match SKU digits.
+A family can be mapped to categories through `stock_bike_img_rule_family_category`.
 
-Condition format:
-- `position`: integer 1..30
-- `allowedValues`: uppercase normalized list
+### 4) Family-specific bike-type groups
+`stock_bike_img_family_bike_group` + `stock_bike_img_family_bike_group_member` define how business bike types are grouped **inside each family**.
 
-Example serialized condition text in UI:
-- `1=S;4=B;17=B,C,D`
+This enables different grouping behavior for the same bike type depending on family.
 
-## Duplicate prevention
-Duplicate is defined as:
-- same `stock_bike_img_model_year`
-- same `stock_bike_img_rule_category`
-- same normalized condition signature (`stock_bike_img_conditions_signature`)
+## `stock_bike_img_digit_reference` usage
+The preloaded `stock_bike_img_digit_reference` table is the authoring reference source for:
+- category list
+- digit positions per category
+- allowed values
+- value meanings
 
-Implemented at:
-1. app-side normalization + signature generation
-2. DB unique constraint (`stock_bike_img_rule_unique_signature`)
+UI reads this table via API and displays guidance panel so users can author conditions with business wording.
+
+## Rule authoring model
+A rule is authored against:
+- category
+- rule family
+- bike-type group (optional; `NULL` means all groups in family)
+- optional model year
+- SKU digit conditions (JSON)
+- picture outputs + layer order
+
+Duplicate rule prevention signature now includes:
+- model year (with `NULL` normalized)
+- category
+- family
+- bike-type group (with `NULL` normalized)
+- normalized condition signature
 
 ## Runtime matching flow
-1. Validate SKU length = 30
-2. Read digit position 20, resolve model year
-3. Load active rules for that model year (indexed query)
-4. Evaluate each rule against SKU digits
-5. Collect matched rules
-6. Collect up to 3 picture links per matched rule
-7. Return layered images in stable order (`layer_order`, category, id, slot)
+Given a 30-char SKU:
+1. Validate SKU length.
+2. Resolve model year from char 20.
+3. Resolve business bike type from char 17 mapping table.
+4. Load active candidate rules filtered by:
+   - model year = exact or NULL
+   - bike-type group membership for resolved business bike type (or group NULL)
+5. Evaluate condition JSON against SKU digits.
+6. Return matched rules and layered picture links ordered by layer/category/id.
 
-## Where code lives
-- `lib/Stock_bike_img_service.ts`
-- `app/api/stock_bike_img_rules/route.ts`
-- `app/api/stock_bike_img_rules/[id]/route.ts`
-- `app/api/stock_bike_img_rules/test/route.ts`
-- `app/cpq/stock-bike-img/page.tsx`
-- `components/stock_bike_img_/Stock_bike_img_ExperimentPage.tsx`
-- `components/shared/app-navigation.tsx`
-- `components/shared/admin-mode-context.tsx`
-- `sql/schema.sql`
-- `sql/seed.sql`
+### Efficiency notes
+- Runtime candidate filtering is done in SQL (year + group membership), reducing JS-side checks.
+- Relevant indexes exist on rule runtime columns and bike-type digit mapping columns.
 
-## Removal plan
-To fully remove this experiment:
-1. Remove route/page/component files listed above.
-2. Remove `Stock_bike_img_` link from `components/shared/app-navigation.tsx`.
-3. Drop tables `stock_bike_img_rule` and `stock_bike_img_digit_reference` with related indexes.
-4. Remove CSV seed block for `stock_bike_img_digit_reference`.
-5. Remove this doc file.
+## SQL data model (experiment-only tables)
+- Existing retained:
+  - `stock_bike_img_digit_reference`
+  - `stock_bike_img_rule` (extended)
+- Added:
+  - `stock_bike_img_business_bike_type`
+  - `stock_bike_img_business_bike_type_digit_map`
+  - `stock_bike_img_rule_family`
+  - `stock_bike_img_rule_family_category`
+  - `stock_bike_img_family_bike_group`
+  - `stock_bike_img_family_bike_group_member`
 
-Because this experiment uses dedicated `Stock_bike_img_` tables/routes/modules only, removal remains low-risk and localized.
+## Removability
+Experiment remains removable with localized changes:
+1. Remove stock-bike page/API/service files.
+2. Remove navigation link.
+3. Drop `stock_bike_img_*` tables.
+4. Remove experiment seed blocks and this doc.
+
+No stable CPQ table or route is required by this module.
