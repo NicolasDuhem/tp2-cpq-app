@@ -260,6 +260,15 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 .apiDocsExcluded h3 { margin:0 0 8px; }
 .apiDocsExcluded ul { margin:0; padding-left:18px; display:grid; gap:4px; }
 
+
+.adminModeActions { margin-left:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.tabAdminAction { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+.tabAdminAction:hover { background:#fff; border-color:#fdba74; }
+.adminModePill { border:1px solid #14b8a6; background:#ecfeff; color:#0f766e; border-radius:999px; padding:5px 10px; font-size:12px; font-weight:800; }
+.adminModeModal { width:min(420px, 94vw); display:grid; gap:10px; }
+.adminModeForm { display:grid; gap:8px; }
+.adminModeError { color:#b91c1c; font-size:12px; }
+
 .processPage { display:grid; gap:12px; max-width:1200px; margin:0 auto; }
 .processHeader h1 { margin:0 0 6px; }
 .processHeader p { margin:0; color:var(--muted); max-width:950px; line-height:1.5; }

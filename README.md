@@ -6,8 +6,8 @@ CPQ-focused Next.js app for manual lifecycle operations, setup/admin data, sampl
 - `/cpq` — primary Bike Builder/manual lifecycle page.
 - `/bike-builder` — redirect alias to `/cpq`.
 - `/cpq/setup` — account/ruleset/picture management.
-- `/cpq/results` — sampler matrix page.
-- `/cpq/ui-docs` — UI label-to-code/data mapping page.
+- `/cpq/results` — sampler matrix page (admin navigation).
+- `/cpq/ui-docs` — UI label-to-code/data mapping page (admin-only content).
 
 ## Manual lifecycle summary
 1. `StartConfiguration` (`/api/cpq/init`)
@@ -61,3 +61,15 @@ See `.env.example` for required CPQ and DB configuration.
 
 ## Documentation
 See `docs/README.md` for the reconciled documentation set and audit report.
+
+## Admin mode (lightweight UI gate)
+- Top ribbon includes **Open as admin**.
+- Password: `Br0mpt0n` (client-side visibility gate for internal use, not enterprise auth).
+- Admin mode unlocks admin nav tabs (`/cpq/results`, `/cpq/ui-docs`) and technical/debug surfaces on Bike Builder.
+- Non-admin top nav only shows: **CPQ - Process**, **CPQ - Bike Builder**, **CPQ - Setup**.
+
+## Bike Builder desktop UX update
+- Controls are compacted into a top strip (account/ruleset/actions/retrieve).
+- Main workspace is a two-column layout: configurator (left) and layered preview (right).
+- Technical runtime status lines and debug timeline are admin-only.
+- Generated combinations keep an internal scroll container (vertical + horizontal) for large datasets.
