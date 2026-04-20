@@ -314,8 +314,10 @@ export async function Stock_bike_img_list_rule_families(): Promise<Stock_bike_im
         '[]'::jsonb
       ) as stock_bike_img_groups
     from stock_bike_img_rule_family f
-    left join stock_bike_img_rule_family_category fc on fc.stock_bike_img_rule_family_id = f.id
-    left join stock_bike_img_family_bike_group g on g.stock_bike_img_rule_family_id = f.id
+    left join stock_bike_img_rule_family_category fc
+      on fc.stock_bike_img_family_key = f.stock_bike_img_family_key
+    left join stock_bike_img_family_bike_group g
+      on g.stock_bike_img_family_key = f.stock_bike_img_family_key
     group by f.id, f.stock_bike_img_family_key, f.stock_bike_img_family_name, f.stock_bike_img_family_description
     order by f.stock_bike_img_family_name
   `) as Array<Record<string, unknown>>;
@@ -361,18 +363,19 @@ const Stock_bike_img_validate_family_and_group = async (familyId: number, groupI
   const rows = (await sql`
     select
       f.id,
+      f.stock_bike_img_family_key,
       f.stock_bike_img_family_name,
       exists (
         select 1
         from stock_bike_img_rule_family_category fc
-        where fc.stock_bike_img_rule_family_id = f.id
+        where fc.stock_bike_img_family_key = f.stock_bike_img_family_key
           and upper(regexp_replace(trim(fc.stock_bike_img_rule_category_name), '\s+', ' ', 'g')) = ${normalizedCategory}
       ) as stock_bike_img_category_allowed,
       g.id as stock_bike_img_group_id,
       g.stock_bike_img_group_name
     from stock_bike_img_rule_family f
     left join stock_bike_img_family_bike_group g
-      on g.stock_bike_img_rule_family_id = f.id
+      on g.stock_bike_img_family_key = f.stock_bike_img_family_key
      and g.id = ${groupId}
     where f.id = ${familyId}
   `) as Array<Record<string, unknown>>;

@@ -173,10 +173,17 @@ export default function Stock_bike_img_ExperimentPage() {
   const [stock_bike_img_is_loading, setStock_bike_img_is_loading] = useState(false);
   const [stock_bike_img_is_builder_open, setStock_bike_img_is_builder_open] = useState(false);
   const [stock_bike_img_reference_debug, setStock_bike_img_reference_debug] = useState<{
+    stock_bike_img_api_load_ok?: boolean;
+    stock_bike_img_trace_id?: string;
+    stock_bike_img_selected_category_raw?: string;
     stock_bike_img_selected_category_key: string;
     stock_bike_img_reference_row_count: number;
     stock_bike_img_reference_category_count: number;
+    stock_bike_img_family_count?: number;
+    stock_bike_img_group_count?: number;
     stock_bike_img_available_category_keys: string[];
+    stock_bike_img_error?: string;
+    stock_bike_img_error_stage?: string;
   } | null>(null);
 
   const stock_bike_img_selected_category_entry = useMemo(
@@ -281,11 +288,30 @@ export default function Stock_bike_img_ExperimentPage() {
     }
 
     const response = await fetch(`/api/stock_bike_img_rules?${params.toString()}`);
-    const payload = await response.json().catch(() => ({}));
+    const responseText = await response.text();
+    let payload: Record<string, any> = {};
+    try {
+      payload = responseText ? ((JSON.parse(responseText) as Record<string, any>) ?? {}) : {};
+    } catch {
+      payload = {};
+    }
 
     if (!response.ok) {
       setStock_bike_img_is_loading(false);
-      setStock_bike_img_status(payload.error ?? 'Failed to load stock-bike authoring data.');
+      setStock_bike_img_reference_debug({
+        stock_bike_img_api_load_ok: false,
+        stock_bike_img_trace_id: payload.traceId,
+        stock_bike_img_selected_category_raw: categoryKey,
+        stock_bike_img_selected_category_key: Stock_bike_img_normalize_category_key(categoryKey),
+        stock_bike_img_reference_row_count: 0,
+        stock_bike_img_reference_category_count: 0,
+        stock_bike_img_family_count: 0,
+        stock_bike_img_group_count: 0,
+        stock_bike_img_available_category_keys: [],
+        stock_bike_img_error: payload.error ?? `Failed to load stock-bike authoring data (HTTP ${response.status})`,
+        stock_bike_img_error_stage: payload.stage ?? 'stock_bike_img_rules.GET.load',
+      });
+      setStock_bike_img_status(payload.error ?? `Failed to load stock-bike authoring data (HTTP ${response.status}).`);
       return;
     }
 
@@ -523,6 +549,30 @@ export default function Stock_bike_img_ExperimentPage() {
         <button className="primary" type="button" onClick={Stock_bike_img_test_runtime}>
           Test Stock_bike_img_ runtime
         </button>
+      </section>
+      <section className="card compactCard">
+        <h3>Experiment diagnostics</h3>
+        <div className="subtle">Stock-bike-img-only API and selector diagnostics for debugging.</div>
+        <ul>
+          <li>API load: {stock_bike_img_reference_debug?.stock_bike_img_api_load_ok ? 'success' : 'failure'}</li>
+          <li>
+            Selected category raw value:{' '}
+            <span className="codeCell">{stock_bike_img_reference_debug?.stock_bike_img_selected_category_raw ?? '(empty)'}</span>
+          </li>
+          <li>
+            Normalized category value:{' '}
+            <span className="codeCell">{stock_bike_img_reference_debug?.stock_bike_img_selected_category_key ?? '(empty)'}</span>
+          </li>
+          <li>Digit reference rows loaded: {stock_bike_img_reference_debug?.stock_bike_img_reference_row_count ?? 0}</li>
+          <li>Families loaded: {stock_bike_img_reference_debug?.stock_bike_img_family_count ?? 0}</li>
+          <li>Groups loaded: {stock_bike_img_reference_debug?.stock_bike_img_group_count ?? 0}</li>
+        </ul>
+        {stock_bike_img_reference_debug?.stock_bike_img_error ? (
+          <div className="note">
+            Error: {stock_bike_img_reference_debug.stock_bike_img_error} (stage:{' '}
+            {stock_bike_img_reference_debug.stock_bike_img_error_stage ?? 'unknown'})
+          </div>
+        ) : null}
       </section>
 
       <section className="card compactCard stockBikeImgEditor">
