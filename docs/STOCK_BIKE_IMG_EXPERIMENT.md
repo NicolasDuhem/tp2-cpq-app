@@ -35,6 +35,41 @@ The experiment page combines:
 - `DELETE /api/stock_bike_img_rules/[id]`: delete rule.
 - `POST /api/stock_bike_img_rules/test`: evaluate a 30-char SKU against active rules.
 
+### 2026-04 backend fix: 500 root cause
+- Root cause of `GET /api/stock_bike_img_rules` 500 was in service SQL, not Neon table content.
+- `Stock_bike_img_list_rule_families` and `Stock_bike_img_validate_family_and_group` were joining family-category/group tables with stale FK names (`stock_bike_img_rule_family_id`), while live schema links by `stock_bike_img_family_key`.
+- Because GET loads families in parallel with categories/rules/refs, that single SQL exception caused the entire route to fail.
+- Route lacked a defensive `try/catch`, so failure surfaced as HTTP 500 with empty body in the browser.
+
+### Updated GET response contract (success)
+`GET /api/stock_bike_img_rules` now returns:
+- `rows`
+- `stock_bike_img_reference_categories`
+- `stock_bike_img_reference_rows`
+- `stock_bike_img_rule_families`
+- `stock_bike_img_reference_debug` with:
+  - `stock_bike_img_api_load_ok`
+  - `stock_bike_img_trace_id`
+  - `stock_bike_img_selected_category_raw`
+  - `stock_bike_img_selected_category_key`
+  - `stock_bike_img_reference_row_count`
+  - `stock_bike_img_reference_category_count`
+  - `stock_bike_img_family_count`
+  - `stock_bike_img_group_count`
+  - `stock_bike_img_available_category_keys`
+
+### Updated error contract (stock-bike-img APIs)
+On error, stock-bike-img API routes now return JSON (no empty body) with:
+- `traceId`
+- `error`
+- `stage`
+- `details`
+
+This is implemented for:
+- `GET/POST /api/stock_bike_img_rules`
+- `PUT/DELETE /api/stock_bike_img_rules/[id]`
+- `POST /api/stock_bike_img_rules/test`
+
 ---
 
 ## 3) Data model (experiment-only)
@@ -51,9 +86,9 @@ The experiment page combines:
 - `stock_bike_img_rule_family`:
   - high-level family partition.
 - `stock_bike_img_rule_family_category`:
-  - allowed category membership per family.
+  - allowed category membership per family (linked by `stock_bike_img_family_key` + `stock_bike_img_rule_category_name`).
 - `stock_bike_img_family_bike_group`:
-  - optional bike-type groups under a family.
+  - optional bike-type groups under a family (linked by `stock_bike_img_family_key`; group identity uses `stock_bike_img_group_key` / `stock_bike_img_group_name`).
 - `stock_bike_img_family_bike_group_member`:
   - membership table linking business bike types to groups.
 
@@ -105,6 +140,12 @@ Candidate rules are filtered by:
 ### Digit reference usage
 Authoring-side condition builder is metadata-driven from `stock_bike_img_digit_reference` by selected category key.
 
+### Selector data provenance
+- Category dropdown: `stock_bike_img_reference_categories` derived from `stock_bike_img_digit_reference`.
+- Condition builder options: `stock_bike_img_reference_rows` from `stock_bike_img_digit_reference` filtered by selected category.
+- Family dropdown: `stock_bike_img_rule_families` from `stock_bike_img_rule_family` + `stock_bike_img_rule_family_category` (`stock_bike_img_family_key` link).
+- Bike-type group dropdown: nested `stock_bike_img_groups` from `stock_bike_img_family_bike_group` joined via `stock_bike_img_family_key`.
+
 ### Category behavior
 Category keys are normalized (`trim + whitespace collapse + uppercase`) to reduce drift between tables and UI state.
 
@@ -150,6 +191,7 @@ Known guardrails in code:
 - Model year mapping is hardcoded to 2020..2028 digit map.
 - Runtime test route is manual and page-centric; no integration into stable Bike Builder preview pipeline.
 - Output supports 3 picture links per rule (stable picture-management supports 4 links per option row).
+- Experiment diagnostics are intentionally verbose and page-local for temporary debugging.
 
 ---
 
