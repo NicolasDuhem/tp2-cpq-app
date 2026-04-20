@@ -7,9 +7,26 @@ import {
   Stock_bike_img_list_rules,
 } from '@/lib/Stock_bike_img_service';
 
+class Stock_bike_img_route_load_error extends Error {
+  stock_bike_img_subquery: string;
+
+  constructor(stock_bike_img_subquery: string, cause: unknown) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause ?? 'Unknown error');
+    super(`Stock-bike-img load failed at "${stock_bike_img_subquery}": ${causeMessage}`);
+    this.name = 'Stock_bike_img_route_load_error';
+    this.stock_bike_img_subquery = stock_bike_img_subquery;
+  }
+}
+
 const Stock_bike_img_to_error_payload = (error: unknown, stage: string, traceId: string) => {
   const details =
-    error instanceof Error
+    error instanceof Stock_bike_img_route_load_error
+      ? {
+          name: error.name,
+          message: error.message,
+          stock_bike_img_failed_subquery: error.stock_bike_img_subquery,
+        }
+      : error instanceof Error
       ? {
           name: error.name,
           message: error.message,
@@ -28,6 +45,14 @@ const Stock_bike_img_to_error_payload = (error: unknown, stage: string, traceId:
 
 export async function GET(req: NextRequest) {
   const traceId = crypto.randomUUID();
+  const Stock_bike_img_run_load_step = async <T>(stock_bike_img_subquery: string, action: () => Promise<T>) => {
+    try {
+      return await action();
+    } catch (error) {
+      throw new Stock_bike_img_route_load_error(stock_bike_img_subquery, error);
+    }
+  };
+
   try {
     const modelYear = Number(req.nextUrl.searchParams.get('stock_bike_img_model_year') ?? 0);
     const categoryKeyParam =
@@ -40,10 +65,10 @@ export async function GET(req: NextRequest) {
     const safeCategory = categoryRaw.length > 0 ? categoryRaw : undefined;
 
     const [rows, categories, referenceRows, families] = await Promise.all([
-      Stock_bike_img_list_rules(safeModelYear, safeCategory),
-      Stock_bike_img_list_reference_categories(),
-      Stock_bike_img_list_digit_reference_rows(safeCategory),
-      Stock_bike_img_list_rule_families(),
+      Stock_bike_img_run_load_step('rules', () => Stock_bike_img_list_rules(safeModelYear, safeCategory)),
+      Stock_bike_img_run_load_step('categories', () => Stock_bike_img_list_reference_categories()),
+      Stock_bike_img_run_load_step('reference_rows', () => Stock_bike_img_list_digit_reference_rows(safeCategory)),
+      Stock_bike_img_run_load_step('families_and_groups', () => Stock_bike_img_list_rule_families()),
     ]);
 
     return NextResponse.json({

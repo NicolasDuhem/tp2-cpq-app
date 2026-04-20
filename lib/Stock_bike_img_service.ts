@@ -208,18 +208,6 @@ const Stock_bike_img_parse_digit_reference_row = (row: Record<string, unknown>):
   stock_bike_img_value_meaning: String(row.stock_bike_img_value_meaning ?? ''),
 });
 
-const STOCK_BIKE_IMG_RULE_SELECT = sql`
-  select
-    r.*,
-    f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
-    f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
-    g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
-    g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
-  from stock_bike_img_rule r
-  join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
-  left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
-`;
-
 export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: number, stock_bike_img_rule_category?: string) {
   const year = Number(stock_bike_img_model_year ?? 0);
   const category = Stock_bike_img_as_text(stock_bike_img_rule_category);
@@ -227,22 +215,58 @@ export async function Stock_bike_img_list_rules(stock_bike_img_model_year?: numb
 
   const rows =
     year && category
-      ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
+      ? await sql`
+          select
+            r.*,
+            f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+            f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+            g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+            g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+          from stock_bike_img_rule r
+          join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+          left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
           where upper(regexp_replace(trim(r.stock_bike_img_rule_category), '\s+', ' ', 'g')) = ${normalizedCategory}
             and (r.stock_bike_img_model_year = ${year} or r.stock_bike_img_model_year is null)
           order by r.stock_bike_img_layer_order, r.stock_bike_img_rule_category, r.id
         `
       : year
-        ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
+        ? await sql`
+            select
+              r.*,
+              f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+              f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+              g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+              g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+            from stock_bike_img_rule r
+            join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+            left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
             where r.stock_bike_img_model_year = ${year} or r.stock_bike_img_model_year is null
             order by r.stock_bike_img_layer_order, r.stock_bike_img_rule_category, r.id
           `
         : category
-          ? await sql`${STOCK_BIKE_IMG_RULE_SELECT}
+          ? await sql`
+              select
+                r.*,
+                f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+                f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+                g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+                g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+              from stock_bike_img_rule r
+              join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+              left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
               where upper(regexp_replace(trim(r.stock_bike_img_rule_category), '\s+', ' ', 'g')) = ${normalizedCategory}
               order by r.stock_bike_img_model_year nulls first, r.stock_bike_img_layer_order, r.id
             `
-          : await sql`${STOCK_BIKE_IMG_RULE_SELECT}
+          : await sql`
+              select
+                r.*,
+                f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+                f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+                g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+                g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+              from stock_bike_img_rule r
+              join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+              left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
               order by r.stock_bike_img_model_year nulls first, r.stock_bike_img_layer_order, r.stock_bike_img_rule_category, r.id
             `;
 
@@ -455,7 +479,18 @@ export async function Stock_bike_img_create_rule(input: Record<string, unknown>)
     returning *
   `) as Record<string, unknown>[];
 
-  const parsed = await sql`${STOCK_BIKE_IMG_RULE_SELECT} where r.id = ${rows[0].id}`;
+  const parsed = await sql`
+    select
+      r.*,
+      f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+      f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+      g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+      g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+    from stock_bike_img_rule r
+    join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+    left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
+    where r.id = ${rows[0].id}
+  `;
   return Stock_bike_img_parse_rule_row((parsed as Record<string, unknown>[])[0]);
 }
 
@@ -513,7 +548,18 @@ export async function Stock_bike_img_update_rule(id: number, input: Record<strin
     return null;
   }
 
-  const parsed = await sql`${STOCK_BIKE_IMG_RULE_SELECT} where r.id = ${rows[0].id}`;
+  const parsed = await sql`
+    select
+      r.*,
+      f.stock_bike_img_family_key as stock_bike_img_rule_family_key,
+      f.stock_bike_img_family_name as stock_bike_img_rule_family_name,
+      g.stock_bike_img_group_key as stock_bike_img_bike_type_group_key,
+      g.stock_bike_img_group_name as stock_bike_img_bike_type_group_name
+    from stock_bike_img_rule r
+    join stock_bike_img_rule_family f on f.id = r.stock_bike_img_rule_family_id
+    left join stock_bike_img_family_bike_group g on g.id = r.stock_bike_img_bike_type_group_id
+    where r.id = ${rows[0].id}
+  `;
   return Stock_bike_img_parse_rule_row((parsed as Record<string, unknown>[])[0]);
 }
 
