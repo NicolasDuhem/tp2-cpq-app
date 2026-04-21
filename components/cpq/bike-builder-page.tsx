@@ -1244,6 +1244,8 @@ export default function BikeBuilderPage() {
   const resolveCurrentOptionWithinFeature = (feature: NormalizedBikeBuilderState['features'][number], rowCell: CombinationCell) => {
     const normalizedRowOptionValue = normalizeComparableLooseText(rowCell.optionValue);
     const normalizedRowOptionLabel = normalizeComparableLooseText(rowCell.optionLabel);
+    const suffixTolerantRowOptionValue = stripLocaleSuffix(rowCell.optionValue);
+    const suffixTolerantRowOptionLabel = stripLocaleSuffix(rowCell.optionLabel);
     const exactValueMatches = feature.availableOptions.filter((option) => (option.value ?? option.optionId) === rowCell.optionValue);
     if (exactValueMatches.length === 1) return { option: exactValueMatches[0], strategy: 'exact-value' as OptionMatchStrategy };
 
@@ -1259,6 +1261,16 @@ export default function BikeBuilderPage() {
       (option) => normalizeComparableLooseText(option.label) === normalizedRowOptionLabel,
     );
     if (normalizedLabelMatches.length === 1) return { option: normalizedLabelMatches[0], strategy: 'normalized-label' as OptionMatchStrategy };
+
+    const suffixTolerantValueMatches = feature.availableOptions.filter(
+      (option) => stripLocaleSuffix(option.value ?? option.optionId) === suffixTolerantRowOptionValue,
+    );
+    if (suffixTolerantValueMatches.length === 1) return { option: suffixTolerantValueMatches[0], strategy: 'normalized-value' as OptionMatchStrategy };
+
+    const suffixTolerantLabelMatches = feature.availableOptions.filter(
+      (option) => stripLocaleSuffix(option.label) === suffixTolerantRowOptionLabel,
+    );
+    if (suffixTolerantLabelMatches.length === 1) return { option: suffixTolerantLabelMatches[0], strategy: 'normalized-label' as OptionMatchStrategy };
 
     const fuzzyCandidates = feature.availableOptions
       .map((option) => ({
@@ -1766,26 +1778,43 @@ export default function BikeBuilderPage() {
           }
 
           setRowDiagnosticStatus(row.id, { currentStage: 'Configure' });
+          const configureRequestBody = {
+            sessionId: workingState.sessionId,
+            featureId: currentFeature.featureId,
+            optionId: targetOption.optionId,
+            optionValue: targetOptionValue,
+            ruleset,
+            context: {
+              accountCode: countryContext.account_code,
+              customerId: countryContext.customer_id,
+              currency: countryContext.currency,
+              language: countryContext.language,
+              countryCode: countryContext.country_code,
+            },
+          };
+          pushRowDiagnosticEvent(row.id, {
+            timestamp: new Date().toISOString(),
+            stage: 'Configure',
+            direction: 'request',
+            action: 'Bulk:ResolvedTargetConfigureInput',
+            route: 'local:configure-request-body',
+            payload: {
+              resolvedTargetFeatureLabel: currentFeature.featureLabel,
+              resolvedTargetFeatureId: currentFeature.featureId,
+              resolvedTargetOptionLabel: targetOption.label,
+              resolvedTargetOptionId: targetOption.optionId,
+              resolvedTargetOptionValue: targetOptionValue,
+              configureRequestBody,
+            },
+            traceId,
+          });
           const { response, payload } = await trackedBulkFetch<CpqRouteResponse>(
             row.id,
             traceId,
             'Configure',
             'Bulk:Configure',
             '/api/cpq/configure',
-            {
-              sessionId: workingState.sessionId,
-              featureId: currentFeature.featureId,
-              optionId: targetOption.optionId,
-              optionValue: targetOptionValue,
-              ruleset,
-              context: {
-                accountCode: countryContext.account_code,
-                customerId: countryContext.customer_id,
-                currency: countryContext.currency,
-                language: countryContext.language,
-                countryCode: countryContext.country_code,
-              },
-            },
+            configureRequestBody,
           );
 
           if (!response.ok) {
