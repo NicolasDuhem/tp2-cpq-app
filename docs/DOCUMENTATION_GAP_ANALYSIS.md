@@ -1,4 +1,4 @@
-# DOCUMENTATION_GAP_ANALYSIS (stable vs stock-bike-img reconciliation)
+# DOCUMENTATION_GAP_ANALYSIS (stable vs stock-bike-img reconciliation, historical)
 
 ## Audit method and source-of-truth policy
 This audit was performed against current code and active SQL in repo:
@@ -65,7 +65,7 @@ This new stable-track deep dive now centralizes:
 - stable tables and stable API map,
 - proven vs inferred notes.
 
-## Track B (stock-bike-img experiment only)
+## Track B (stock-bike-img experiment only, now cancelled)
 Refreshed:
 - `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
 
@@ -105,11 +105,7 @@ Stable routes/tables/services:
 Primary experiment reference:
 - `docs/STOCK_BIKE_IMG_EXPERIMENT.md`
 
-Experiment routes/tables/services:
-- `/cpq/stock-bike-img`
-- `/api/stock_bike_img_rules/*`
-- `lib/Stock_bike_img_service.ts`
-- `stock_bike_img_*` tables
+Status: **cancelled**. The former experiment routes/tables/services were removed from active code and SQL baseline on 2026-04-20.
 
 ---
 
@@ -122,6 +118,6 @@ No additional unresolved ambiguity found in stable-vs-experiment boundaries.
 ---
 
 ## 8) Practical outcome
-This split makes future decisions straightforward:
-- **Remove experiment**: follow the dedicated deletion checklist in `STOCK_BIKE_IMG_EXPERIMENT.md`.
-- **Integrate experiment**: use the listed schema/runtime/UI touchpoints without polluting current stable-process docs.
+Historical split outcome:
+- The experiment removal has now been completed (app/routes/apis/service/sql baseline).
+- `STOCK_BIKE_IMG_EXPERIMENT.md` remains as archive-only documentation.

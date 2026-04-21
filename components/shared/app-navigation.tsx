@@ -13,7 +13,6 @@ const links: NavLink[] = [
   { href: '/cpq/process', label: 'CPQ - Process' },
   { href: '/cpq', label: 'CPQ - Bike Builder' },
   { href: '/cpq/setup', label: 'CPQ - Setup' },
-  { href: '/cpq/stock-bike-img', label: 'Stock_bike_img_ Experiment', adminOnly: true },
   { href: '/cpq/results', label: 'CPQ - Sampler Results', adminOnly: true },
   { href: '/cpq/ui-docs', label: 'CPQ - UI Docs', adminOnly: true },
 ];

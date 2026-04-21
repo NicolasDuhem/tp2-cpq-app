@@ -1,4 +1,18 @@
-# STOCK_BIKE_IMG_EXPERIMENT (isolated module deep dive)
+# STOCK_BIKE_IMG_EXPERIMENT (cancelled development / historical record)
+
+> [!WARNING]
+> **Cancelled development**: As of 2026-04-20, the stock-bike-img experimental module has been removed from the active product code and SQL baseline.
+>
+> Removed from active app/runtime:
+> - route `/cpq/stock-bike-img`
+> - APIs `/api/stock_bike_img_rules*`
+> - service `lib/Stock_bike_img_service.ts`
+> - UI `components/stock_bike_img_/Stock_bike_img_ExperimentPage.tsx`
+> - all `stock_bike_img_*` schema/seed objects in `sql/schema.sql` and `sql/seed.sql`
+>
+> This document is retained only as historical context for prior exploration decisions.
+
+---
 
 ## 1) Purpose and isolation contract
 `stock-bike-img` is an **admin-only experimental image-rule engine** intended to explore SKU-digit-based layered image matching without modifying the stable CPQ picture-management pipeline.
