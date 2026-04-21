@@ -137,6 +137,16 @@ type CombinationDataset = {
   rows: CombinationRow[];
   columns: CombinationFeatureColumn[];
 };
+type CombinationFeatureFilterOption = {
+  value: string;
+  label: string;
+  count: number;
+};
+type CombinationFeatureFilterGroup = {
+  stableFeatureKey: string;
+  featureLabel: string;
+  options: CombinationFeatureFilterOption[];
+};
 
 type RowExecutionStatus = 'pending' | 'running' | 'configured' | 'finalized' | 'saved' | 'failed';
 type BulkExecutionStage =
@@ -268,7 +278,10 @@ export default function BikeBuilderPage() {
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
   const [combinationDataset, setCombinationDataset] = useState<CombinationDataset | null>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [featureValueFilters, setFeatureValueFilters] = useState<Record<string, string[]>>({});
+  const [featureFilterPanelOpen, setFeatureFilterPanelOpen] = useState(true);
   const [showSelectedRowsOnly, setShowSelectedRowsOnly] = useState(false);
+  const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [hiddenFeatureColumnKeys, setHiddenFeatureColumnKeys] = useState<Record<string, boolean>>({});
   const [hiddenCountryColumns, setHiddenCountryColumns] = useState<Record<string, boolean>>({});
@@ -486,7 +499,10 @@ export default function BikeBuilderPage() {
   useEffect(() => {
     setCombinationDataset(null);
     setColumnFilters({});
+    setFeatureValueFilters({});
+    setFeatureFilterPanelOpen(true);
     setShowSelectedRowsOnly(false);
+    setBulkCountrySelection({});
     setColumnPickerOpen(false);
     setHiddenFeatureColumnKeys({});
     setHiddenCountryColumns({});
@@ -658,16 +674,68 @@ export default function BikeBuilderPage() {
       }, {}),
     );
     setColumnFilters({});
+    setFeatureValueFilters({});
     setShowSelectedRowsOnly(false);
+    setBulkCountrySelection({});
     setBulkValidationMessage(null);
     setInvalidBulkRowIds([]);
   };
+
+  const featureFilterGroups = useMemo<CombinationFeatureFilterGroup[]>(() => {
+    if (!combinationDataset) return [];
+
+    return combinationDataset.columns.map((column) => {
+      const optionsByValue = new Map<string, CombinationFeatureFilterOption>();
+
+      for (const row of combinationDataset.rows) {
+        const cell = row.cellsByFeatureKey[column.stableFeatureKey];
+        if (!cell) continue;
+        const optionValue = cell.optionValue?.trim() || cell.optionId?.trim() || '(empty)';
+        const existing = optionsByValue.get(optionValue);
+        if (existing) {
+          existing.count += 1;
+          continue;
+        }
+        optionsByValue.set(optionValue, {
+          value: optionValue,
+          label: cell.optionValue?.trim() || cell.optionLabel?.trim() || cell.optionId,
+          count: 1,
+        });
+      }
+
+      return {
+        stableFeatureKey: column.stableFeatureKey,
+        featureLabel: column.featureLabel,
+        options: [...optionsByValue.values()].sort((a, b) => a.label.localeCompare(b.label)),
+      };
+    });
+  }, [combinationDataset]);
+
+  const activeFeatureFilterSummary = useMemo(
+    () =>
+      featureFilterGroups
+        .map((group) => {
+          const selectedValues = featureValueFilters[group.stableFeatureKey] ?? [];
+          if (selectedValues.length === 0) return null;
+          return `${group.featureLabel}: ${selectedValues.join(', ')}`;
+        })
+        .filter((entry): entry is string => Boolean(entry)),
+    [featureFilterGroups, featureValueFilters],
+  );
 
   const filteredCombinationRows = useMemo(() => {
     if (!combinationDataset) return [];
 
     return combinationDataset.rows.filter((row) =>
       (!showSelectedRowsOnly || row.selected) &&
+      combinationDataset.columns.every((column) => {
+        const selectedValuesForFeature = featureValueFilters[column.stableFeatureKey] ?? [];
+        if (selectedValuesForFeature.length === 0) return true;
+        const cell = row.cellsByFeatureKey[column.stableFeatureKey];
+        if (!cell) return false;
+        const rowValue = cell.optionValue?.trim() || cell.optionId?.trim() || '(empty)';
+        return selectedValuesForFeature.includes(rowValue);
+      }) &&
       combinationDataset.columns.every((column) => {
         const filterValue = columnFilters[column.stableFeatureKey]?.trim().toLowerCase();
         if (!filterValue) return true;
@@ -677,7 +745,14 @@ export default function BikeBuilderPage() {
         return searchableValue.includes(filterValue);
       }),
     );
-  }, [columnFilters, combinationDataset, showSelectedRowsOnly]);
+  }, [columnFilters, combinationDataset, featureValueFilters, showSelectedRowsOnly]);
+
+  const visibleRowIdSet = useMemo(() => new Set(filteredCombinationRows.map((row) => row.id)), [filteredCombinationRows]);
+  const visibleSelectedRowsCount = useMemo(() => filteredCombinationRows.filter((row) => row.selected).length, [filteredCombinationRows]);
+  const selectedBulkCountryCodes = useMemo(
+    () => availableCountryCodes.filter((countryCode) => bulkCountrySelection[countryCode]),
+    [availableCountryCodes, bulkCountrySelection],
+  );
 
   const visibleFeatureColumns = useMemo(
     () => (combinationDataset?.columns ?? []).filter((column) => !hiddenFeatureColumnKeys[column.stableFeatureKey]),
@@ -1599,6 +1674,31 @@ export default function BikeBuilderPage() {
     }));
   };
 
+  const applyCountriesToVisibleRows = (checked: boolean) => {
+    if (selectedBulkCountryCodes.length === 0) return;
+    setBulkValidationMessage(null);
+    setInvalidBulkRowIds([]);
+
+    setCombinationDataset((current) =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.map((row) => {
+              if (!visibleRowIdSet.has(row.id) || !row.selected) return row;
+              const nextCountries = { ...row.countries };
+              for (const countryCode of selectedBulkCountryCodes) {
+                nextCountries[countryCode] = checked;
+              }
+              return {
+                ...row,
+                countries: nextCountries,
+              };
+            }),
+          }
+        : current,
+    );
+  };
+
   const orderedPreviewLayers = [...imageLayerResolution.layers]
     .sort((left, right) => {
       if (left.featureLayerOrder !== right.featureLayerOrder) return right.featureLayerOrder - left.featureLayerOrder;
@@ -1924,6 +2024,77 @@ export default function BikeBuilderPage() {
                 </div>
               ) : null}
             </div>
+            <details
+              open={featureFilterPanelOpen}
+              onToggle={(event) => setFeatureFilterPanelOpen(event.currentTarget.open)}
+              style={styles.featureFilterPanel}
+            >
+              <summary>Feature filters ({activeFeatureFilterSummary.length} active)</summary>
+              <div style={styles.featureFilterPanelBody}>
+                <div style={styles.row}>
+                  <div style={styles.cellMeta}>Filter logic: OR within the same feature, AND across features.</div>
+                  <button
+                    style={styles.buttonSecondary}
+                    onClick={() => setFeatureValueFilters({})}
+                    disabled={activeFeatureFilterSummary.length === 0 || bulkProgress.running}
+                  >
+                    Clear all feature filters
+                  </button>
+                </div>
+                {activeFeatureFilterSummary.length > 0 ? (
+                  <div style={styles.featureFilterSummaryWrap}>
+                    {activeFeatureFilterSummary.map((entry) => (
+                      <span key={entry} style={styles.featureFilterChip}>
+                        {entry}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={styles.cellMeta}>No active feature filters.</div>
+                )}
+                <div style={styles.featureFilterGrid}>
+                  {featureFilterGroups.map((group) => (
+                    <div key={`feature-filter-${group.stableFeatureKey}`} style={styles.featureFilterGroup}>
+                      <strong>{group.featureLabel}</strong>
+                      <div style={styles.featureFilterOptions}>
+                        {group.options.map((option) => {
+                          const checked = (featureValueFilters[group.stableFeatureKey] ?? []).includes(option.value);
+                          return (
+                            <label key={`${group.stableFeatureKey}-${option.value}`} style={styles.inlineCheck}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={bulkProgress.running}
+                                onChange={(event) =>
+                                  setFeatureValueFilters((current) => {
+                                    const currentValues = current[group.stableFeatureKey] ?? [];
+                                    const nextValues = event.target.checked
+                                      ? [...new Set([...currentValues, option.value])]
+                                      : currentValues.filter((entry) => entry !== option.value);
+                                    if (nextValues.length === 0) {
+                                      const next = { ...current };
+                                      delete next[group.stableFeatureKey];
+                                      return next;
+                                    }
+                                    return {
+                                      ...current,
+                                      [group.stableFeatureKey]: nextValues,
+                                    };
+                                  })
+                                }
+                              />
+                              <span>
+                                {option.label} ({option.count})
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
             <div style={styles.row}>
               <label style={styles.inlineCheck}>
                 <input
@@ -1981,7 +2152,7 @@ export default function BikeBuilderPage() {
                       ? {
                           ...current,
                           rows: current.rows.map((row) =>
-                            filteredCombinationRows.some((entry) => entry.id === row.id) ? { ...row, selected: true } : row,
+                            visibleRowIdSet.has(row.id) ? { ...row, selected: true } : row,
                           ),
                         }
                       : current,
@@ -1989,7 +2160,23 @@ export default function BikeBuilderPage() {
                 }
                 disabled={filteredCombinationRows.length === 0 || bulkProgress.running}
               >
-                Tick filtered rows
+                Select all visible rows
+              </button>
+              <button
+                style={styles.buttonSecondary}
+                onClick={() =>
+                  setCombinationDataset((current) =>
+                    current
+                      ? {
+                          ...current,
+                          rows: current.rows.map((row) => (visibleRowIdSet.has(row.id) ? { ...row, selected: false } : row)),
+                        }
+                      : current,
+                  )
+                }
+                disabled={filteredCombinationRows.length === 0 || bulkProgress.running}
+              >
+                Unselect all visible rows
               </button>
               <button
                 style={styles.buttonSecondary}
@@ -2005,7 +2192,7 @@ export default function BikeBuilderPage() {
                 }
                 disabled={combinationDataset.rows.length === 0 || bulkProgress.running}
               >
-                Untick all
+                Untick all rows and countries
               </button>
               <button
                 style={styles.button}
@@ -2014,6 +2201,46 @@ export default function BikeBuilderPage() {
               >
                 {bulkProgress.running ? 'Configuring ticked items…' : 'Configure all ticked items'}
               </button>
+            </div>
+            <div style={styles.bulkCountryPanel}>
+              <strong>Visible-row country actions</strong>
+              <div style={styles.cellMeta}>
+                Applies to visible rows that are selected ({visibleSelectedRowsCount}/{filteredCombinationRows.length} visible rows selected).
+              </div>
+              <div style={styles.row}>
+                {availableCountryCodes.map((countryCode) => (
+                  <label key={`bulk-country-${countryCode}`} style={styles.inlineCheck}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(bulkCountrySelection[countryCode])}
+                      disabled={bulkProgress.running}
+                      onChange={(event) =>
+                        setBulkCountrySelection((current) => ({
+                          ...current,
+                          [countryCode]: event.target.checked,
+                        }))
+                      }
+                    />
+                    {countryCode}
+                  </label>
+                ))}
+              </div>
+              <div style={styles.row}>
+                <button
+                  style={styles.button}
+                  onClick={() => applyCountriesToVisibleRows(true)}
+                  disabled={bulkProgress.running || visibleSelectedRowsCount === 0 || selectedBulkCountryCodes.length === 0}
+                >
+                  Tick selected countries on visible rows
+                </button>
+                <button
+                  style={styles.buttonSecondary}
+                  onClick={() => applyCountriesToVisibleRows(false)}
+                  disabled={bulkProgress.running || visibleSelectedRowsCount === 0 || selectedBulkCountryCodes.length === 0}
+                >
+                  Untick selected countries on visible rows
+                </button>
+              </div>
             </div>
             {bulkValidationMessage ? <div style={styles.error}>{bulkValidationMessage}</div> : null}
             <div style={styles.tableWrap}>
@@ -2374,10 +2601,61 @@ const styles: Record<string, CSSProperties> = {
     gap: '0.75rem',
     background: '#fff',
   },
+  featureFilterPanel: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 10,
+    padding: '0.4rem 0.55rem',
+    background: '#f8fafc',
+  },
+  featureFilterPanelBody: {
+    display: 'grid',
+    gap: '0.6rem',
+    marginTop: '0.45rem',
+  },
+  featureFilterGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))',
+    gap: '0.5rem',
+  },
+  featureFilterGroup: {
+    border: '1px solid #e5e7eb',
+    borderRadius: 8,
+    padding: '0.5rem',
+    background: '#fff',
+    display: 'grid',
+    gap: '0.4rem',
+  },
+  featureFilterOptions: {
+    display: 'grid',
+    gap: '0.3rem',
+    maxHeight: 180,
+    overflow: 'auto',
+  },
+  featureFilterSummaryWrap: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '0.35rem',
+  },
+  featureFilterChip: {
+    border: '1px solid #cbd5e1',
+    borderRadius: 999,
+    padding: '0.2rem 0.5rem',
+    background: '#fff',
+    fontSize: '0.78rem',
+    color: '#334155',
+  },
   combinationMeta: {
     display: 'grid',
     gap: '0.2rem',
     fontSize: '0.9rem',
+  },
+  bulkCountryPanel: {
+    border: '1px solid #d4d4d8',
+    borderRadius: 10,
+    padding: '0.6rem',
+    background: '#f8fafc',
+    display: 'grid',
+    gap: '0.5rem',
   },
   tableWrap: {
     overflow: 'auto',

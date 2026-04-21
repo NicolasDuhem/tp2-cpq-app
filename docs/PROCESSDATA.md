@@ -93,7 +93,14 @@ On `/cpq/setup` Picture management tab:
 - Uses active configurator state to generate row combinations.
 - Stores stable feature identity metadata to survive session-specific feature IDs.
 - Builds one checkbox country column per distinct active setup-account `country_code`.
-- Exposes operational-grid UX: selected-only filter, per-column show/hide, and scrollable table container.
+- Exposes operational-grid UX:
+  - feature-driven filter panel generated from `combinationDataset` rows (dynamic features + dynamic values),
+  - OR-within-feature and AND-across-features filtering,
+  - selected-only filter,
+  - per-column show/hide,
+  - visible-row bulk selection (`Select all visible rows`, `Unselect all visible rows`),
+  - visible-row bulk country actions (tick/untick selected countries on visible selected rows),
+  - scrollable table container.
 
 ## Validation before bulk run
 - A row with main `Select` checked must have at least one country checked.

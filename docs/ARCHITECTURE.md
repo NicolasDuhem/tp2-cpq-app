@@ -24,6 +24,9 @@ Additional route aliases:
   - Configuration reference retrieval.
   - Layered preview resolution/download.
   - Combination generation + bulk configure orchestration with operational-grid controls:
+    - feature-value filter panel generated from current combinations data,
+    - filter model: OR within a feature, AND across features,
+    - visible-row bulk row selection and visible-row bulk country assignment actions,
     - selected-only row filter,
     - column picker (feature + dynamic country columns),
     - pre-run row-country validation,
