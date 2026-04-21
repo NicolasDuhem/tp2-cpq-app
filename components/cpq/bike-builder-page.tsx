@@ -149,6 +149,8 @@ type CombinationFeatureFilterGroup = {
 };
 
 type RowExecutionStatus = 'pending' | 'running' | 'configured' | 'finalized' | 'saved' | 'failed';
+type FeatureMatchStrategy = 'stable-identity' | 'exact-label' | 'normalized-label' | 'suffix-tolerant-label' | 'fuzzy';
+type OptionMatchStrategy = 'exact-value' | 'normalized-value' | 'exact-label' | 'normalized-label' | 'fuzzy';
 type BulkExecutionStage =
   | 'StartConfiguration'
   | 'Feature remap'
@@ -207,6 +209,22 @@ const fallbackRuleset = {
 const isDebugEnabled = process.env.NEXT_PUBLIC_CPQ_DEBUG === 'true';
 
 const createTraceId = () => crypto.randomUUID();
+
+const normalizeComparableText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const normalizeComparableLooseText = (value: string) => normalizeComparableText(value).replace(/[^\p{L}\p{N}\s]/gu, '');
+const stripLocaleSuffix = (value: string) =>
+  normalizeComparableLooseText(value).replace(/(?:[_-][a-z]{2,3}(?:[_-][a-z]{2,3})?)$/i, '');
+
+const computeTokenSimilarity = (left: string, right: string) => {
+  const leftTokens = new Set(stripLocaleSuffix(left).split(' ').filter(Boolean));
+  const rightTokens = new Set(stripLocaleSuffix(right).split(' ').filter(Boolean));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(leftTokens.size, rightTokens.size);
+};
 
 const buildStableFeatureIdentity = (feature: NormalizedBikeBuilderState['features'][number]) => {
   const firstOptionMetadata = feature.availableOptions.find((option) => option.metadata)?.metadata;
@@ -1148,47 +1166,114 @@ export default function BikeBuilderPage() {
     column: CombinationFeatureColumn,
   ) => {
     const visibleFeatures = currentState.features.filter((feature) => feature.isVisible !== false);
-    const normalizedTargetLabel = column.stableFeatureIdentity.featureLabel.trim().toLowerCase();
-    const normalizedTargetName = column.stableFeatureIdentity.featureName?.toLowerCase();
-    const normalizedTargetQuestion = column.stableFeatureIdentity.featureQuestion?.toLowerCase();
+    const normalizedTargetLooseLabel = normalizeComparableLooseText(column.stableFeatureIdentity.featureLabel);
+    const suffixTolerantTargetLabel = stripLocaleSuffix(column.stableFeatureIdentity.featureLabel);
+    const normalizedTargetName = column.stableFeatureIdentity.featureName
+      ? normalizeComparableText(column.stableFeatureIdentity.featureName)
+      : undefined;
+    const normalizedTargetQuestion = column.stableFeatureIdentity.featureQuestion
+      ? normalizeComparableText(column.stableFeatureIdentity.featureQuestion)
+      : undefined;
 
-    const matchingFeatures = visibleFeatures.filter((feature) => {
+    const stableIdentityMatches = visibleFeatures.filter((feature) => {
       const identity = buildStableFeatureIdentity(feature);
       return (
         (normalizedTargetName && identity.featureName?.toLowerCase() === normalizedTargetName) ||
         (normalizedTargetQuestion && identity.featureQuestion?.toLowerCase() === normalizedTargetQuestion) ||
-        identity.featureLabel.trim().toLowerCase() === normalizedTargetLabel
+        (column.stableFeatureIdentity.featureSequence !== undefined &&
+          identity.featureSequence !== undefined &&
+          identity.featureSequence === column.stableFeatureIdentity.featureSequence)
       );
     });
-
-    if (matchingFeatures.length === 1) return matchingFeatures[0];
-    if (matchingFeatures.length > 1) {
-      return matchingFeatures.find((feature) => feature.featureLabel.trim().toLowerCase() === normalizedTargetLabel) ?? matchingFeatures[0];
+    if (stableIdentityMatches.length === 1) {
+      return { feature: stableIdentityMatches[0], strategy: 'stable-identity' as FeatureMatchStrategy, candidates: stableIdentityMatches };
     }
 
-    return (
-      visibleFeatures.find(
-        (feature) =>
-          feature.featureLabel.trim().toLowerCase() === rowCell.featureLabel.trim().toLowerCase() ||
-          feature.featureId === rowCell.currentSessionFeatureId,
-      ) ?? null
+    const exactLabelMatches = visibleFeatures.filter((feature) => feature.featureLabel.trim() === column.stableFeatureIdentity.featureLabel.trim());
+    if (exactLabelMatches.length === 1) {
+      return { feature: exactLabelMatches[0], strategy: 'exact-label' as FeatureMatchStrategy, candidates: exactLabelMatches };
+    }
+
+    const normalizedLabelMatches = visibleFeatures.filter(
+      (feature) => normalizeComparableLooseText(feature.featureLabel) === normalizedTargetLooseLabel,
     );
+    if (normalizedLabelMatches.length === 1) {
+      return { feature: normalizedLabelMatches[0], strategy: 'normalized-label' as FeatureMatchStrategy, candidates: normalizedLabelMatches };
+    }
+
+    const suffixTolerantMatches = visibleFeatures.filter(
+      (feature) => stripLocaleSuffix(feature.featureLabel) === suffixTolerantTargetLabel,
+    );
+    if (suffixTolerantMatches.length === 1) {
+      return { feature: suffixTolerantMatches[0], strategy: 'suffix-tolerant-label' as FeatureMatchStrategy, candidates: suffixTolerantMatches };
+    }
+
+    const fuzzyCandidates = visibleFeatures
+      .map((feature) => ({
+        feature,
+        score: Math.max(
+          computeTokenSimilarity(column.stableFeatureIdentity.featureLabel, feature.featureLabel),
+          computeTokenSimilarity(rowCell.featureLabel, feature.featureLabel),
+        ),
+      }))
+      .filter((entry) => entry.score >= 0.8)
+      .sort((a, b) => b.score - a.score);
+
+    if (fuzzyCandidates.length > 0) {
+      const [best, second] = fuzzyCandidates;
+      if (best && (!second || best.score - second.score >= 0.15)) {
+        return {
+          feature: best.feature,
+          strategy: 'fuzzy' as FeatureMatchStrategy,
+          candidates: fuzzyCandidates.slice(0, 5).map((entry) => entry.feature),
+        };
+      }
+    }
+
+    const fallbackBySource = visibleFeatures.find(
+      (feature) =>
+        normalizeComparableText(feature.featureLabel) === normalizeComparableText(rowCell.featureLabel) ||
+        feature.featureId === rowCell.currentSessionFeatureId,
+    );
+    if (fallbackBySource) {
+      return { feature: fallbackBySource, strategy: 'normalized-label' as FeatureMatchStrategy, candidates: [fallbackBySource] };
+    }
+    return { feature: null, strategy: null, candidates: visibleFeatures };
   };
 
   const resolveCurrentOptionWithinFeature = (feature: NormalizedBikeBuilderState['features'][number], rowCell: CombinationCell) => {
-    const normalizedRowOptionLabel = rowCell.optionLabel.trim().toLowerCase();
-    return (
-      feature.availableOptions.find(
-        (option) =>
-          option.optionId === rowCell.optionId &&
-          (option.value ?? option.optionId) === rowCell.optionValue,
-      ) ??
-      feature.availableOptions.find(
-        (option) => option.optionId === rowCell.optionId || (option.value ?? option.optionId) === rowCell.optionValue,
-      ) ??
-      feature.availableOptions.find((option) => option.label.trim().toLowerCase() === normalizedRowOptionLabel) ??
-      null
+    const normalizedRowOptionValue = normalizeComparableLooseText(rowCell.optionValue);
+    const normalizedRowOptionLabel = normalizeComparableLooseText(rowCell.optionLabel);
+    const exactValueMatches = feature.availableOptions.filter((option) => (option.value ?? option.optionId) === rowCell.optionValue);
+    if (exactValueMatches.length === 1) return { option: exactValueMatches[0], strategy: 'exact-value' as OptionMatchStrategy };
+
+    const normalizedValueMatches = feature.availableOptions.filter(
+      (option) => normalizeComparableLooseText(option.value ?? option.optionId) === normalizedRowOptionValue,
     );
+    if (normalizedValueMatches.length === 1) return { option: normalizedValueMatches[0], strategy: 'normalized-value' as OptionMatchStrategy };
+
+    const exactLabelMatches = feature.availableOptions.filter((option) => option.label.trim() === rowCell.optionLabel.trim());
+    if (exactLabelMatches.length === 1) return { option: exactLabelMatches[0], strategy: 'exact-label' as OptionMatchStrategy };
+
+    const normalizedLabelMatches = feature.availableOptions.filter(
+      (option) => normalizeComparableLooseText(option.label) === normalizedRowOptionLabel,
+    );
+    if (normalizedLabelMatches.length === 1) return { option: normalizedLabelMatches[0], strategy: 'normalized-label' as OptionMatchStrategy };
+
+    const fuzzyCandidates = feature.availableOptions
+      .map((option) => ({
+        option,
+        score: Math.max(computeTokenSimilarity(rowCell.optionLabel, option.label), computeTokenSimilarity(rowCell.optionValue, option.value ?? option.optionId)),
+      }))
+      .filter((entry) => entry.score >= 0.85)
+      .sort((a, b) => b.score - a.score);
+    if (fuzzyCandidates.length > 0) {
+      const [best, second] = fuzzyCandidates;
+      if (best && (!second || best.score - second.score >= 0.2)) {
+        return { option: best.option, strategy: 'fuzzy' as OptionMatchStrategy };
+      }
+    }
+    return { option: null, strategy: null };
   };
 
   const pushRowDiagnosticEvent = (rowId: string, event: RowDiagnosticEvent) => {
@@ -1582,14 +1667,96 @@ export default function BikeBuilderPage() {
 
           setRowDiagnosticStatus(row.id, { currentStage: 'Feature remap' });
           setBulkProgress((current) => ({ ...current, currentFeatureKey: column.stableFeatureKey }));
-          const currentFeature = resolveCurrentFeatureForRowSelection(rowCell, workingState, column);
-          if (!currentFeature) {
-            throw new Error(`Could not map feature "${column.featureLabel}" in new session ${workingState.sessionId}.`);
+          pushRowDiagnosticEvent(row.id, {
+            timestamp: new Date().toISOString(),
+            stage: 'Feature remap',
+            direction: 'request',
+            action: 'Bulk:FeatureRemap',
+            route: 'local:feature-remap',
+            payload: {
+              sourceFeatureLabel: rowCell.featureLabel,
+              sourceFeatureId: rowCell.currentSessionFeatureId,
+              sourceStableIdentity: column.stableFeatureIdentity,
+              sourceOptionValue: rowCell.optionValue,
+              sourceOptionLabel: rowCell.optionLabel,
+              sessionId: workingState.sessionId,
+            },
+            traceId,
+          });
+          const featureRemap = resolveCurrentFeatureForRowSelection(rowCell, workingState, column);
+          if (!featureRemap.feature || !featureRemap.strategy) {
+            pushRowDiagnosticEvent(row.id, {
+              timestamp: new Date().toISOString(),
+              stage: 'Feature remap',
+              direction: 'response',
+              action: 'Bulk:FeatureRemap',
+              route: 'local:feature-remap',
+              status: 422,
+              payload: {
+                failureReason: 'feature_not_matched_safely',
+                sourceFeatureLabel: rowCell.featureLabel,
+                sourceFeatureId: rowCell.currentSessionFeatureId,
+                candidates: featureRemap.candidates.slice(0, 8).map((candidate) => ({
+                  featureLabel: candidate.featureLabel,
+                  featureId: candidate.featureId,
+                })),
+              },
+              traceId,
+            });
+            throw new Error(`Could not safely map feature "${column.featureLabel}" in new session ${workingState.sessionId}.`);
           }
-          const targetOption = resolveCurrentOptionWithinFeature(currentFeature, rowCell);
-          if (!targetOption) {
+          const currentFeature = featureRemap.feature;
+          const optionRemap = resolveCurrentOptionWithinFeature(currentFeature, rowCell);
+          if (!optionRemap.option || !optionRemap.strategy) {
+            pushRowDiagnosticEvent(row.id, {
+              timestamp: new Date().toISOString(),
+              stage: 'Feature remap',
+              direction: 'response',
+              action: 'Bulk:FeatureRemap',
+              route: 'local:feature-remap',
+              status: 422,
+              payload: {
+                failureReason: 'option_not_matched_within_feature',
+                featureMatchStrategy: featureRemap.strategy,
+                sourceFeatureLabel: rowCell.featureLabel,
+                resolvedFeatureLabel: currentFeature.featureLabel,
+                resolvedFeatureId: currentFeature.featureId,
+                sourceOptionValue: rowCell.optionValue,
+                sourceOptionLabel: rowCell.optionLabel,
+                optionCandidates: currentFeature.availableOptions.slice(0, 12).map((candidate) => ({
+                  optionId: candidate.optionId,
+                  optionLabel: candidate.label,
+                  optionValue: candidate.value ?? candidate.optionId,
+                })),
+              },
+              traceId,
+            });
             throw new Error(`Could not resolve option "${rowCell.optionLabel}" inside feature "${currentFeature.featureLabel}".`);
           }
+          const targetOption = optionRemap.option;
+          pushRowDiagnosticEvent(row.id, {
+            timestamp: new Date().toISOString(),
+            stage: 'Feature remap',
+            direction: 'response',
+            action: 'Bulk:FeatureRemap',
+            route: 'local:feature-remap',
+            status: 200,
+            payload: {
+              featureMatchStrategy: featureRemap.strategy,
+              optionMatchStrategy: optionRemap.strategy,
+              usedFallbackMatching: featureRemap.strategy === 'suffix-tolerant-label' || featureRemap.strategy === 'fuzzy' || optionRemap.strategy === 'fuzzy',
+              sourceFeatureLabel: rowCell.featureLabel,
+              sourceFeatureId: rowCell.currentSessionFeatureId,
+              resolvedFeatureLabel: currentFeature.featureLabel,
+              resolvedFeatureId: currentFeature.featureId,
+              sourceOptionValue: rowCell.optionValue,
+              sourceOptionLabel: rowCell.optionLabel,
+              resolvedOptionValue: targetOption.value ?? targetOption.optionId,
+              resolvedOptionId: targetOption.optionId,
+              resolvedOptionLabel: targetOption.label,
+            },
+            traceId,
+          });
 
           const targetOptionValue = targetOption.value ?? targetOption.optionId;
           const optionAlreadySelected =

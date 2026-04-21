@@ -126,6 +126,23 @@ Per selected **row-country** pair:
 - Row statuses: `pending`, `running`, `configured`, `finalized`, `saved`, `failed`.
 - Failed rows preserve execution metadata including country code and execution key.
 - **Inspect failure** modal includes stage, summary, trace/session IDs, country, and last two requests/responses.
+- Feature remap diagnostics capture:
+  - source feature label/id,
+  - resolved target feature label/id,
+  - feature match strategy (`stable-identity`, `exact-label`, `normalized-label`, `suffix-tolerant-label`, `fuzzy`),
+  - source option value/label,
+  - resolved option value/id/label,
+  - fallback usage flag when suffix-tolerant or fuzzy matching is used.
+- Structured remap failures are explicit (no silent skip):
+  - `feature_not_matched_safely` with considered candidates,
+  - `option_not_matched_within_feature` with option candidates within the resolved feature only.
+
+## Feature/option normalization rules used by bulk remap
+- Case-insensitive comparison.
+- Trim + collapse repeated spaces.
+- Punctuation-tolerant normalized labels/values.
+- Locale suffix tolerance for features (e.g. `_FR`, `-FR`, `_FR_CA`).
+- Cautious fuzzy matching is only accepted when score threshold is met and winner is unambiguous.
 
 
 ## 6) Admin visibility gating

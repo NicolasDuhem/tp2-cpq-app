@@ -122,7 +122,8 @@ Each selected combination row can be assigned to one or more countries (derived 
 ### Execution model per row-country
 For each queued unit:
 1. Start fresh session.
-2. Remap stable feature identities to fresh session feature IDs.
+2. Remap stable feature identities to fresh session feature IDs with layered safe matching:
+   - stable identity → exact label → normalized label → locale-suffix tolerant label → cautious fuzzy (unique only).
 3. Configure selected options (skipping ignored features).
 4. Finalize.
 5. Save canonical reference.
@@ -132,6 +133,7 @@ For each queued unit:
 - Validation prevents run if selected rows have no countries.
 - Row status lifecycle: pending/running/configured/finalized/saved/failed.
 - Failure modal includes stage, summary/details, ignored features, and recent request/response events.
+- Remap diagnostics include source/target feature+option identities and which remap strategy was used, plus explicit remap failure reasons/candidates.
 - Progress counters show executions, successes, failures, current row/country/session/feature.
 
 ### Post-run table behavior
