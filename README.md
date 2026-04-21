@@ -44,11 +44,22 @@ Canonical save and sampler snapshot payloads are sourced from:
 - Run **Configure all ticked items**:
   - fresh StartConfiguration per **row-country pair** (no session reuse across rows/countries),
   - country-specific setup context resolution (`account_code`, `customer_id`, `currency`, `language`, `country_code`) for each execution,
-  - stable feature identity remap to fresh session,
-  - feature-scoped option resolution,
+  - per-session feature remap (because feature IDs and labels can drift by country/account context),
+  - feature matching precedence:
+    1. stable identity match (`featureName` / `FeatureQuestion` / `featureSequence`),
+    2. exact feature label,
+    3. normalized feature label (case-insensitive, trimmed, collapsed spaces, punctuation-tolerant),
+    4. suffix-tolerant feature label (locale suffix handling, e.g. `_FR`),
+    5. cautious fuzzy fallback (token overlap, unique winner only),
+  - option matching precedence (inside resolved feature only):
+    1. exact option value,
+    2. normalized option value,
+    3. exact option label,
+    4. normalized option label,
+    5. cautious fuzzy fallback (unique winner only),
   - skip ignored features (`ignore_during_configure`),
   - finalize + canonical save + sampler support save per row-country execution,
-  - row-level failure diagnostics include country execution context.
+  - row-level diagnostics include remap strategy, source/target feature+option identities, and explicit structured failure reasons when matching is unsafe.
 
 ## Picture management layer order (feature-level)
 - Stored on `cpq_image_management.feature_layer_order` (integer, default `10`, valid `1..20`).
