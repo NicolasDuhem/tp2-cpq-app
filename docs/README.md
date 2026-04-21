@@ -23,8 +23,8 @@ Note: root CSV schema exports are useful historical artifacts but should not be 
 - `DATABASE.md` — database model notes.
 - `REPO_STRUCTURE.md` — repo structure map.
 
-## Track B — Stock-bike-img experiment
-- `STOCK_BIKE_IMG_EXPERIMENT.md` — isolated deep-dive for architecture, model, rule logic, removal strategy, and integration options.
+## Track B — Stock-bike-img experiment (cancelled)
+- `STOCK_BIKE_IMG_EXPERIMENT.md` — cancelled-development historical record; feature removed from active app and SQL baseline.
 
 ## Reconciliation/audit
 - `DOCUMENTATION_GAP_ANALYSIS.md` — audit of stale/overlapping docs and stable-vs-experiment split decisions.

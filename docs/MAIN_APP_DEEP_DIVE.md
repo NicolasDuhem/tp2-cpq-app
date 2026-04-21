@@ -1,11 +1,10 @@
-# MAIN_APP_DEEP_DIVE (stable app, excluding stock-bike-img experiment)
+# MAIN_APP_DEEP_DIVE (stable app)
 
 ## Scope and boundary
-This document describes the current stable TP2 CPQ app behavior from code, excluding the `stock-bike-img` experiment implementation details.
+This document describes the current stable TP2 CPQ app behavior from code. The former `stock-bike-img` experiment has been cancelled and removed from active app/runtime.
 
 Boundary note:
-- Stable routes/services do **not** call `stock_bike_img_*` APIs or tables.
-- The experiment is isolated under `/cpq/stock-bike-img`, `/api/stock_bike_img_rules/*`, `lib/Stock_bike_img_service.ts`, and `stock_bike_img_*` tables.
+- Stable routes/services do **not** call any stock-bike-img APIs/tables because that experimental module has been removed from active code and SQL baseline.
 
 ---
 
@@ -28,7 +27,7 @@ Admin mode is a **client-side UI visibility gate**:
 - Password hardcoded in navigation: `Br0mpt0n`.
 - Session state stored in `sessionStorage` key `tp2-cpq-admin-mode`.
 - Non-admin sees tabs: Process, Bike Builder, Setup.
-- Admin additionally sees: Sampler Results, UI Docs, Stock_bike_img_ Experiment.
+- Admin additionally sees: Sampler Results, UI Docs.
 
 Important: this is not server-side auth; it is UI gating for internal tooling.
 
@@ -157,7 +156,7 @@ Generated rows remain visible with status updates and optional filters (selected
 - configuration reference lookup/account/ruleset indexes.
 
 ## Stable vs experimental DB split
-All `stock_bike_img_*` tables are experimental and not required for stable route runtime.
+No `stock_bike_img_*` tables remain in the active SQL baseline.
 
 ---
 
@@ -181,7 +180,7 @@ All `stock_bike_img_*` tables are experimental and not required for stable route
 ## 8) UI/process consistency notes
 - `/cpq/process` guidance (setup first; manual vs bulk; picture management responsibilities) is aligned with implemented setup and Bike Builder controls.
 - `/cpq/ui-docs` entries reflect label-to-code mapping and admin-gated debug behavior.
-- Stable docs should reference stock-bike-img only as a boundary module, not as stable process logic.
+- Stable docs may mention stock-bike-img only as cancelled historical context, not as active process logic.
 
 ---
 
