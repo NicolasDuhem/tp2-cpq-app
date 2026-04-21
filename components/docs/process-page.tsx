@@ -147,16 +147,24 @@ export default function ProcessPage() {
         <ol>
           <li>Select the ruleset.</li>
           <li>Generate combinations via <strong>Generate configuration combinations</strong>.</li>
-          <li>In the generated table, tick the rows you want to execute.</li>
+          <li>
+            Use <strong>Feature filters</strong> to narrow combinations by option values (multi-select is allowed per
+            feature).
+          </li>
+          <li>Click <strong>Select all visible rows</strong> (or manually tick specific rows).</li>
+          <li>
+            Use <strong>Visible-row country actions</strong> to tick/untick one or more countries for visible selected
+            rows.
+          </li>
           <li>
             Use optional helpers to simplify selection:
             <ul>
               <li><strong>Show selected only</strong></li>
               <li>column show/hide</li>
-              <li>feature filtering</li>
+              <li>feature filter summary + clear filters</li>
             </ul>
           </li>
-          <li>For each selected row, tick at least one country.</li>
+          <li>Confirm each selected row has at least one country.</li>
           <li>Click <strong>Configure all ticked items</strong> when all selections are complete.</li>
         </ol>
         <div className="processCallout processCalloutWarn">

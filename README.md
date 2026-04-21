@@ -26,6 +26,15 @@ Canonical save and sampler snapshot payloads are sourced from:
 ## Bulk combinations flow
 - Generate combinations from active state on `/cpq`.
 - Operational grid controls:
+  - `Feature filters` panel (collapsible) is generated dynamically from current generated combinations:
+    - one filter group per feature,
+    - option/value list comes from current generated rows (not hardcoded),
+    - multi-select values per feature.
+  - Filtering logic:
+    - OR inside the same feature (selecting multiple values),
+    - AND across features.
+  - `Select all visible rows` and `Unselect all visible rows` accelerate row targeting after filtering.
+  - `Visible-row country actions` can tick/untick chosen country codes for all visible selected rows in one action.
   - `Show selected only` toggle filters table to ticked rows.
   - `Columns` picker can show/hide feature and dynamic country columns.
   - Dynamic country checkbox columns are sourced from active `cpq_setup_account_context.country_code`.
