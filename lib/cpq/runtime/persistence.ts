@@ -50,6 +50,7 @@ export async function persistSamplerResult(input: PersistedSamplerResultInput) {
       header_id,
       detail_id,
       session_id,
+      active,
       json_result
     )
     values (
@@ -64,6 +65,7 @@ export async function persistSamplerResult(input: PersistedSamplerResultInput) {
       ${asOptionalText(input.header_id)},
       ${asOptionalText(input.detail_id)},
       ${asOptionalText(input.session_id)},
+      true,
       ${JSON.stringify(input.json_result ?? {})}::jsonb
     )
     returning id, created_at

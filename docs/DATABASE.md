@@ -40,7 +40,7 @@ This document treats the Neon CSV exports as source of truth:
 
 - `cpq_configuration_references`: 30 columns
 - `cpq_image_management`: 13 columns
-- `cpq_sampler_result`: 16 columns
+- `cpq_sampler_result`: 17 columns (includes canonical `active` boolean)
 - `cpq_setup_account_context`: 9 columns
 - `cpq_setup_ruleset`: 10 columns
 
@@ -56,7 +56,7 @@ This document treats the Neon CSV exports as source of truth:
 
 ### `cpq_sampler_result`
 - Required-on-insert: `ruleset`, `account_code`
-- Auto/defaulted: `id`, `json_result`, `processed_for_image_sync`, `created_at`
+- Auto/defaulted: `id`, `active`, `json_result`, `processed_for_image_sync`, `created_at`
 
 ### `cpq_setup_account_context`
 - Required-on-insert: `account_code`, `customer_id`, `currency`, `language`, `country_code`
@@ -87,7 +87,18 @@ This document treats the Neon CSV exports as source of truth:
 - `cpq_image_management`
   - lookup index on feature/option/value (active rows)
 
-## 6) Live schema vs `sql/schema.sql` mismatches
+## 6) Sampler active-flag contract
+
+- `cpq_sampler_result.active` is the canonical active/inactive flag for Sales bike allocation behavior.
+- Existing rows are backfilled to `active=true` during migration.
+- Column end state is `active boolean not null default true`.
+- Sales matrix status rules:
+  - any matching row with `active=true` ⇒ **Active**
+  - matching rows exist but all `active=false` ⇒ **Not active**
+  - no matching row ⇒ **Not configured**
+- Sales toggles and bulk actions update the real `active` column (not `json_result.active`).
+
+## 7) Live schema vs `sql/schema.sql` mismatches
 
 The live CSV schema and local baseline SQL are not fully aligned.
 
@@ -104,7 +115,7 @@ These columns are actively used by runtime save/retrieve code; a DB created from
 - Runtime code can auto-generate `configuration_reference` if omitted.
 - Practical outcome: API still works because generation happens before insert, but docs and expectations must treat DB column as required at DB boundary.
 
-## 7) Practical governance for DB docs
+## 8) Practical governance for DB docs
 
 When DB behavior changes:
 1. Update live Neon schema.

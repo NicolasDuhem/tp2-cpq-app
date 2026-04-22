@@ -36,6 +36,7 @@ Flow:
 ## Automatic secondary sampler save
 After canonical save success:
 - write one row to `CPQ_sampler_result`.
+- sampler row is written with `active = true` (canonical active/inactive flag for Sales allocation).
 - source snapshot rule is exactly the same (configure > start).
 - finalize is not the sampler snapshot source.
 

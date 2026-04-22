@@ -39,12 +39,26 @@ create table if not exists CPQ_sampler_result (
   header_id text,
   detail_id text,
   session_id text,
+  active boolean not null default true,
   json_result jsonb not null default '{}'::jsonb,
   processed_for_image_sync boolean not null default false,
   processed_for_image_sync_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists cpq_sampler_result
+  add column if not exists active boolean;
+
+update cpq_sampler_result
+set active = true
+where active is null;
+
+alter table if exists cpq_sampler_result
+  alter column active set default true;
+
+alter table if exists cpq_sampler_result
+  alter column active set not null;
 
 create index if not exists cpq_sampler_result_ipn_created_idx
   on CPQ_sampler_result (ipn_code, created_at desc, id desc);

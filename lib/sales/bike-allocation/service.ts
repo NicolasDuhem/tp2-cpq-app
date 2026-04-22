@@ -18,6 +18,7 @@ type SamplerRow = {
   namespace: string | null;
   header_id: string | null;
   detail_id: string | null;
+  active: boolean;
   json_result: unknown;
 };
 
@@ -65,29 +66,6 @@ function toRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
-function parseBooleanLike(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (!normalized) return null;
-    if (['true', '1', 'yes', 'y', 'active'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'n', 'inactive', 'not_active'].includes(normalized)) return false;
-  }
-  return null;
-}
-
-function resolveConfiguredStatus(jsonResult: unknown): AllocationStatus {
-  const payload = toRecord(jsonResult);
-  const activeCandidate =
-    parseBooleanLike(payload.active) ??
-    parseBooleanLike(payload.is_active) ??
-    parseBooleanLike(payload.enabled) ??
-    parseBooleanLike(payload.isEnabled);
-
-  return activeCandidate === false ? 'not_active' : 'active';
-}
-
 function parseSelectedOptions(jsonResult: unknown): ParsedOption[] {
   const payload = toRecord(jsonResult);
   if (!Array.isArray(payload.selectedOptions)) return [];
@@ -132,6 +110,7 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
       namespace,
       header_id,
       detail_id,
+      active,
       json_result
     from CPQ_sampler_result
     where coalesce(trim(ipn_code), '') <> ''
@@ -161,7 +140,7 @@ export async function updateAllocationCellStatus(input: {
   const updatedRows = (await sql`
     update CPQ_sampler_result
     set
-      json_result = jsonb_set(coalesce(json_result, '{}'::jsonb), '{active}', to_jsonb(${toStatusBoolean(input.targetStatus)}), true),
+      active = ${toStatusBoolean(input.targetStatus)},
       updated_at = now()
     where ruleset = ${ruleset}
       and ipn_code = ${ipnCode}
@@ -190,13 +169,21 @@ export async function bulkUpdateAllocationStatus(input: {
   if (!countryCodes.length) throw new Error('countryCodes is required');
 
   const updatedRows = (await sql`
-    update CPQ_sampler_result
+    with target_ipns as (
+      select value::text as ipn_code
+      from jsonb_array_elements_text(${JSON.stringify(ipnCodes)}::jsonb)
+    ),
+    target_countries as (
+      select value::text as country_code
+      from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
+    )
+    update CPQ_sampler_result sr
     set
-      json_result = jsonb_set(coalesce(json_result, '{}'::jsonb), '{active}', to_jsonb(${toStatusBoolean(input.targetStatus)}), true),
+      active = ${toStatusBoolean(input.targetStatus)},
       updated_at = now()
-    where ruleset = ${ruleset}
-      and ipn_code = any(${ipnCodes}::text[])
-      and country_code = any(${countryCodes}::text[])
+    where sr.ruleset = ${ruleset}
+      and sr.ipn_code in (select ipn_code from target_ipns)
+      and sr.country_code in (select country_code from target_countries)
     returning id
   `) as Array<{ id: number }>;
 
@@ -317,9 +304,13 @@ export async function getSalesBikeAllocationPageData(
     if (!countryCode) continue;
 
     const existingStatus = matrixRow.countryStatuses[countryCode];
-    if (existingStatus === 'active') continue;
-
-    matrixRow.countryStatuses[countryCode] = resolveConfiguredStatus(row.json_result);
+    if (row.active) {
+      matrixRow.countryStatuses[countryCode] = 'active';
+      continue;
+    }
+    if (!existingStatus) {
+      matrixRow.countryStatuses[countryCode] = 'not_active';
+    }
   }
 
   const orderedFeatures = [...availableFeatures].sort((a, b) => a.localeCompare(b));

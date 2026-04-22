@@ -36,6 +36,7 @@ Finalize response is stored as `finalize_response_json` for audit/debug only.
 ## Canonical table rule
 - `cpq_configuration_references` is the source of truth for manual save/retrieve.
 - `CPQ_sampler_result` is secondary/supporting only.
+- `CPQ_sampler_result.active` is the canonical active/inactive source for Sales bike allocation state.
 
 ## Retrieve behavior
 - Resolve row by `configuration_reference` from canonical table.
