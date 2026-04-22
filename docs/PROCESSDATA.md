@@ -4,7 +4,8 @@
 
 ### StartConfiguration
 - Triggered manually by **Start New Session**.
-- Also retriggered when selected account or ruleset changes.
+- Also retriggered on `/cpq` whenever selected account code or ruleset changes.
+- Trigger runs only after those values are actually applied in the UI selectors.
 - Route: `POST /api/cpq/init`.
 - Captures latest start snapshot for downstream save-source fallback.
 
@@ -182,6 +183,7 @@ Per selected **row-country** pair:
 - Toggle actions:
   - click `Active` => update DB rows to `active=false` (`not_active`),
   - click `Inactive` => update DB rows to `active=true` (`active`).
+- Canonical source of truth is the DB `active` column only (`json_result.active` is ignored).
 
 ### Not configured → `/cpq` launch replay
 - Route: `POST /api/sales/bike-allocation/launch-context`.
@@ -190,15 +192,18 @@ Per selected **row-country** pair:
   - replay option list from sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`).
 - Sales page stores replay payload in `sessionStorage` under `tp2-cpq-launch-replay:<token>` and routes to `/cpq?...&replay_token=<token>`.
 - CPQ page startup sequence for replay:
-  1. set account context and ruleset from launch payload/query context,
-  2. wait exactly 2 seconds,
-  3. call the same **Start a new session** UI action (`startNewSessionFromUiAction` → `startConfiguration` → `/api/cpq/init`),
-  4. wait exactly 2 seconds,
+  1. open `/cpq` with launch payload/query context,
+  2. apply account code in the `/cpq` UI,
+  3. apply ruleset in the `/cpq` UI,
+  4. run `/api/cpq/init` only after both are applied in the UI,
   5. replay source options one-by-one through `/api/cpq/configure` using the existing feature/option remap functions.
 - Debug visibility for replay logs:
   - source IPN, target account/country/ruleset,
+  - account code applied + ruleset applied,
+  - init started + init completed/session id,
   - number of replay options,
-  - per-option match/remap + configure payload context.
+  - per-option replay + configure request,
+  - skipped options with reason.
 
 ## 8) Bike Builder layout + scroll behavior
 - Top controls are compacted (account/ruleset selectors + primary action buttons + retrieve input).

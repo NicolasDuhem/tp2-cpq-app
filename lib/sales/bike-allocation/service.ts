@@ -178,9 +178,9 @@ export async function updateAllocationCellStatus(input: {
     set
       active = ${toStatusBoolean(input.targetStatus)},
       updated_at = now()
-    where ruleset = ${ruleset}
-      and ipn_code = ${ipnCode}
-      and country_code = ${countryCode}
+    where coalesce(trim(ruleset), '') = ${ruleset}
+      and coalesce(trim(ipn_code), '') = ${ipnCode}
+      and coalesce(trim(country_code), '') = ${countryCode}
     returning id
   `) as Array<{ id: number }>;
 
@@ -217,9 +217,9 @@ export async function bulkUpdateAllocationStatus(input: {
     set
       active = ${toStatusBoolean(input.targetStatus)},
       updated_at = now()
-    where sr.ruleset = ${ruleset}
-      and sr.ipn_code in (select ipn_code from target_ipns)
-      and sr.country_code in (select country_code from target_countries)
+    where coalesce(trim(sr.ruleset), '') = ${ruleset}
+      and coalesce(trim(sr.ipn_code), '') in (select ipn_code from target_ipns)
+      and coalesce(trim(sr.country_code), '') in (select country_code from target_countries)
     returning id
   `) as Array<{ id: number }>;
 
@@ -245,9 +245,9 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
     sql`
       select id, ruleset, account_code, customer_id, currency, language, country_code, namespace, header_id, detail_id, json_result
       from CPQ_sampler_result
-      where ipn_code = ${ipnCode}
-        and ruleset = ${ruleset}
-      order by case when country_code = ${countryCode} then 0 else 1 end, updated_at desc, id desc
+      where coalesce(trim(ipn_code), '') = ${ipnCode}
+        and coalesce(trim(ruleset), '') = ${ruleset}
+      order by case when coalesce(trim(country_code), '') = ${countryCode} then 0 else 1 end, updated_at desc, id desc
       limit 25
     `,
   ]);
