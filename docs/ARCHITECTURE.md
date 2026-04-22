@@ -122,11 +122,15 @@ Additional route aliases:
 - Finalize response is **not** used as canonical save snapshot source (stored only as finalize metadata).
 - After canonical save succeeds, one support row is auto-saved to `CPQ_sampler_result` from the same source snapshot.
 - `CPQ_sampler_result.active` is the canonical active/inactive source for Sales bike allocation state.
+- Sales bike allocation UI rendering contract:
+  - `active=true` (at least one matching row) => green **Active**,
+  - matching rows exist with no active row => light red **Inactive**,
+  - no matching rows => grey **Not configured**.
 - Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
 - Sales `Not configured` launch into `/cpq` uses a replay-token handoff:
   - compact route params carry target context (`ruleset/country/account/ipn` + `replay_token`),
   - replay payload (selected options from sampler `json_result`) is stored in browser `sessionStorage`,
-  - `/cpq` startup reuses existing configure/remap machinery to replay source options into a fresh session.
+  - `/cpq` replay lifecycle is explicit and ordered: prefill context → wait 2s → run the same **Start a new session** UI action (`startNewSessionFromUiAction`) → wait 2s → replay options via existing remap + `/api/cpq/configure`.
 
 ## 6) Debug visibility
 

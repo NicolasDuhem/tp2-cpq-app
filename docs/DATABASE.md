@@ -94,7 +94,7 @@ This document treats the Neon CSV exports as source of truth:
 - Column end state is `active boolean not null default true`.
 - Sales matrix status rules:
   - any matching row with `active=true` ⇒ **Active**
-  - matching rows exist but all `active=false` ⇒ **Not active**
+  - matching rows exist but all `active=false` ⇒ **Inactive**
   - no matching row ⇒ **Not configured**
 - Sales toggles and bulk actions update the real `active` column (not `json_result.active`).
 

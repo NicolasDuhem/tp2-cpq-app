@@ -24,7 +24,7 @@ const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 function statusLabel(status: AllocationStatus): string {
   if (status === 'active') return 'Active';
-  if (status === 'not_active') return 'Not active';
+  if (status === 'not_active') return 'Inactive';
   return 'Not configured';
 }
 
@@ -201,7 +201,7 @@ export default function SalesBikeAllocationTableClient({
 
       setMessage({
         type: 'success',
-        text: `${row.ipnCode} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Not active'} (${payload.result.updatedCount} sampler row(s)).`,
+        text: `${row.ipnCode} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Inactive'} (${payload.result.updatedCount} sampler row(s)).`,
       });
       runRefresh();
     } catch (error) {
@@ -333,7 +333,7 @@ export default function SalesBikeAllocationTableClient({
       </section>
 
       <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Not active are clickable toggles. Not configured opens the CPQ configurator flow.
+        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow.
       </div>
 
       {message ? (
@@ -387,7 +387,7 @@ export default function SalesBikeAllocationTableClient({
                     >
                       <option value="all">All</option>
                       <option value="active">Active</option>
-                      <option value="not_active">Not active</option>
+                      <option value="not_active">Inactive</option>
                       <option value="not_configured">Not configured</option>
                     </select>
                   </th>
