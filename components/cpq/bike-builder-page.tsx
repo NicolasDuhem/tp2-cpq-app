@@ -1,6 +1,7 @@
 'use client';
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
 import {
   BikeBuilderContext,
@@ -282,6 +283,7 @@ const buildPreviewSelectedOptions = (parsed: NormalizedBikeBuilderState): Previe
 
 export default function BikeBuilderPage() {
   const { isAdminMode } = useAdminMode();
+  const searchParams = useSearchParams();
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
   const [rulesets, setRulesets] = useState<RulesetRecord[]>([]);
 
@@ -340,6 +342,7 @@ export default function BikeBuilderPage() {
     message: 'Idle',
   });
   const manualSessionClosedRef = useRef(false);
+  const initQueryAppliedRef = useRef(false);
   const [imageLayerResolution, setImageLayerResolution] = useState<ImageLayerResolution>({
     layers: [],
     matchedSelections: [],
@@ -508,6 +511,31 @@ export default function BikeBuilderPage() {
 
     void loadSetup();
   }, []);
+
+
+  useEffect(() => {
+    if (initQueryAppliedRef.current) return;
+    if (!accountContexts.length || !rulesets.length) return;
+
+    const requestedRuleset = (searchParams.get('ruleset') ?? '').trim();
+    const requestedAccountCode = (searchParams.get('account_code') ?? '').trim();
+    const requestedCountryCode = (searchParams.get('country_code') ?? '').trim().toUpperCase();
+
+    if (requestedRuleset) {
+      const matchedRuleset = rulesets.find((entry) => entry.cpq_ruleset === requestedRuleset);
+      if (matchedRuleset) setRuleset(matchedRuleset.cpq_ruleset);
+    }
+
+    if (requestedAccountCode) {
+      const matchedAccount = accountContexts.find((entry) => entry.account_code === requestedAccountCode);
+      if (matchedAccount) setAccountCode(matchedAccount.account_code);
+    } else if (requestedCountryCode) {
+      const matchedByCountry = accountContexts.find((entry) => (entry.country_code ?? '').trim().toUpperCase() === requestedCountryCode);
+      if (matchedByCountry) setAccountCode(matchedByCountry.account_code);
+    }
+
+    initQueryAppliedRef.current = true;
+  }, [accountContexts, rulesets, searchParams]);
 
   useEffect(() => {
     const loadIgnoredFeatures = async () => {
