@@ -20,11 +20,25 @@ export type BikeBuilderPagePrefill = {
   country_code?: string;
   ipn_code?: string;
   account_code?: string;
+  replay_token?: string;
 };
 
 type BikeBuilderPageProps = {
   prefill?: BikeBuilderPagePrefill;
 };
+
+type SalesLaunchReplayPayload = {
+  source?: string;
+  createdAt?: string;
+  launchIpnCode?: string;
+  targetCountryCode?: string;
+  ruleset?: string;
+  accountCode?: string | null;
+  selectedOptions?: Array<{ featureLabel?: string; optionLabel?: string; optionValue?: string }>;
+  sourceSamplerId?: number | null;
+  sourceCountryCode?: string | null;
+};
+const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -353,6 +367,11 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   });
   const manualSessionClosedRef = useRef(false);
   const initQueryAppliedRef = useRef(false);
+  const accountCodeRef = useRef('');
+  const rulesetRef = useRef('');
+  const replayLaunchAppliedRef = useRef(false);
+  const replayInProgressRef = useRef(false);
+  const stateRef = useRef<NormalizedBikeBuilderState | null>(null);
   const [imageLayerResolution, setImageLayerResolution] = useState<ImageLayerResolution>({
     layers: [],
     matchedSelections: [],
@@ -373,6 +392,15 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     () => accountContexts.find((entry) => entry.account_code === accountCode) ?? null,
     [accountCode, accountContexts],
   );
+  useEffect(() => {
+    accountCodeRef.current = accountCode;
+  }, [accountCode]);
+  useEffect(() => {
+    rulesetRef.current = ruleset;
+  }, [ruleset]);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   const availableCountryCodes = useMemo(
     () =>
       [...new Set(accountContexts.map((entry) => entry.country_code?.trim().toUpperCase()).filter((entry): entry is string => Boolean(entry)))]
@@ -428,6 +456,30 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     });
 
     return { response, payload: body };
+  };
+
+  const waitFor = async (predicate: () => boolean, timeoutMs = 2200, pollMs = 25) => {
+    const startedAt = Date.now();
+    while (!predicate()) {
+      if (Date.now() - startedAt > timeoutMs) return false;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    return true;
+  };
+
+  const loadSalesLaunchReplayPayload = (): SalesLaunchReplayPayload | null => {
+    if (typeof window === 'undefined') return null;
+    const token = (prefill?.replay_token ?? '').trim();
+    if (!token) return null;
+    const storageKey = `${CPQ_LAUNCH_REPLAY_STORAGE_PREFIX}${token}`;
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    window.sessionStorage.removeItem(storageKey);
+    try {
+      return JSON.parse(raw) as SalesLaunchReplayPayload;
+    } catch {
+      return null;
+    }
   };
 
   const startConfiguration = async () => {
@@ -548,6 +600,58 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   }, [accountContexts, rulesets, prefill]);
 
   useEffect(() => {
+    if (replayLaunchAppliedRef.current) return;
+    if (!accountContexts.length || !rulesets.length) return;
+    const replayToken = (prefill?.replay_token ?? '').trim();
+    if (!replayToken) return;
+
+    const replayPayload = loadSalesLaunchReplayPayload();
+    replayLaunchAppliedRef.current = true;
+    if (!replayPayload) return;
+
+    const runReplay = async () => {
+      replayInProgressRef.current = true;
+      try {
+        const requestedAccountCode = (replayPayload.accountCode ?? '').trim() || (prefill?.account_code ?? '').trim();
+        const requestedRuleset = (replayPayload.ruleset ?? '').trim() || (prefill?.ruleset ?? '').trim();
+        const matchedAccount = requestedAccountCode
+          ? accountContexts.find((entry) => entry.account_code === requestedAccountCode)
+          : null;
+        const matchedRuleset = requestedRuleset ? rulesets.find((entry) => entry.cpq_ruleset === requestedRuleset) : null;
+
+        if (matchedAccount) setAccountCode(matchedAccount.account_code);
+        if (matchedRuleset) setRuleset(matchedRuleset.cpq_ruleset);
+        await waitFor(
+          () =>
+            (!matchedAccount || accountCodeRef.current === matchedAccount.account_code) &&
+            (!matchedRuleset || rulesetRef.current === matchedRuleset.cpq_ruleset),
+        );
+
+        await startConfiguration();
+        const started = await waitFor(() => Boolean(stateRef.current?.sessionId), 3500, 30);
+        if (!started || !stateRef.current?.sessionId) return;
+
+        const replayTraceId = createTraceId();
+        const replayedState = await replaySalesLaunchOptions(replayPayload, stateRef.current, replayTraceId);
+        setState(replayedState);
+        const configureSnapshot: SamplerSourceSnapshot = {
+          source: 'configure',
+          capturedAt: new Date().toISOString(),
+          parsed: replayedState,
+          rawResponse: replayedState,
+        };
+        setLastSamplerSource(configureSnapshot);
+        setLatestConfigureSnapshot(configureSnapshot);
+      } finally {
+        replayInProgressRef.current = false;
+      }
+    };
+
+    void runReplay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountContexts, rulesets, prefill?.replay_token]);
+
+  useEffect(() => {
     const loadIgnoredFeatures = async () => {
       try {
         const response = await fetch('/api/cpq/setup/picture-management/ignored-features');
@@ -562,6 +666,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
   useEffect(() => {
     if (!selectedAccount || !ruleset) return;
+    if (replayInProgressRef.current) return;
     void startConfiguration();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountCode, ruleset]);
@@ -1366,6 +1471,111 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       return { option: best.option, strategy: 'fuzzy' as OptionMatchStrategy, evaluation: candidateEvaluations };
     }
     return { option: null, strategy: null, evaluation: candidateEvaluations };
+  };
+
+  const replaySalesLaunchOptions = async (
+    replayPayload: SalesLaunchReplayPayload,
+    seedState: NormalizedBikeBuilderState,
+    replayTraceId: string,
+  ) => {
+    const requestedOptions = (replayPayload.selectedOptions ?? [])
+      .map((entry) => ({
+        featureLabel: (entry.featureLabel ?? '').trim(),
+        optionLabel: (entry.optionLabel ?? '').trim(),
+        optionValue: (entry.optionValue ?? '').trim(),
+      }))
+      .filter((entry) => entry.featureLabel && entry.optionLabel && entry.optionValue);
+
+    console.info('[CPQ replay launch] starting replay', {
+      sourceIpn: replayPayload.launchIpnCode ?? prefill?.ipn_code ?? null,
+      targetCountryCode: replayPayload.targetCountryCode ?? prefill?.country_code ?? null,
+      accountCode: replayPayload.accountCode ?? prefill?.account_code ?? null,
+      ruleset: replayPayload.ruleset ?? prefill?.ruleset ?? null,
+      replayOptions: requestedOptions.length,
+      sourceSamplerId: replayPayload.sourceSamplerId ?? null,
+    });
+
+    if (!requestedOptions.length) return seedState;
+    let workingState = seedState;
+
+    for (const sourceOption of requestedOptions) {
+      const sourceCell: CombinationCell = {
+        stableFeatureKey: sourceOption.featureLabel,
+        featureLabel: sourceOption.featureLabel,
+        currentSessionFeatureId: '',
+        stableFeatureIdentity: {
+          featureLabel: sourceOption.featureLabel,
+        },
+        optionId: '',
+        optionLabel: sourceOption.optionLabel,
+        optionValue: sourceOption.optionValue,
+      };
+      const sourceColumn: CombinationFeatureColumn = {
+        stableFeatureKey: sourceOption.featureLabel,
+        featureLabel: sourceOption.featureLabel,
+        currentSessionFeatureId: '',
+        stableFeatureIdentity: {
+          featureLabel: sourceOption.featureLabel,
+        },
+      };
+
+      const featureRemap = resolveCurrentFeatureForRowSelection(sourceCell, workingState, sourceColumn);
+      if (!featureRemap.feature || !featureRemap.strategy) {
+        console.info('[CPQ replay launch] feature not matched', { sourceOption, sessionId: workingState.sessionId });
+        continue;
+      }
+      const optionRemap = resolveCurrentOptionWithinFeature(featureRemap.feature, sourceCell);
+      if (!optionRemap.option || !optionRemap.strategy) {
+        console.info('[CPQ replay launch] option not matched', {
+          sourceOption,
+          mappedFeatureLabel: featureRemap.feature.featureLabel,
+          sessionId: workingState.sessionId,
+        });
+        continue;
+      }
+
+      const mappedOption = optionRemap.option;
+      const mappedOptionValue = mappedOption.value ?? mappedOption.optionId;
+      const alreadySelected =
+        featureRemap.feature.selectedOptionId === mappedOption.optionId || featureRemap.feature.selectedValue === mappedOptionValue;
+      if (alreadySelected) continue;
+
+      console.info('[CPQ replay launch] configure', {
+        sourceOption,
+        mappedFeatureLabel: featureRemap.feature.featureLabel,
+        featureMatchStrategy: featureRemap.strategy,
+        mappedOptionLabel: mappedOption.label,
+        mappedOptionValue,
+        optionMatchStrategy: optionRemap.strategy,
+      });
+
+      const configure = await trackedFetch<CpqRouteResponse>(replayTraceId, 'SalesLaunchReplay:Configure', '/api/cpq/configure', {
+        sessionId: workingState.sessionId,
+        featureId: featureRemap.feature.featureId,
+        optionId: mappedOption.optionId,
+        optionValue: mappedOptionValue,
+        ruleset,
+        context: {
+          accountCode: selectedAccount?.account_code,
+          customerId: selectedAccount?.customer_id,
+          currency: selectedAccount?.currency,
+          language: selectedAccount?.language,
+          countryCode: selectedAccount?.country_code,
+        },
+      });
+      if (!configure.response.ok) {
+        console.info('[CPQ replay launch] configure failed', {
+          sourceOption,
+          mappedFeatureLabel: featureRemap.feature.featureLabel,
+          mappedOptionLabel: mappedOption.label,
+          error: configure.payload.error ?? 'Configure failed',
+        });
+        continue;
+      }
+      workingState = configure.payload.parsed;
+    }
+
+    return workingState;
   };
 
   const pushRowDiagnosticEvent = (rowId: string, event: RowDiagnosticEvent) => {

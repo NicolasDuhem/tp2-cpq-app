@@ -61,6 +61,23 @@ Canonical save and sampler snapshot payloads are sourced from:
   - finalize + canonical save + sampler support save per row-country execution,
   - row-level diagnostics include remap strategy, source/target feature+option identities, and explicit structured failure reasons when matching is unsafe.
 
+## Sales bike allocation flow
+- Matrix statuses are derived from `CPQ_sampler_result.active` (DB column, not `json_result.active`):
+  - `Active` (green) when at least one row for the IPN/ruleset/country is active.
+  - `Not active` (light red) when rows exist for the cell but all are inactive.
+  - `Not configured` (grey) when no sampler rows exist for that cell.
+- Clicking `Active` toggles to `Not active`; clicking `Not active` toggles back to `Active`.
+- Clicking `Not configured` resolves launch context and opens `/cpq` with deterministic replay:
+  1. apply account code context,
+  2. apply ruleset,
+  3. start a fresh configuration session,
+  4. replay bike options through standard `/api/cpq/configure`.
+- Replay source is sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`) using `featureLabel`, `optionLabel`, `optionValue`.
+- Sales→CPQ replay handoff uses session-scoped storage (`sessionStorage`) plus a compact `replay_token` query parameter (avoids oversized URLs).
+- Replay remap strategy reuses the existing Configure-all matching logic:
+  - exact + normalized + suffix-tolerant feature/option matching,
+  - cautious fuzzy fallback only for clear single-winner cases.
+
 ## Picture management layer order (feature-level)
 - Stored on `cpq_image_management.feature_layer_order` (integer, default `10`, valid `1..20`).
 - Maintained from **CPQ Setup → Picture management** at feature level via **Layer order (1 = top layer)**.

@@ -123,6 +123,10 @@ Additional route aliases:
 - After canonical save succeeds, one support row is auto-saved to `CPQ_sampler_result` from the same source snapshot.
 - `CPQ_sampler_result.active` is the canonical active/inactive source for Sales bike allocation state.
 - Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
+- Sales `Not configured` launch into `/cpq` uses a replay-token handoff:
+  - compact route params carry target context (`ruleset/country/account/ipn` + `replay_token`),
+  - replay payload (selected options from sampler `json_result`) is stored in browser `sessionStorage`,
+  - `/cpq` startup reuses existing configure/remap machinery to replay source options into a fresh session.
 
 ## 6) Debug visibility
 
