@@ -64,14 +64,15 @@ Canonical save and sampler snapshot payloads are sourced from:
 ## Sales bike allocation flow
 - Matrix statuses are derived from `CPQ_sampler_result.active` (DB column, not `json_result.active`):
   - `Active` (green) when at least one row for the IPN/ruleset/country is active.
-  - `Not active` (light red) when rows exist for the cell but all are inactive.
+  - `Inactive` (light red) when rows exist for the cell but all are inactive.
   - `Not configured` (grey) when no sampler rows exist for that cell.
-- Clicking `Active` toggles to `Not active`; clicking `Not active` toggles back to `Active`.
+- Clicking `Active` toggles to `Inactive`; clicking `Inactive` toggles back to `Active`.
 - Clicking `Not configured` resolves launch context and opens `/cpq` with deterministic replay:
-  1. apply account code context,
-  2. apply ruleset,
-  3. start a fresh configuration session,
-  4. replay bike options through standard `/api/cpq/configure`.
+  1. apply account code context, ruleset, and target country launch context,
+  2. wait 2 seconds,
+  3. run the same **Start a new session** action used by the manual UI button,
+  4. wait 2 seconds,
+  5. replay bike options through standard `/api/cpq/configure`.
 - Replay source is sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`) using `featureLabel`, `optionLabel`, `optionValue`.
 - Sales→CPQ replay handoff uses session-scoped storage (`sessionStorage`) plus a compact `replay_token` query parameter (avoids oversized URLs).
 - Replay remap strategy reuses the existing Configure-all matching logic:

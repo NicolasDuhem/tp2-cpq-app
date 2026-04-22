@@ -248,6 +248,7 @@ const fallbackRuleset = {
 const isDebugEnabled = process.env.NEXT_PUBLIC_CPQ_DEBUG === 'true';
 
 const createTraceId = () => crypto.randomUUID();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const normalizeComparableText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 const normalizeComparableLooseText = (value: string) => normalizeComparableText(value).replace(/[^\p{L}\p{N}\s]/gu, '');
@@ -549,6 +550,10 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     }
   };
 
+  const startNewSessionFromUiAction = async () => {
+    await startConfiguration();
+  };
+
   useEffect(() => {
     const loadSetup = async () => {
       try {
@@ -627,10 +632,45 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
             (!matchedRuleset || rulesetRef.current === matchedRuleset.cpq_ruleset),
         );
 
-        await startConfiguration();
+        appendDebugEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          traceId: createTraceId(),
+          action: 'SalesLaunchReplay:ContextPrepared',
+          route: 'local:sales-launch-replay',
+          request: {
+            sourceIpn: replayPayload.launchIpnCode ?? prefill?.ipn_code ?? null,
+            targetCountryCode: replayPayload.targetCountryCode ?? prefill?.country_code ?? null,
+            accountCode: requestedAccountCode || null,
+            ruleset: requestedRuleset || null,
+            sourceSamplerId: replayPayload.sourceSamplerId ?? null,
+            sourceCountryCode: replayPayload.sourceCountryCode ?? null,
+            selectedOptions: (replayPayload.selectedOptions ?? []).length,
+          },
+        });
+        await sleep(2000);
+        appendDebugEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          traceId: createTraceId(),
+          action: 'SalesLaunchReplay:StartNewSessionViaUiAction',
+          route: 'local:sales-launch-replay',
+        });
+        await startNewSessionFromUiAction();
+        await sleep(2000);
         const started = await waitFor(() => Boolean(stateRef.current?.sessionId), 3500, 30);
         if (!started || !stateRef.current?.sessionId) return;
 
+        appendDebugEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          traceId: createTraceId(),
+          action: 'SalesLaunchReplay:SessionStarted',
+          route: 'local:sales-launch-replay',
+          response: {
+            sessionId: stateRef.current.sessionId,
+          },
+        });
         const replayTraceId = createTraceId();
         const replayedState = await replaySalesLaunchOptions(replayPayload, stateRef.current, replayTraceId);
         setState(replayedState);
@@ -663,13 +703,6 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     };
     void loadIgnoredFeatures();
   }, []);
-
-  useEffect(() => {
-    if (!selectedAccount || !ruleset) return;
-    if (replayInProgressRef.current) return;
-    void startConfiguration();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountCode, ruleset]);
 
   useEffect(() => {
     setCombinationDataset(null);
@@ -1499,6 +1532,17 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     let workingState = seedState;
 
     for (const sourceOption of requestedOptions) {
+      appendDebugEntry({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        traceId: replayTraceId,
+        action: 'SalesLaunchReplay:ReplayOption',
+        route: 'local:sales-launch-replay',
+        request: {
+          sessionId: workingState.sessionId,
+          sourceOption,
+        },
+      });
       const sourceCell: CombinationCell = {
         stableFeatureKey: sourceOption.featureLabel,
         featureLabel: sourceOption.featureLabel,
@@ -1522,6 +1566,14 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       const featureRemap = resolveCurrentFeatureForRowSelection(sourceCell, workingState, sourceColumn);
       if (!featureRemap.feature || !featureRemap.strategy) {
         console.info('[CPQ replay launch] feature not matched', { sourceOption, sessionId: workingState.sessionId });
+        appendDebugEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          traceId: replayTraceId,
+          action: 'SalesLaunchReplay:FeatureNotMatched',
+          route: 'local:sales-launch-replay',
+          request: { sourceOption, sessionId: workingState.sessionId },
+        });
         continue;
       }
       const optionRemap = resolveCurrentOptionWithinFeature(featureRemap.feature, sourceCell);
@@ -1530,6 +1582,18 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           sourceOption,
           mappedFeatureLabel: featureRemap.feature.featureLabel,
           sessionId: workingState.sessionId,
+        });
+        appendDebugEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          traceId: replayTraceId,
+          action: 'SalesLaunchReplay:OptionNotMatched',
+          route: 'local:sales-launch-replay',
+          request: {
+            sourceOption,
+            mappedFeatureLabel: featureRemap.feature.featureLabel,
+            sessionId: workingState.sessionId,
+          },
         });
         continue;
       }
@@ -2361,8 +2425,12 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           </label>
 
           <div style={styles.actionButtonsWrap}>
-            <button style={styles.button} onClick={() => void startConfiguration()} disabled={requestState.loading || bulkProgress.running}>
-              {requestState.loading ? 'Starting…' : 'Start New Session'}
+            <button
+              style={styles.button}
+              onClick={() => void startNewSessionFromUiAction()}
+              disabled={requestState.loading || bulkProgress.running}
+            >
+              {requestState.loading ? 'Starting…' : 'Start a new session'}
             </button>
             <button
               style={styles.button}

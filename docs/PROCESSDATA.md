@@ -177,11 +177,11 @@ Per selected **row-country** pair:
   - no rows => `not_configured`.
 - UI pill mapping:
   - `Active` (green),
-  - `Not active` (light red),
+  - `Inactive` (light red),
   - `Not configured` (grey).
 - Toggle actions:
   - click `Active` => update DB rows to `active=false` (`not_active`),
-  - click `Not active` => update DB rows to `active=true` (`active`).
+  - click `Inactive` => update DB rows to `active=true` (`active`).
 
 ### Not configured → `/cpq` launch replay
 - Route: `POST /api/sales/bike-allocation/launch-context`.
@@ -190,10 +190,11 @@ Per selected **row-country** pair:
   - replay option list from sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`).
 - Sales page stores replay payload in `sessionStorage` under `tp2-cpq-launch-replay:<token>` and routes to `/cpq?...&replay_token=<token>`.
 - CPQ page startup sequence for replay:
-  1. set account context and wait for state settle signal,
-  2. set ruleset and wait for state settle signal,
-  3. call StartConfiguration (`/api/cpq/init`),
-  4. replay source options one-by-one through `/api/cpq/configure` using existing remap logic.
+  1. set account context and ruleset from launch payload/query context,
+  2. wait exactly 2 seconds,
+  3. call the same **Start a new session** UI action (`startNewSessionFromUiAction` → `startConfiguration` → `/api/cpq/init`),
+  4. wait exactly 2 seconds,
+  5. replay source options one-by-one through `/api/cpq/configure` using the existing feature/option remap functions.
 - Debug visibility for replay logs:
   - source IPN, target account/country/ruleset,
   - number of replay options,
