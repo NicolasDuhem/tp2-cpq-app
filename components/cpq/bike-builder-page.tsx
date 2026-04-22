@@ -1,7 +1,6 @@
 'use client';
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
 import {
   BikeBuilderContext,
@@ -13,6 +12,18 @@ import {
 type RequestState = {
   loading: boolean;
   error?: string;
+};
+
+
+export type BikeBuilderPagePrefill = {
+  ruleset?: string;
+  country_code?: string;
+  ipn_code?: string;
+  account_code?: string;
+};
+
+type BikeBuilderPageProps = {
+  prefill?: BikeBuilderPagePrefill;
 };
 
 type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -281,9 +292,8 @@ const buildPreviewSelectedOptions = (parsed: NormalizedBikeBuilderState): Previe
     })
     .filter((entry): entry is PreviewSelectedOption => Boolean(entry));
 
-export default function BikeBuilderPage() {
+export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   const { isAdminMode } = useAdminMode();
-  const searchParams = useSearchParams();
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
   const [rulesets, setRulesets] = useState<RulesetRecord[]>([]);
 
@@ -517,9 +527,9 @@ export default function BikeBuilderPage() {
     if (initQueryAppliedRef.current) return;
     if (!accountContexts.length || !rulesets.length) return;
 
-    const requestedRuleset = (searchParams.get('ruleset') ?? '').trim();
-    const requestedAccountCode = (searchParams.get('account_code') ?? '').trim();
-    const requestedCountryCode = (searchParams.get('country_code') ?? '').trim().toUpperCase();
+    const requestedRuleset = (prefill?.ruleset ?? '').trim();
+    const requestedAccountCode = (prefill?.account_code ?? '').trim();
+    const requestedCountryCode = (prefill?.country_code ?? '').trim().toUpperCase();
 
     if (requestedRuleset) {
       const matchedRuleset = rulesets.find((entry) => entry.cpq_ruleset === requestedRuleset);
@@ -535,7 +545,7 @@ export default function BikeBuilderPage() {
     }
 
     initQueryAppliedRef.current = true;
-  }, [accountContexts, rulesets, searchParams]);
+  }, [accountContexts, rulesets, prefill]);
 
   useEffect(() => {
     const loadIgnoredFeatures = async () => {
