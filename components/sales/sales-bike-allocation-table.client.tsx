@@ -20,6 +20,7 @@ type Props = {
 
 type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
 type Message = { type: 'success' | 'error'; text: string } | null;
+const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 function statusLabel(status: AllocationStatus): string {
   if (status === 'active') return 'Active';
@@ -125,7 +126,17 @@ export default function SalesBikeAllocationTableClient({
         });
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string;
-          resolved?: { ruleset: string; accountCode: string | null; countryCode: string; ipnCode: string };
+          resolved?: {
+            ruleset: string;
+            accountCode: string | null;
+            countryCode: string;
+            ipnCode: string;
+            replay?: {
+              sourceSamplerId: number | null;
+              sourceCountryCode: string | null;
+              selectedOptions: Array<{ featureLabel: string; optionLabel: string; optionValue: string }>;
+            };
+          };
         };
         if (!response.ok || !payload.resolved) {
           throw new Error(payload.error ?? 'Failed to resolve CPQ launch context');
@@ -136,6 +147,22 @@ export default function SalesBikeAllocationTableClient({
         cpqParams.set('country_code', payload.resolved.countryCode);
         cpqParams.set('ipn_code', payload.resolved.ipnCode);
         if (payload.resolved.accountCode) cpqParams.set('account_code', payload.resolved.accountCode);
+        const replayToken = crypto.randomUUID();
+        cpqParams.set('replay_token', replayToken);
+        if (typeof window !== 'undefined') {
+          const replayPayload = {
+            source: 'sales-bike-allocation-not-configured',
+            createdAt: new Date().toISOString(),
+            launchIpnCode: row.ipnCode,
+            targetCountryCode: payload.resolved.countryCode,
+            ruleset: payload.resolved.ruleset,
+            accountCode: payload.resolved.accountCode,
+            selectedOptions: payload.resolved.replay?.selectedOptions ?? [],
+            sourceSamplerId: payload.resolved.replay?.sourceSamplerId ?? null,
+            sourceCountryCode: payload.resolved.replay?.sourceCountryCode ?? null,
+          };
+          window.sessionStorage.setItem(`${CPQ_LAUNCH_REPLAY_STORAGE_PREFIX}${replayToken}`, JSON.stringify(replayPayload));
+        }
 
         router.push(`/cpq?${cpqParams.toString()}`);
       } catch (error) {

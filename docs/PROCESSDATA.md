@@ -167,7 +167,39 @@ Per selected **row-country** pair:
   - Bulk current feature
 - CPQ debug timeline is admin-only.
 
-## 7) Bike Builder layout + scroll behavior
+## 7) Sales allocation matrix + replay launch
+
+### Status aggregation + rendering contract
+- Sales matrix status is aggregated per `(ruleset, ipn_code, country_code)` from `CPQ_sampler_result.active`.
+- Aggregation semantics:
+  - any active row => `active`,
+  - no active rows but at least one row exists => `not_active`,
+  - no rows => `not_configured`.
+- UI pill mapping:
+  - `Active` (green),
+  - `Not active` (light red),
+  - `Not configured` (grey).
+- Toggle actions:
+  - click `Active` => update DB rows to `active=false` (`not_active`),
+  - click `Not active` => update DB rows to `active=true` (`active`).
+
+### Not configured → `/cpq` launch replay
+- Route: `POST /api/sales/bike-allocation/launch-context`.
+- Resolved payload includes:
+  - `ruleset`, `countryCode`, `accountCode`, `ipnCode`,
+  - replay option list from sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`).
+- Sales page stores replay payload in `sessionStorage` under `tp2-cpq-launch-replay:<token>` and routes to `/cpq?...&replay_token=<token>`.
+- CPQ page startup sequence for replay:
+  1. set account context and wait for state settle signal,
+  2. set ruleset and wait for state settle signal,
+  3. call StartConfiguration (`/api/cpq/init`),
+  4. replay source options one-by-one through `/api/cpq/configure` using existing remap logic.
+- Debug visibility for replay logs:
+  - source IPN, target account/country/ruleset,
+  - number of replay options,
+  - per-option match/remap + configure payload context.
+
+## 8) Bike Builder layout + scroll behavior
 - Top controls are compacted (account/ruleset selectors + primary action buttons + retrieve input).
 - Main workspace uses a desktop two-column layout: configurator (left) and layered preview (right).
 - Configurator has internal scroll for long feature lists.

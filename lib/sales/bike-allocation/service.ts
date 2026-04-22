@@ -18,13 +18,19 @@ type SamplerRow = {
   namespace: string | null;
   header_id: string | null;
   detail_id: string | null;
-  active: boolean;
+  active: boolean | string | number | null;
   json_result: unknown;
 };
 
 type ParsedOption = {
   featureLabel: string;
   resolvedValue: string;
+};
+
+type ReplaySelectedOption = {
+  featureLabel: string;
+  optionLabel: string;
+  optionValue: string;
 };
 
 export type SalesBikeAllocationFilterOptions = {
@@ -50,6 +56,7 @@ export type SalesBikeAllocationPageData = {
 };
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
+const asBoolean = (value: unknown) => value === true || value === 'true' || value === 't' || value === 1 || value === '1';
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value) return {};
@@ -80,6 +87,35 @@ function parseSelectedOptions(jsonResult: unknown): ParsedOption[] {
       return { featureLabel, resolvedValue };
     })
     .filter((item) => item.featureLabel && item.resolvedValue);
+}
+
+function parseReplaySelectedOptions(jsonResult: unknown): ReplaySelectedOption[] {
+  const payload = toRecord(jsonResult);
+  const selectedOptions = Array.isArray(payload.selectedOptions) ? payload.selectedOptions : [];
+  const dropdownSnapshot = Array.isArray(payload.dropdownOrderSnapshot) ? payload.dropdownOrderSnapshot : [];
+
+  const parsedFromSelected = selectedOptions
+    .map((raw) => {
+      const record = (raw ?? {}) as Record<string, unknown>;
+      const featureLabel = asTrimmed(record.featureLabel ?? record.feature_label);
+      const optionLabel = asTrimmed(record.optionLabel ?? record.option_label);
+      const optionValue = asTrimmed(record.optionValue ?? record.option_value ?? optionLabel);
+      if (!featureLabel || !optionLabel || !optionValue) return null;
+      return { featureLabel, optionLabel, optionValue };
+    })
+    .filter((entry): entry is ReplaySelectedOption => Boolean(entry));
+  if (parsedFromSelected.length > 0) return parsedFromSelected;
+
+  return dropdownSnapshot
+    .map((raw) => {
+      const record = (raw ?? {}) as Record<string, unknown>;
+      const featureLabel = asTrimmed(record.featureLabel ?? record.feature_label);
+      const optionLabel = asTrimmed(record.selectedOptionLabel ?? record.optionLabel ?? record.option_label);
+      const optionValue = asTrimmed(record.selectedOptionValue ?? record.optionValue ?? record.option_value ?? optionLabel);
+      if (!featureLabel || !optionLabel || !optionValue) return null;
+      return { featureLabel, optionLabel, optionValue };
+    })
+    .filter((entry): entry is ReplaySelectedOption => Boolean(entry));
 }
 
 async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
@@ -207,7 +243,7 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
   const [accountRows, samplerRows] = await Promise.all([
     listAccountContexts(true),
     sql`
-      select id, ruleset, account_code, customer_id, currency, language, country_code, namespace, header_id, detail_id
+      select id, ruleset, account_code, customer_id, currency, language, country_code, namespace, header_id, detail_id, json_result
       from CPQ_sampler_result
       where ipn_code = ${ipnCode}
         and ruleset = ${ruleset}
@@ -227,11 +263,13 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
     namespace: string | null;
     header_id: string | null;
     detail_id: string | null;
+    json_result: unknown;
   }>;
 
   const accountByCountry = accountRows.find((row) => asTrimmed(row.country_code) === countryCode);
   const sameCountrySampler = samplerCandidates.find((row) => asTrimmed(row.country_code) === countryCode);
   const fallbackSampler = samplerCandidates[0] ?? null;
+  const replaySourceSampler = sameCountrySampler ?? fallbackSampler;
 
   const resolvedAccountCode =
     asTrimmed(accountByCountry?.account_code) ||
@@ -251,6 +289,17 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
           : fallbackSampler
             ? 'sampler-fallback'
             : 'ruleset-only',
+    replay: replaySourceSampler
+      ? {
+          sourceSamplerId: replaySourceSampler.id,
+          sourceCountryCode: asTrimmed(replaySourceSampler.country_code) || null,
+          selectedOptions: parseReplaySelectedOptions(replaySourceSampler.json_result),
+        }
+      : {
+          sourceSamplerId: null,
+          sourceCountryCode: null,
+          selectedOptions: [],
+        },
   };
 }
 
@@ -304,7 +353,7 @@ export async function getSalesBikeAllocationPageData(
     if (!countryCode) continue;
 
     const existingStatus = matrixRow.countryStatuses[countryCode];
-    if (row.active) {
+    if (asBoolean(row.active)) {
       matrixRow.countryStatuses[countryCode] = 'active';
       continue;
     }

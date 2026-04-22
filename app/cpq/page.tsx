@@ -19,6 +19,7 @@ export default function CpqPage({ searchParams }: CpqPageProps) {
     country_code: readSearchParam(searchParams, 'country_code'),
     ipn_code: readSearchParam(searchParams, 'ipn_code'),
     account_code: readSearchParam(searchParams, 'account_code'),
+    replay_token: readSearchParam(searchParams, 'replay_token'),
   };
 
   return <BikeBuilderPage prefill={prefill} />;
