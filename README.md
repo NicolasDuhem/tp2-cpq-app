@@ -17,6 +17,11 @@ CPQ-focused Next.js app for manual lifecycle operations, setup/admin data, sampl
 5. Auto support save into `CPQ_sampler_result` (`/api/cpq/sampler-result`)
 6. Retrieve by `configuration_reference` (`/api/cpq/retrieve-configuration`)
 
+### `/cpq` init trigger contract
+- `/cpq` re-runs `StartConfiguration` (`/api/cpq/init`) whenever the selected **Account Code** changes.
+- `/cpq` re-runs `StartConfiguration` (`/api/cpq/init`) whenever the selected **Ruleset** changes.
+- The init request uses the exact account/ruleset values already applied in the UI selectors (never a pre-UI value).
+
 ### Save-source rule
 Canonical save and sampler snapshot payloads are sourced from:
 - latest Configure snapshot, else
@@ -68,11 +73,11 @@ Canonical save and sampler snapshot payloads are sourced from:
   - `Not configured` (grey) when no sampler rows exist for that cell.
 - Clicking `Active` toggles to `Inactive`; clicking `Inactive` toggles back to `Active`.
 - Clicking `Not configured` resolves launch context and opens `/cpq` with deterministic replay:
-  1. apply account code context, ruleset, and target country launch context,
-  2. wait 2 seconds,
-  3. run the same **Start a new session** action used by the manual UI button,
-  4. wait 2 seconds,
-  5. replay bike options through standard `/api/cpq/configure`.
+  1. open `/cpq` with launch context,
+  2. apply account code in the CPQ UI,
+  3. apply ruleset in the CPQ UI,
+  4. once both UI values are applied, run `/api/cpq/init`,
+  5. after init/session is ready, replay bike options through standard `/api/cpq/configure`.
 - Replay source is sampler `json_result.selectedOptions` (fallback: `dropdownOrderSnapshot`) using `featureLabel`, `optionLabel`, `optionValue`.
 - Sales→CPQ replay handoff uses session-scoped storage (`sessionStorage`) plus a compact `replay_token` query parameter (avoids oversized URLs).
 - Replay remap strategy reuses the existing Configure-all matching logic:

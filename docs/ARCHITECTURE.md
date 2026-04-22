@@ -127,10 +127,11 @@ Additional route aliases:
   - matching rows exist with no active row => light red **Inactive**,
   - no matching rows => grey **Not configured**.
 - Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
+- `/cpq` runtime re-runs `/api/cpq/init` whenever account code or ruleset changes, using the currently applied UI values.
 - Sales `Not configured` launch into `/cpq` uses a replay-token handoff:
   - compact route params carry target context (`ruleset/country/account/ipn` + `replay_token`),
   - replay payload (selected options from sampler `json_result`) is stored in browser `sessionStorage`,
-  - `/cpq` replay lifecycle is explicit and ordered: prefill context → wait 2s → run the same **Start a new session** UI action (`startNewSessionFromUiAction`) → wait 2s → replay options via existing remap + `/api/cpq/configure`.
+  - `/cpq` replay lifecycle is explicit and ordered: prefill/apply context in UI → auto init after UI values are applied → replay options via existing remap + `/api/cpq/configure`.
 
 ## 6) Debug visibility
 
