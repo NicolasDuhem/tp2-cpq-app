@@ -11,7 +11,6 @@ type SamplerRow = {
   ruleset: string | null;
   country_code: string | null;
   json_result: unknown;
-  active: boolean | null;
 };
 
 type ParsedOption = {
@@ -42,8 +41,46 @@ export type SalesBikeAllocationPageData = {
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
 
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+      return {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  return {};
+}
+
+function parseBooleanLike(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['true', '1', 'yes', 'y', 'active'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'inactive', 'not_active'].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function resolveConfiguredStatus(jsonResult: unknown): AllocationStatus {
+  const payload = toRecord(jsonResult);
+  const activeCandidate =
+    parseBooleanLike(payload.active) ??
+    parseBooleanLike(payload.is_active) ??
+    parseBooleanLike(payload.enabled) ??
+    parseBooleanLike(payload.isEnabled);
+
+  return activeCandidate === false ? 'not_active' : 'active';
+}
+
 function parseSelectedOptions(jsonResult: unknown): ParsedOption[] {
-  const payload = (jsonResult ?? {}) as { selectedOptions?: unknown };
+  const payload = toRecord(jsonResult);
   if (!Array.isArray(payload.selectedOptions)) return [];
 
   return payload.selectedOptions
@@ -79,8 +116,7 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
       ipn_code,
       ruleset,
       country_code,
-      json_result,
-      active
+      json_result
     from CPQ_sampler_result
     where coalesce(trim(ipn_code), '') <> ''
       and (${ruleset} = '' or ruleset = ${ruleset})
@@ -143,7 +179,7 @@ export async function getSalesBikeAllocationPageData(
     const existingStatus = matrixRow.countryStatuses[countryCode];
     if (existingStatus === 'active') continue;
 
-    matrixRow.countryStatuses[countryCode] = row.active ? 'active' : 'not_active';
+    matrixRow.countryStatuses[countryCode] = resolveConfiguredStatus(row.json_result);
   }
 
   const orderedFeatures = [...availableFeatures].sort((a, b) => a.localeCompare(b));
