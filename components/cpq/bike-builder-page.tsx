@@ -149,8 +149,21 @@ type CombinationFeatureFilterGroup = {
 };
 
 type RowExecutionStatus = 'pending' | 'running' | 'configured' | 'finalized' | 'saved' | 'failed';
-type FeatureMatchStrategy = 'stable-identity' | 'exact-label' | 'normalized-label' | 'suffix-tolerant-label' | 'fuzzy';
-type OptionMatchStrategy = 'exact-value' | 'normalized-value' | 'exact-label' | 'normalized-label' | 'fuzzy';
+type FeatureMatchStrategy =
+  | 'exact-label'
+  | 'normalized-label'
+  | 'suffix-tolerant-label'
+  | 'exact-question'
+  | 'normalized-question'
+  | 'fuzzy';
+type OptionMatchStrategy =
+  | 'exact-value'
+  | 'normalized-value'
+  | 'suffix-tolerant-value'
+  | 'exact-label'
+  | 'normalized-label'
+  | 'stripped-price-label'
+  | 'fuzzy';
 type BulkExecutionStage =
   | 'StartConfiguration'
   | 'Feature remap'
@@ -214,6 +227,7 @@ const normalizeComparableText = (value: string) => value.trim().toLowerCase().re
 const normalizeComparableLooseText = (value: string) => normalizeComparableText(value).replace(/[^\p{L}\p{N}\s]/gu, '');
 const stripLocaleSuffix = (value: string) =>
   normalizeComparableLooseText(value).replace(/(?:[_-][a-z]{2,3}(?:[_-][a-z]{2,3})?)$/i, '');
+const stripPriceText = (value: string) => value.replace(/\s*[-–—]\s*\d+(?:[.,]\d+)?\s*$/u, '').trim();
 
 const computeTokenSimilarity = (left: string, right: string) => {
   const leftTokens = new Set(stripLocaleSuffix(left).split(' ').filter(Boolean));
@@ -1168,124 +1182,152 @@ export default function BikeBuilderPage() {
     const visibleFeatures = currentState.features.filter((feature) => feature.isVisible !== false);
     const normalizedTargetLooseLabel = normalizeComparableLooseText(column.stableFeatureIdentity.featureLabel);
     const suffixTolerantTargetLabel = stripLocaleSuffix(column.stableFeatureIdentity.featureLabel);
-    const normalizedTargetName = column.stableFeatureIdentity.featureName
-      ? normalizeComparableText(column.stableFeatureIdentity.featureName)
-      : undefined;
     const normalizedTargetQuestion = column.stableFeatureIdentity.featureQuestion
       ? normalizeComparableText(column.stableFeatureIdentity.featureQuestion)
       : undefined;
-
-    const stableIdentityMatches = visibleFeatures.filter((feature) => {
-      const identity = buildStableFeatureIdentity(feature);
-      return (
-        (normalizedTargetName && identity.featureName?.toLowerCase() === normalizedTargetName) ||
-        (normalizedTargetQuestion && identity.featureQuestion?.toLowerCase() === normalizedTargetQuestion) ||
-        (column.stableFeatureIdentity.featureSequence !== undefined &&
+    const candidateEvaluations = visibleFeatures
+      .map((feature) => {
+        const identity = buildStableFeatureIdentity(feature);
+        const exactLabelMatch = feature.featureLabel.trim() === column.stableFeatureIdentity.featureLabel.trim();
+        const normalizedLabelMatch = normalizeComparableLooseText(feature.featureLabel) === normalizedTargetLooseLabel;
+        const suffixTolerantLabelMatch = stripLocaleSuffix(feature.featureLabel) === suffixTolerantTargetLabel;
+        const exactQuestionMatch =
+          Boolean(column.stableFeatureIdentity.featureQuestion) &&
+          (identity.featureQuestion ?? '').trim() === (column.stableFeatureIdentity.featureQuestion ?? '').trim();
+        const normalizedQuestionMatch =
+          Boolean(normalizedTargetQuestion) &&
+          normalizeComparableText(identity.featureQuestion ?? '') === normalizedTargetQuestion;
+        const sequenceMatch =
+          column.stableFeatureIdentity.featureSequence !== undefined &&
           identity.featureSequence !== undefined &&
-          identity.featureSequence === column.stableFeatureIdentity.featureSequence)
-      );
-    });
-    if (stableIdentityMatches.length === 1) {
-      return { feature: stableIdentityMatches[0], strategy: 'stable-identity' as FeatureMatchStrategy, candidates: stableIdentityMatches };
-    }
-
-    const exactLabelMatches = visibleFeatures.filter((feature) => feature.featureLabel.trim() === column.stableFeatureIdentity.featureLabel.trim());
-    if (exactLabelMatches.length === 1) {
-      return { feature: exactLabelMatches[0], strategy: 'exact-label' as FeatureMatchStrategy, candidates: exactLabelMatches };
-    }
-
-    const normalizedLabelMatches = visibleFeatures.filter(
-      (feature) => normalizeComparableLooseText(feature.featureLabel) === normalizedTargetLooseLabel,
-    );
-    if (normalizedLabelMatches.length === 1) {
-      return { feature: normalizedLabelMatches[0], strategy: 'normalized-label' as FeatureMatchStrategy, candidates: normalizedLabelMatches };
-    }
-
-    const suffixTolerantMatches = visibleFeatures.filter(
-      (feature) => stripLocaleSuffix(feature.featureLabel) === suffixTolerantTargetLabel,
-    );
-    if (suffixTolerantMatches.length === 1) {
-      return { feature: suffixTolerantMatches[0], strategy: 'suffix-tolerant-label' as FeatureMatchStrategy, candidates: suffixTolerantMatches };
-    }
-
-    const fuzzyCandidates = visibleFeatures
-      .map((feature) => ({
-        feature,
-        score: Math.max(
+          identity.featureSequence === column.stableFeatureIdentity.featureSequence;
+        const fuzzyScore = Math.max(
           computeTokenSimilarity(column.stableFeatureIdentity.featureLabel, feature.featureLabel),
           computeTokenSimilarity(rowCell.featureLabel, feature.featureLabel),
-        ),
-      }))
-      .filter((entry) => entry.score >= 0.8)
-      .sort((a, b) => b.score - a.score);
-
-    if (fuzzyCandidates.length > 0) {
-      const [best, second] = fuzzyCandidates;
-      if (best && (!second || best.score - second.score >= 0.15)) {
+          computeTokenSimilarity(column.stableFeatureIdentity.featureQuestion ?? '', identity.featureQuestion ?? ''),
+        );
         return {
-          feature: best.feature,
-          strategy: 'fuzzy' as FeatureMatchStrategy,
-          candidates: fuzzyCandidates.slice(0, 5).map((entry) => entry.feature),
+          feature,
+          featureId: feature.featureId,
+          featureLabel: feature.featureLabel,
+          featureName: feature.featureName ?? '',
+          exactLabelMatch,
+          normalizedLabelMatch,
+          suffixTolerantLabelMatch,
+          exactQuestionMatch,
+          normalizedQuestionMatch,
+          sequenceMatch,
+          fuzzyScore,
+          finalAccepted: false,
+          acceptedStrategy: null as FeatureMatchStrategy | null,
         };
+      })
+      .sort((a, b) => b.fuzzyScore - a.fuzzyScore);
+
+    const acceptSingle = (predicate: (candidate: (typeof candidateEvaluations)[number]) => boolean, strategy: FeatureMatchStrategy) => {
+      const matches = candidateEvaluations.filter(predicate);
+      if (matches.length === 1) {
+        matches[0].finalAccepted = true;
+        matches[0].acceptedStrategy = strategy;
+        return { feature: matches[0].feature, strategy };
       }
+      return null;
+    };
+
+    const exactLabelWinner = acceptSingle((c) => c.exactLabelMatch, 'exact-label');
+    if (exactLabelWinner) return { ...exactLabelWinner, candidates: visibleFeatures, evaluation: candidateEvaluations };
+    const normalizedLabelWinner = acceptSingle((c) => c.normalizedLabelMatch, 'normalized-label');
+    if (normalizedLabelWinner) return { ...normalizedLabelWinner, candidates: visibleFeatures, evaluation: candidateEvaluations };
+    const suffixTolerantLabelWinner = acceptSingle((c) => c.suffixTolerantLabelMatch, 'suffix-tolerant-label');
+    if (suffixTolerantLabelWinner) return { ...suffixTolerantLabelWinner, candidates: visibleFeatures, evaluation: candidateEvaluations };
+    const exactQuestionWinner = acceptSingle((c) => c.exactQuestionMatch, 'exact-question');
+    if (exactQuestionWinner) return { ...exactQuestionWinner, candidates: visibleFeatures, evaluation: candidateEvaluations };
+    const normalizedQuestionWinner = acceptSingle((c) => c.normalizedQuestionMatch, 'normalized-question');
+    if (normalizedQuestionWinner) return { ...normalizedQuestionWinner, candidates: visibleFeatures, evaluation: candidateEvaluations };
+
+    const fuzzyCandidates = candidateEvaluations.filter((entry) => entry.fuzzyScore >= 0.8);
+    const [best, second] = fuzzyCandidates;
+    if (best && (!second || best.fuzzyScore - second.fuzzyScore >= 0.15)) {
+      best.finalAccepted = true;
+      best.acceptedStrategy = 'fuzzy';
+      return { feature: best.feature, strategy: 'fuzzy' as FeatureMatchStrategy, candidates: visibleFeatures, evaluation: candidateEvaluations };
     }
 
-    const fallbackBySource = visibleFeatures.find(
-      (feature) =>
-        normalizeComparableText(feature.featureLabel) === normalizeComparableText(rowCell.featureLabel) ||
-        feature.featureId === rowCell.currentSessionFeatureId,
-    );
-    if (fallbackBySource) {
-      return { feature: fallbackBySource, strategy: 'normalized-label' as FeatureMatchStrategy, candidates: [fallbackBySource] };
-    }
-    return { feature: null, strategy: null, candidates: visibleFeatures };
+    return { feature: null, strategy: null, candidates: visibleFeatures, evaluation: candidateEvaluations };
   };
 
   const resolveCurrentOptionWithinFeature = (feature: NormalizedBikeBuilderState['features'][number], rowCell: CombinationCell) => {
     const normalizedRowOptionValue = normalizeComparableLooseText(rowCell.optionValue);
     const normalizedRowOptionLabel = normalizeComparableLooseText(rowCell.optionLabel);
+    const sourceStrippedPriceLabel = stripPriceText(rowCell.optionLabel);
+    const normalizedSourceStrippedPriceLabel = normalizeComparableLooseText(sourceStrippedPriceLabel);
     const suffixTolerantRowOptionValue = stripLocaleSuffix(rowCell.optionValue);
-    const suffixTolerantRowOptionLabel = stripLocaleSuffix(rowCell.optionLabel);
-    const exactValueMatches = feature.availableOptions.filter((option) => (option.value ?? option.optionId) === rowCell.optionValue);
-    if (exactValueMatches.length === 1) return { option: exactValueMatches[0], strategy: 'exact-value' as OptionMatchStrategy };
 
-    const normalizedValueMatches = feature.availableOptions.filter(
-      (option) => normalizeComparableLooseText(option.value ?? option.optionId) === normalizedRowOptionValue,
-    );
-    if (normalizedValueMatches.length === 1) return { option: normalizedValueMatches[0], strategy: 'normalized-value' as OptionMatchStrategy };
+    const candidateEvaluations = feature.availableOptions
+      .map((option) => {
+        const optionValue = option.value ?? option.optionId;
+        const targetStrippedPriceLabel = stripPriceText(option.label);
+        const exactValueMatch = optionValue === rowCell.optionValue;
+        const normalizedValueMatch = normalizeComparableLooseText(optionValue) === normalizedRowOptionValue;
+        const suffixTolerantValueMatch = stripLocaleSuffix(optionValue) === suffixTolerantRowOptionValue;
+        const exactLabelMatch = option.label.trim() === rowCell.optionLabel.trim();
+        const normalizedLabelMatch = normalizeComparableLooseText(option.label) === normalizedRowOptionLabel;
+        const strippedPriceLabelMatch =
+          normalizeComparableLooseText(targetStrippedPriceLabel) === normalizedSourceStrippedPriceLabel;
+        const fuzzyScore = Math.max(
+          computeTokenSimilarity(sourceStrippedPriceLabel, targetStrippedPriceLabel),
+          computeTokenSimilarity(rowCell.optionValue, optionValue),
+          computeTokenSimilarity(rowCell.optionLabel, option.label),
+        );
+        return {
+          option,
+          optionId: option.optionId,
+          optionLabel: option.label,
+          optionValue,
+          exactValueMatch,
+          normalizedValueMatch,
+          suffixTolerantValueMatch,
+          exactLabelMatch,
+          normalizedLabelMatch,
+          strippedPriceLabelMatch,
+          fuzzyScore,
+          finalAccepted: false,
+          acceptedStrategy: null as OptionMatchStrategy | null,
+        };
+      })
+      .sort((a, b) => b.fuzzyScore - a.fuzzyScore);
 
-    const exactLabelMatches = feature.availableOptions.filter((option) => option.label.trim() === rowCell.optionLabel.trim());
-    if (exactLabelMatches.length === 1) return { option: exactLabelMatches[0], strategy: 'exact-label' as OptionMatchStrategy };
-
-    const normalizedLabelMatches = feature.availableOptions.filter(
-      (option) => normalizeComparableLooseText(option.label) === normalizedRowOptionLabel,
-    );
-    if (normalizedLabelMatches.length === 1) return { option: normalizedLabelMatches[0], strategy: 'normalized-label' as OptionMatchStrategy };
-
-    const suffixTolerantValueMatches = feature.availableOptions.filter(
-      (option) => stripLocaleSuffix(option.value ?? option.optionId) === suffixTolerantRowOptionValue,
-    );
-    if (suffixTolerantValueMatches.length === 1) return { option: suffixTolerantValueMatches[0], strategy: 'normalized-value' as OptionMatchStrategy };
-
-    const suffixTolerantLabelMatches = feature.availableOptions.filter(
-      (option) => stripLocaleSuffix(option.label) === suffixTolerantRowOptionLabel,
-    );
-    if (suffixTolerantLabelMatches.length === 1) return { option: suffixTolerantLabelMatches[0], strategy: 'normalized-label' as OptionMatchStrategy };
-
-    const fuzzyCandidates = feature.availableOptions
-      .map((option) => ({
-        option,
-        score: Math.max(computeTokenSimilarity(rowCell.optionLabel, option.label), computeTokenSimilarity(rowCell.optionValue, option.value ?? option.optionId)),
-      }))
-      .filter((entry) => entry.score >= 0.85)
-      .sort((a, b) => b.score - a.score);
-    if (fuzzyCandidates.length > 0) {
-      const [best, second] = fuzzyCandidates;
-      if (best && (!second || best.score - second.score >= 0.2)) {
-        return { option: best.option, strategy: 'fuzzy' as OptionMatchStrategy };
+    const acceptSingle = (predicate: (candidate: (typeof candidateEvaluations)[number]) => boolean, strategy: OptionMatchStrategy) => {
+      const matches = candidateEvaluations.filter(predicate);
+      if (matches.length === 1) {
+        matches[0].finalAccepted = true;
+        matches[0].acceptedStrategy = strategy;
+        return { option: matches[0].option, strategy };
       }
+      return null;
+    };
+
+    const exactValueWinner = acceptSingle((c) => c.exactValueMatch, 'exact-value');
+    if (exactValueWinner) return { ...exactValueWinner, evaluation: candidateEvaluations };
+    const normalizedValueWinner = acceptSingle((c) => c.normalizedValueMatch, 'normalized-value');
+    if (normalizedValueWinner) return { ...normalizedValueWinner, evaluation: candidateEvaluations };
+    const suffixTolerantValueWinner = acceptSingle((c) => c.suffixTolerantValueMatch, 'suffix-tolerant-value');
+    if (suffixTolerantValueWinner) return { ...suffixTolerantValueWinner, evaluation: candidateEvaluations };
+    const exactLabelWinner = acceptSingle((c) => c.exactLabelMatch, 'exact-label');
+    if (exactLabelWinner) return { ...exactLabelWinner, evaluation: candidateEvaluations };
+    const normalizedLabelWinner = acceptSingle((c) => c.normalizedLabelMatch, 'normalized-label');
+    if (normalizedLabelWinner) return { ...normalizedLabelWinner, evaluation: candidateEvaluations };
+    const strippedPriceWinner = acceptSingle((c) => c.strippedPriceLabelMatch, 'stripped-price-label');
+    if (strippedPriceWinner) return { ...strippedPriceWinner, evaluation: candidateEvaluations };
+
+    const fuzzyCandidates = candidateEvaluations.filter((entry) => entry.fuzzyScore >= 0.85);
+    const [best, second] = fuzzyCandidates;
+    if (best && (!second || best.fuzzyScore - second.fuzzyScore >= 0.2)) {
+      best.finalAccepted = true;
+      best.acceptedStrategy = 'fuzzy';
+      return { option: best.option, strategy: 'fuzzy' as OptionMatchStrategy, evaluation: candidateEvaluations };
     }
-    return { option: null, strategy: null };
+    return { option: null, strategy: null, evaluation: candidateEvaluations };
   };
 
   const pushRowDiagnosticEvent = (rowId: string, event: RowDiagnosticEvent) => {
@@ -1691,6 +1733,15 @@ export default function BikeBuilderPage() {
               sourceStableIdentity: column.stableFeatureIdentity,
               sourceOptionValue: rowCell.optionValue,
               sourceOptionLabel: rowCell.optionLabel,
+              targetFeatureInventory: workingState.features
+                .filter((feature) => feature.isVisible !== false)
+                .map((feature) => ({
+                  featureId: feature.featureId,
+                  featureLabel: feature.featureLabel,
+                  featureName: feature.featureName ?? '',
+                  featureQuestion: buildStableFeatureIdentity(feature).featureQuestion ?? '',
+                  featureSequence: feature.featureSequence,
+                })),
               sessionId: workingState.sessionId,
             },
             traceId,
@@ -1708,9 +1759,19 @@ export default function BikeBuilderPage() {
                 failureReason: 'feature_not_matched_safely',
                 sourceFeatureLabel: rowCell.featureLabel,
                 sourceFeatureId: rowCell.currentSessionFeatureId,
-                candidates: featureRemap.candidates.slice(0, 8).map((candidate) => ({
-                  featureLabel: candidate.featureLabel,
+                featureCandidateEvaluation: featureRemap.evaluation.map((candidate) => ({
                   featureId: candidate.featureId,
+                  featureLabel: candidate.featureLabel,
+                  featureName: candidate.featureName,
+                  exactLabelMatch: candidate.exactLabelMatch,
+                  normalizedLabelMatch: candidate.normalizedLabelMatch,
+                  suffixTolerantLabelMatch: candidate.suffixTolerantLabelMatch,
+                  exactQuestionMatch: candidate.exactQuestionMatch,
+                  normalizedQuestionMatch: candidate.normalizedQuestionMatch,
+                  sequenceMatch: candidate.sequenceMatch,
+                  fuzzyScore: Number(candidate.fuzzyScore.toFixed(3)),
+                  finalAccepted: candidate.finalAccepted,
+                  acceptedStrategy: candidate.acceptedStrategy,
                 })),
               },
               traceId,
@@ -1735,10 +1796,24 @@ export default function BikeBuilderPage() {
                 resolvedFeatureId: currentFeature.featureId,
                 sourceOptionValue: rowCell.optionValue,
                 sourceOptionLabel: rowCell.optionLabel,
-                optionCandidates: currentFeature.availableOptions.slice(0, 12).map((candidate) => ({
+                targetOptionInventory: currentFeature.availableOptions.map((candidate) => ({
                   optionId: candidate.optionId,
                   optionLabel: candidate.label,
                   optionValue: candidate.value ?? candidate.optionId,
+                })),
+                optionCandidateEvaluation: optionRemap.evaluation.map((candidate) => ({
+                  optionId: candidate.optionId,
+                  optionLabel: candidate.optionLabel,
+                  optionValue: candidate.optionValue,
+                  exactValueMatch: candidate.exactValueMatch,
+                  normalizedValueMatch: candidate.normalizedValueMatch,
+                  suffixTolerantValueMatch: candidate.suffixTolerantValueMatch,
+                  exactLabelMatch: candidate.exactLabelMatch,
+                  normalizedLabelMatch: candidate.normalizedLabelMatch,
+                  strippedPriceLabelMatch: candidate.strippedPriceLabelMatch,
+                  fuzzyScore: Number(candidate.fuzzyScore.toFixed(3)),
+                  finalAccepted: candidate.finalAccepted,
+                  acceptedStrategy: candidate.acceptedStrategy,
                 })),
               },
               traceId,
@@ -1759,10 +1834,43 @@ export default function BikeBuilderPage() {
               usedFallbackMatching: featureRemap.strategy === 'suffix-tolerant-label' || featureRemap.strategy === 'fuzzy' || optionRemap.strategy === 'fuzzy',
               sourceFeatureLabel: rowCell.featureLabel,
               sourceFeatureId: rowCell.currentSessionFeatureId,
+              featureCandidateEvaluation: featureRemap.evaluation.map((candidate) => ({
+                featureId: candidate.featureId,
+                featureLabel: candidate.featureLabel,
+                featureName: candidate.featureName,
+                exactLabelMatch: candidate.exactLabelMatch,
+                normalizedLabelMatch: candidate.normalizedLabelMatch,
+                suffixTolerantLabelMatch: candidate.suffixTolerantLabelMatch,
+                exactQuestionMatch: candidate.exactQuestionMatch,
+                normalizedQuestionMatch: candidate.normalizedQuestionMatch,
+                sequenceMatch: candidate.sequenceMatch,
+                fuzzyScore: Number(candidate.fuzzyScore.toFixed(3)),
+                finalAccepted: candidate.finalAccepted,
+                acceptedStrategy: candidate.acceptedStrategy,
+              })),
               resolvedFeatureLabel: currentFeature.featureLabel,
               resolvedFeatureId: currentFeature.featureId,
               sourceOptionValue: rowCell.optionValue,
               sourceOptionLabel: rowCell.optionLabel,
+              targetOptionInventory: currentFeature.availableOptions.map((candidate) => ({
+                optionId: candidate.optionId,
+                optionLabel: candidate.label,
+                optionValue: candidate.value ?? candidate.optionId,
+              })),
+              optionCandidateEvaluation: optionRemap.evaluation.map((candidate) => ({
+                optionId: candidate.optionId,
+                optionLabel: candidate.optionLabel,
+                optionValue: candidate.optionValue,
+                exactValueMatch: candidate.exactValueMatch,
+                normalizedValueMatch: candidate.normalizedValueMatch,
+                suffixTolerantValueMatch: candidate.suffixTolerantValueMatch,
+                exactLabelMatch: candidate.exactLabelMatch,
+                normalizedLabelMatch: candidate.normalizedLabelMatch,
+                strippedPriceLabelMatch: candidate.strippedPriceLabelMatch,
+                fuzzyScore: Number(candidate.fuzzyScore.toFixed(3)),
+                finalAccepted: candidate.finalAccepted,
+                acceptedStrategy: candidate.acceptedStrategy,
+              })),
               resolvedOptionValue: targetOption.value ?? targetOption.optionId,
               resolvedOptionId: targetOption.optionId,
               resolvedOptionLabel: targetOption.label,
