@@ -1,0 +1,113 @@
+.page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #555;
+}
+
+.filters {
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.filterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #444;
+}
+
+.filterItem select {
+  border: 1px solid #c3c3c3;
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.multiSelect {
+  min-height: 80px;
+}
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  max-width: 100%;
+}
+
+.matrixTable {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+}
+
+.matrixTable th,
+.matrixTable td {
+  border: 1px solid #ececec;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.matrixTable th {
+  background: #f7f7f7;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.statusActive {
+  background: #d7f4df;
+  color: #146c2e;
+}
+
+.statusNotActive {
+  background: #ffe5e5;
+  color: #a32626;
+}
+
+.statusNotConfigured {
+  background: #ececec;
+  color: #666;
+}
+
+.empty {
+  border: 1px dashed #cfcfcf;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  color: #666;
+}

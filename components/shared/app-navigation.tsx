@@ -11,6 +11,7 @@ const ADMIN_PASSWORD = 'Br0mpt0n';
 
 const links: NavLink[] = [
   { href: '/cpq/process', label: 'CPQ - Process' },
+  { href: '/sales/bike-allocation', label: 'Sales - bike allocation' },
   { href: '/cpq', label: 'CPQ - Bike Builder' },
   { href: '/cpq/setup', label: 'CPQ - Setup' },
   { href: '/cpq/results', label: 'CPQ - Sampler Results', adminOnly: true },
