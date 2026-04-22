@@ -18,6 +18,9 @@ type Props = {
   filters: SalesBikeAllocationFilters;
 };
 
+type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
+type Message = { type: 'success' | 'error'; text: string } | null;
+
 function statusLabel(status: AllocationStatus): string {
   if (status === 'active') return 'Active';
   if (status === 'not_active') return 'Not active';
@@ -40,11 +43,49 @@ export default function SalesBikeAllocationTableClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [ipnFilter, setIpnFilter] = useState('');
+  const [featureFilters, setFeatureFilters] = useState<Record<string, string>>({});
+  const [countryFilters, setCountryFilters] = useState<Record<string, CountryStatusFilter>>({});
+  const [message, setMessage] = useState<Message>(null);
+  const [cellActionKey, setCellActionKey] = useState<string | null>(null);
+  const [bulkActionRunning, setBulkActionRunning] = useState(false);
+  const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
 
   const selectedFeatureSet = useMemo(() => new Set(selectedFeatures), [selectedFeatures]);
+  const selectedCountryTargets = useMemo(
+    () => countryColumns.filter((countryCode) => bulkCountrySelection[countryCode]),
+    [bulkCountrySelection, countryColumns],
+  );
 
   const visibleFeatureColumns = availableFeatures.filter((feature) => selectedFeatureSet.has(feature));
+  const effectiveRuleset = String(filters.ruleset ?? '').trim();
+
+  const filteredRows = useMemo(() => {
+    const normalizedIpnFilter = ipnFilter.trim().toLowerCase();
+
+    return rows.filter((row) => {
+      if (normalizedIpnFilter && !row.ipnCode.toLowerCase().includes(normalizedIpnFilter)) {
+        return false;
+      }
+
+      for (const feature of visibleFeatureColumns) {
+        const valueFilter = String(featureFilters[feature] ?? '').trim().toLowerCase();
+        if (!valueFilter) continue;
+        const value = String(row.featureValues[feature] ?? '').toLowerCase();
+        if (!value.includes(valueFilter)) return false;
+      }
+
+      for (const country of countryColumns) {
+        const statusFilter = countryFilters[country] ?? 'all';
+        if (statusFilter === 'all') continue;
+        if (row.countryStatuses[country] !== statusFilter) return false;
+      }
+
+      return true;
+    });
+  }, [rows, ipnFilter, visibleFeatureColumns, featureFilters, countryColumns, countryFilters]);
 
   const updateFilter = (key: 'ruleset' | 'country_code', value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -57,43 +98,146 @@ export default function SalesBikeAllocationTableClient({
   const onFeatureSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const values = Array.from(event.target.selectedOptions).map((option) => option.value);
     setSelectedFeatures(values);
+    setFeatureFilters((prev) => Object.fromEntries(values.map((value) => [value, prev[value] ?? ''])));
   };
 
-  if (!rows.length) {
-    return (
-      <>
-        <section className={styles.filters}>
-          <label className={styles.filterItem}>
-            <span>Ruleset</span>
-            <select value={filters.ruleset ?? ''} onChange={(event) => updateFilter('ruleset', event.target.value)}>
-              <option value="">All</option>
-              {filterOptions.rulesets.map((ruleset) => (
-                <option key={ruleset} value={ruleset}>
-                  {ruleset}
-                </option>
-              ))}
-            </select>
-          </label>
+  const setFeatureFilterValue = (feature: string, value: string) => {
+    setFeatureFilters((prev) => ({ ...prev, [feature]: value }));
+  };
 
-          <label className={styles.filterItem}>
-            <span>Country code</span>
-            <select
-              value={filters.country_code ?? ''}
-              onChange={(event) => updateFilter('country_code', event.target.value)}
-            >
-              <option value="">All</option>
-              {filterOptions.countryCodes.map((countryCode) => (
-                <option key={countryCode} value={countryCode}>
-                  {countryCode}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
-        <div className={styles.empty}>No bike allocation records found for the selected filters.</div>
-      </>
+  const setCountryFilterValue = (country: string, value: CountryStatusFilter) => {
+    setCountryFilters((prev) => ({ ...prev, [country]: value }));
+  };
+
+  const runRefresh = () => {
+    router.refresh();
+  };
+
+  const onCountryCellClick = async (row: SalesBikeAllocationRow, countryCode: string, status: AllocationStatus) => {
+    if (status === 'not_configured') {
+      setCellActionKey(`${row.rowRuleset}:${row.ipnCode}:${countryCode}`);
+      setMessage(null);
+      try {
+        const response = await fetch('/api/sales/bike-allocation/launch-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ruleset: row.rowRuleset, ipnCode: row.ipnCode, countryCode }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          resolved?: { ruleset: string; accountCode: string | null; countryCode: string; ipnCode: string };
+        };
+        if (!response.ok || !payload.resolved) {
+          throw new Error(payload.error ?? 'Failed to resolve CPQ launch context');
+        }
+
+        const cpqParams = new URLSearchParams();
+        cpqParams.set('ruleset', payload.resolved.ruleset);
+        cpqParams.set('country_code', payload.resolved.countryCode);
+        cpqParams.set('ipn_code', payload.resolved.ipnCode);
+        if (payload.resolved.accountCode) cpqParams.set('account_code', payload.resolved.accountCode);
+
+        router.push(`/cpq?${cpqParams.toString()}`);
+      } catch (error) {
+        setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to open configurator flow.' });
+      } finally {
+        setCellActionKey(null);
+      }
+      return;
+    }
+
+    const targetStatus: 'active' | 'not_active' = status === 'active' ? 'not_active' : 'active';
+    const actionKey = `${row.rowRuleset}:${row.ipnCode}:${countryCode}`;
+    setCellActionKey(actionKey);
+    setMessage(null);
+
+    try {
+      const response = await fetch('/api/sales/bike-allocation/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ruleset: row.rowRuleset,
+          ipnCode: row.ipnCode,
+          countryCode,
+          targetStatus,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { updatedCount: number; targetStatus: 'active' | 'not_active' };
+      };
+
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error ?? 'Failed to update cell');
+      }
+
+      setMessage({
+        type: 'success',
+        text: `${row.ipnCode} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Not active'} (${payload.result.updatedCount} sampler row(s)).`,
+      });
+      runRefresh();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to update cell.' });
+    } finally {
+      setCellActionKey(null);
+    }
+  };
+
+  const runBulkAction = async (targetStatus: 'active' | 'not_active') => {
+    if (!effectiveRuleset) {
+      setMessage({ type: 'error', text: 'Select a specific ruleset before running bulk actions.' });
+      return;
+    }
+    if (!filteredRows.length) {
+      setMessage({ type: 'error', text: 'No visible rows to update.' });
+      return;
+    }
+    if (!selectedCountryTargets.length) {
+      setMessage({ type: 'error', text: 'Choose at least one target country column for bulk update.' });
+      return;
+    }
+
+    const label = targetStatus === 'active' ? 'Activate' : 'Deactivate';
+    const confirm = window.confirm(
+      `${label} ${filteredRows.length} visible IPN row(s) across ${selectedCountryTargets.length} country column(s): ${selectedCountryTargets.join(', ')}?\nOnly existing sampler rows will be updated.`,
     );
-  }
+    if (!confirm) return;
+
+    setBulkActionRunning(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/bike-allocation/bulk-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ruleset: effectiveRuleset,
+          ipnCodes: filteredRows.map((row) => row.ipnCode),
+          countryCodes: selectedCountryTargets,
+          targetStatus,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { updatedCount: number; ipnCount: number; countryCount: number };
+      };
+
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error ?? 'Bulk update failed');
+      }
+
+      setMessage({
+        type: 'success',
+        text: `Bulk ${label.toLowerCase()} done. Updated ${payload.result.updatedCount} sampler row(s) for ${payload.result.ipnCount} IPN(s) x ${payload.result.countryCount} countr${payload.result.countryCount === 1 ? 'y' : 'ies'}.`,
+      });
+      runRefresh();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Bulk update failed.' });
+    } finally {
+      setBulkActionRunning(false);
+    }
+  };
 
   return (
     <>
@@ -134,39 +278,127 @@ export default function SalesBikeAllocationTableClient({
         </label>
       </section>
 
-      <div className={styles.tableWrap}>
-        <table className={styles.matrixTable}>
-          <thead>
-            <tr>
-              <th>ipn_code</th>
-              {visibleFeatureColumns.map((feature) => (
-                <th key={feature}>{feature}</th>
-              ))}
-              {countryColumns.map((country) => (
-                <th key={country}>{country}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.ipnCode}>
-                <td>{row.ipnCode}</td>
-                {visibleFeatureColumns.map((feature) => (
-                  <td key={`${row.ipnCode}-${feature}`}>{row.featureValues[feature] || ''}</td>
-                ))}
-                {countryColumns.map((country) => {
-                  const status = row.countryStatuses[country];
-                  return (
-                    <td key={`${row.ipnCode}-${country}`}>
-                      <span className={`${styles.statusPill} ${statusClass(status)}`}>{statusLabel(status)}</span>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className={styles.bulkActions}>
+        <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
+        <div className={styles.bulkCountryList}>
+          {countryColumns.map((countryCode) => (
+            <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
+              <input
+                type="checkbox"
+                checked={Boolean(bulkCountrySelection[countryCode])}
+                onChange={(event) =>
+                  setBulkCountrySelection((prev) => ({ ...prev, [countryCode]: event.target.checked }))
+                }
+                disabled={bulkActionRunning}
+              />
+              {countryCode}
+            </label>
+          ))}
+        </div>
+        <div className={styles.bulkButtons}>
+          <button type="button" onClick={() => void runBulkAction('active')} disabled={bulkActionRunning}>
+            {bulkActionRunning ? 'Working…' : 'Bulk activate'}
+          </button>
+          <button type="button" onClick={() => void runBulkAction('not_active')} disabled={bulkActionRunning}>
+            {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
+          </button>
+        </div>
+      </section>
+
+      <div className={styles.helperText}>
+        <strong>Cell actions:</strong> Active / Not active are clickable toggles. Not configured opens the CPQ configurator flow.
       </div>
+
+      {message ? (
+        <div className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : styles.messageError}`}>
+          {message.text}
+        </div>
+      ) : null}
+
+      {rows.length === 0 ? <div className={styles.empty}>No bike allocation records found for the selected filters.</div> : null}
+
+      {rows.length > 0 ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.matrixTable}>
+            <thead>
+              <tr>
+                <th className={styles.stickyFirstColumn}>ipn_code</th>
+                {!effectiveRuleset ? <th>ruleset</th> : null}
+                {visibleFeatureColumns.map((feature) => (
+                  <th key={feature}>{feature}</th>
+                ))}
+                {countryColumns.map((country) => (
+                  <th key={country}>{country}</th>
+                ))}
+              </tr>
+              <tr className={styles.filterRow}>
+                <th className={styles.stickyFirstColumnFilter}>
+                  <input
+                    value={ipnFilter}
+                    onChange={(event) => setIpnFilter(event.target.value)}
+                    placeholder="contains"
+                    aria-label="Filter ipn_code"
+                  />
+                </th>
+                {!effectiveRuleset ? <th /> : null}
+                {visibleFeatureColumns.map((feature) => (
+                  <th key={`f-${feature}`}>
+                    <input
+                      value={featureFilters[feature] ?? ''}
+                      onChange={(event) => setFeatureFilterValue(feature, event.target.value)}
+                      placeholder="contains"
+                      aria-label={`Filter ${feature}`}
+                    />
+                  </th>
+                ))}
+                {countryColumns.map((country) => (
+                  <th key={`c-${country}`}>
+                    <select
+                      value={countryFilters[country] ?? 'all'}
+                      onChange={(event) => setCountryFilterValue(country, event.target.value as CountryStatusFilter)}
+                      aria-label={`Filter ${country} status`}
+                    >
+                      <option value="all">All</option>
+                      <option value="active">Active</option>
+                      <option value="not_active">Not active</option>
+                      <option value="not_configured">Not configured</option>
+                    </select>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={`${row.rowRuleset}::${row.ipnCode}`}>
+                  <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
+                  {!effectiveRuleset ? <td>{row.rowRuleset}</td> : null}
+                  {visibleFeatureColumns.map((feature) => (
+                    <td key={`${row.rowRuleset}-${row.ipnCode}-${feature}`}>{row.featureValues[feature] || ''}</td>
+                  ))}
+                  {countryColumns.map((country) => {
+                    const status = row.countryStatuses[country];
+                    const actionKey = `${row.rowRuleset}:${row.ipnCode}:${country}`;
+                    const isBusy = cellActionKey === actionKey;
+                    return (
+                      <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`}>
+                        <button
+                          type="button"
+                          className={`${styles.statusButton} ${statusClass(status)}`}
+                          onClick={() => void onCountryCellClick(row, country, status)}
+                          disabled={isBusy || bulkActionRunning}
+                          title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
+                        >
+                          {isBusy ? 'Saving…' : statusLabel(status)}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </>
   );
 }

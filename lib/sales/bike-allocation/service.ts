@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db/client';
+import { listAccountContexts } from '@/lib/cpq/setup/service';
 
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
@@ -10,6 +11,13 @@ type SamplerRow = {
   ipn_code: string | null;
   ruleset: string | null;
   country_code: string | null;
+  account_code: string | null;
+  customer_id: string | null;
+  currency: string | null;
+  language: string | null;
+  namespace: string | null;
+  header_id: string | null;
+  detail_id: string | null;
   json_result: unknown;
 };
 
@@ -27,6 +35,7 @@ export type AllocationStatus = 'active' | 'not_active' | 'not_configured';
 
 export type SalesBikeAllocationRow = {
   ipnCode: string;
+  rowRuleset: string;
   featureValues: Record<string, string>;
   countryStatuses: Record<string, AllocationStatus>;
 };
@@ -116,12 +125,146 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
       ipn_code,
       ruleset,
       country_code,
+      account_code,
+      customer_id,
+      currency,
+      language,
+      namespace,
+      header_id,
+      detail_id,
       json_result
     from CPQ_sampler_result
     where coalesce(trim(ipn_code), '') <> ''
       and (${ruleset} = '' or ruleset = ${ruleset})
     order by id desc
   `) as SamplerRow[];
+}
+
+function toStatusBoolean(targetStatus: 'active' | 'not_active'): boolean {
+  return targetStatus === 'active';
+}
+
+export async function updateAllocationCellStatus(input: {
+  ruleset: string;
+  ipnCode: string;
+  countryCode: string;
+  targetStatus: 'active' | 'not_active';
+}) {
+  const ruleset = asTrimmed(input.ruleset);
+  const ipnCode = asTrimmed(input.ipnCode);
+  const countryCode = asTrimmed(input.countryCode);
+
+  if (!ruleset) throw new Error('ruleset is required');
+  if (!ipnCode) throw new Error('ipnCode is required');
+  if (!countryCode) throw new Error('countryCode is required');
+
+  const updatedRows = (await sql`
+    update CPQ_sampler_result
+    set
+      json_result = jsonb_set(coalesce(json_result, '{}'::jsonb), '{active}', to_jsonb(${toStatusBoolean(input.targetStatus)}), true),
+      updated_at = now()
+    where ruleset = ${ruleset}
+      and ipn_code = ${ipnCode}
+      and country_code = ${countryCode}
+    returning id
+  `) as Array<{ id: number }>;
+
+  return {
+    updatedCount: updatedRows.length,
+    targetStatus: input.targetStatus,
+  };
+}
+
+export async function bulkUpdateAllocationStatus(input: {
+  ruleset: string;
+  ipnCodes: string[];
+  countryCodes: string[];
+  targetStatus: 'active' | 'not_active';
+}) {
+  const ruleset = asTrimmed(input.ruleset);
+  const ipnCodes = [...new Set(input.ipnCodes.map(asTrimmed).filter(Boolean))];
+  const countryCodes = [...new Set(input.countryCodes.map(asTrimmed).filter(Boolean))];
+
+  if (!ruleset) throw new Error('ruleset is required');
+  if (!ipnCodes.length) throw new Error('ipnCodes is required');
+  if (!countryCodes.length) throw new Error('countryCodes is required');
+
+  const updatedRows = (await sql`
+    update CPQ_sampler_result
+    set
+      json_result = jsonb_set(coalesce(json_result, '{}'::jsonb), '{active}', to_jsonb(${toStatusBoolean(input.targetStatus)}), true),
+      updated_at = now()
+    where ruleset = ${ruleset}
+      and ipn_code = any(${ipnCodes}::text[])
+      and country_code = any(${countryCodes}::text[])
+    returning id
+  `) as Array<{ id: number }>;
+
+  return {
+    updatedCount: updatedRows.length,
+    ipnCount: ipnCodes.length,
+    countryCount: countryCodes.length,
+    targetStatus: input.targetStatus,
+  };
+}
+
+export async function resolveConfiguratorLaunchContext(input: { ruleset: string; ipnCode: string; countryCode: string }) {
+  const ruleset = asTrimmed(input.ruleset);
+  const ipnCode = asTrimmed(input.ipnCode);
+  const countryCode = asTrimmed(input.countryCode);
+
+  if (!ruleset) throw new Error('ruleset is required');
+  if (!ipnCode) throw new Error('ipnCode is required');
+  if (!countryCode) throw new Error('countryCode is required');
+
+  const [accountRows, samplerRows] = await Promise.all([
+    listAccountContexts(true),
+    sql`
+      select id, ruleset, account_code, customer_id, currency, language, country_code, namespace, header_id, detail_id
+      from CPQ_sampler_result
+      where ipn_code = ${ipnCode}
+        and ruleset = ${ruleset}
+      order by case when country_code = ${countryCode} then 0 else 1 end, updated_at desc, id desc
+      limit 25
+    `,
+  ]);
+
+  const samplerCandidates = samplerRows as Array<{
+    id: number;
+    ruleset: string;
+    account_code: string | null;
+    customer_id: string | null;
+    currency: string | null;
+    language: string | null;
+    country_code: string | null;
+    namespace: string | null;
+    header_id: string | null;
+    detail_id: string | null;
+  }>;
+
+  const accountByCountry = accountRows.find((row) => asTrimmed(row.country_code) === countryCode);
+  const sameCountrySampler = samplerCandidates.find((row) => asTrimmed(row.country_code) === countryCode);
+  const fallbackSampler = samplerCandidates[0] ?? null;
+
+  const resolvedAccountCode =
+    asTrimmed(accountByCountry?.account_code) ||
+    asTrimmed(sameCountrySampler?.account_code) ||
+    asTrimmed(fallbackSampler?.account_code);
+
+  return {
+    ipnCode,
+    countryCode,
+    ruleset,
+    accountCode: resolvedAccountCode || null,
+    contextSource:
+      accountByCountry
+        ? 'account-context-country-match'
+        : sameCountrySampler
+          ? 'sampler-same-country'
+          : fallbackSampler
+            ? 'sampler-fallback'
+            : 'ruleset-only',
+  };
 }
 
 export async function getSalesBikeAllocationPageData(
@@ -138,31 +281,28 @@ export async function getSalesBikeAllocationPageData(
     a.localeCompare(b),
   );
 
-  const ipnsInScope = new Set<string>();
-  for (const row of sourceRows) {
-    const ipn = asTrimmed(row.ipn_code);
-    if (!ipn) continue;
-
-    if (!normalizedFilters.country_code || asTrimmed(row.country_code) === normalizedFilters.country_code) {
-      ipnsInScope.add(ipn);
-    }
-  }
-
   const rowMap = new Map<string, SalesBikeAllocationRow>();
   const availableFeatures = new Set<string>();
 
   for (const row of sourceRows) {
     const ipn = asTrimmed(row.ipn_code);
-    if (!ipn || !ipnsInScope.has(ipn)) continue;
+    const rowRuleset = asTrimmed(row.ruleset);
+    if (!ipn || !rowRuleset) continue;
 
-    let matrixRow = rowMap.get(ipn);
+    if (normalizedFilters.country_code && asTrimmed(row.country_code) !== normalizedFilters.country_code) {
+      continue;
+    }
+
+    const rowKey = `${rowRuleset}::${ipn}`;
+    let matrixRow = rowMap.get(rowKey);
     if (!matrixRow) {
       matrixRow = {
         ipnCode: ipn,
+        rowRuleset,
         featureValues: {},
         countryStatuses: {},
       };
-      rowMap.set(ipn, matrixRow);
+      rowMap.set(rowKey, matrixRow);
     }
 
     const parsedOptions = parseSelectedOptions(row.json_result);
@@ -192,7 +332,7 @@ export async function getSalesBikeAllocationPageData(
         countryColumns.map((country) => [country, row.countryStatuses[country] ?? 'not_configured']),
       ) as Record<string, AllocationStatus>,
     }))
-    .sort((a, b) => a.ipnCode.localeCompare(b.ipnCode));
+    .sort((a, b) => (a.ipnCode === b.ipnCode ? a.rowRuleset.localeCompare(b.rowRuleset) : a.ipnCode.localeCompare(b.ipnCode)));
 
   return {
     filters: normalizedFilters,
