@@ -83,6 +83,7 @@ Additional route aliases:
 - `POST /api/cpq/configuration-references` → canonical save to `cpq_configuration_references`.
 - `GET /api/cpq/configuration-references?configuration_reference=...` → resolve canonical row.
 - `POST /api/cpq/sampler-result` → persist support/manual sampler snapshot to `CPQ_sampler_result`.
+  - insert contract includes `active=true` for new rows.
 
 ### Setup routes
 - `GET/POST /api/cpq/setup/account-context`
@@ -120,6 +121,7 @@ Additional route aliases:
   2. otherwise latest StartConfiguration snapshot.
 - Finalize response is **not** used as canonical save snapshot source (stored only as finalize metadata).
 - After canonical save succeeds, one support row is auto-saved to `CPQ_sampler_result` from the same source snapshot.
+- `CPQ_sampler_result.active` is the canonical active/inactive source for Sales bike allocation state.
 - Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
 
 ## 6) Debug visibility

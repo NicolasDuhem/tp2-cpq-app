@@ -21,8 +21,8 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
       <header className={styles.header}>
         <h1>Sales - bike allocation</h1>
         <p>
-          Active = configured and active for country. Not active = configured but inactive for country. Not configured =
-          no sampler configuration found for country.
+          Active = one or more matching sampler rows have active=true. Not active = matching rows exist but all are
+          active=false. Not configured = no sampler configuration found for country.
         </p>
       </header>
       <SalesBikeAllocationTableClient

@@ -30,6 +30,7 @@
 ### Auto support write to `CPQ_sampler_result`
 - After canonical save success, one sampler row is auto-inserted.
 - Uses same snapshot source rule as canonical save.
+- New sampler rows persist with `active = true` by default (canonical sales allocation flag).
 
 ### Retrieve by reference
 - Triggered by **Retrieve Configuration**.
@@ -44,6 +45,10 @@
 - Snapshot source rule:
   - latest Configure, else latest StartConfiguration.
   - finalize is explicitly excluded.
+- Insert behavior:
+  - `active` is always set to `true` on creation.
+  - `active` (real DB column) is canonical for Sales allocation status.
+  - `json_result.active` is not used as canonical status.
 
 ## `json_result` structure intent
 The stored snapshot keeps a legacy-style shape with core sections:
