@@ -11,6 +11,7 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/process` → SOP/process instruction page.
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
+  - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 
 ## Core lifecycle contract (`/cpq`)
 1. `POST /api/cpq/init` (StartConfiguration)
@@ -21,6 +22,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 6. Retrieve by `configuration_reference` via `POST /api/cpq/retrieve-configuration`
 
 Canonical snapshot source for save/sampler is latest Configure snapshot, fallback latest Start snapshot (never Finalize body).
+
+### `/cpq` init trigger contract
+- `POST /api/cpq/init` is re-run whenever account code changes in UI.
+- `POST /api/cpq/init` is re-run whenever ruleset changes in UI.
+- Sales “Not configured” launch applies account/ruleset into UI first, then runs init with those live UI selections, then replays configure options.
 
 ## Data ownership summary
 - Canonical save/retrieve: `cpq_configuration_references`

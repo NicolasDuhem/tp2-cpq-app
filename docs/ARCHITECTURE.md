@@ -39,6 +39,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
   - sampler sync into `cpq_image_management`
 - `/cpq/results` → `components/cpq/cpq-results-page.tsx` + client matrix component
 - `/sales/bike-allocation` → server data loader + client matrix/toggle/bulk/replay launcher
+  - Page is explicitly dynamic and sales mutation routes revalidate `/sales/bike-allocation` to avoid stale server-component cache after Active/Inactive writes.
 - `/cpq/process` and `/cpq/ui-docs` are static-ish client-doc pages.
 
 ## 4) API architecture
@@ -60,6 +61,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `POST /api/sales/bike-allocation/toggle`
 - `POST /api/sales/bike-allocation/bulk-update`
 - `POST /api/sales/bike-allocation/launch-context`
+  - Toggle/bulk routes revalidate `/sales/bike-allocation` so App Router refresh picks up latest Neon state.
 
 ## 5) Data boundaries
 - `cpq_configuration_references` = canonical saved configuration registry for retrieve.
@@ -75,3 +77,8 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - UI admin mode is not security.
 - `/cpq/results` can be opened directly by URL even when admin tab is hidden.
 - `/cpq/ui-docs` route renders for all users, but its component content gates detailed table to admin mode.
+
+## 8) CPQ context invariants
+- `init` context is driven by current UI `accountCode` + `ruleset` (including replay launch from sales).
+- Replay launch sequence is: apply UI account/ruleset → run init in that context → replay configure steps → finalize/save in same context/session lineage.
+- `CPQ_sampler_result.active` remains canonical for Sales Active/Inactive rendering.

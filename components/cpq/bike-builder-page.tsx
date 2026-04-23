@@ -394,6 +394,21 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     () => accountContexts.find((entry) => entry.account_code === accountCode) ?? null,
     [accountCode, accountContexts],
   );
+  const resolveActiveAccount = (requestedAccountCode?: string) => {
+    const targetAccountCode = (requestedAccountCode ?? accountCodeRef.current).trim();
+    if (!targetAccountCode) return null;
+    return accountContexts.find((entry) => entry.account_code === targetAccountCode) ?? null;
+  };
+  const resolveActiveRuleset = (requestedRuleset?: string) => {
+    const targetRuleset = (requestedRuleset ?? rulesetRef.current).trim();
+    if (!targetRuleset) return null;
+    return (
+      rulesets.find((entry) => entry.cpq_ruleset === targetRuleset) ?? {
+        ...fallbackRuleset,
+        cpq_ruleset: targetRuleset,
+      }
+    );
+  };
   useEffect(() => {
     accountCodeRef.current = accountCode;
   }, [accountCode]);
@@ -484,22 +499,25 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     }
   };
 
-  const startConfiguration = async (reason: string, overrides?: { accountCode?: string; ruleset?: string }) => {
+  const startConfiguration = async (
+    reason: string,
+    overrides?: { accountCode?: string; ruleset?: string },
+  ): Promise<NormalizedBikeBuilderState | null> => {
     const requestedAccountCode = (overrides?.accountCode ?? accountCodeRef.current).trim();
     const requestedRuleset = (overrides?.ruleset ?? rulesetRef.current).trim();
-    const activeAccount = accountContexts.find((entry) => entry.account_code === requestedAccountCode) ?? null;
+    const activeAccount = resolveActiveAccount(requestedAccountCode);
     if (!activeAccount) {
       setRequestState({ loading: false, error: 'Select an account code to start configuration.' });
-      return;
+      return null;
     }
 
     const initKey = `${activeAccount.account_code}::${requestedRuleset}`;
     const traceId = createTraceId();
-    const matchedRuleset = rulesets.find((entry) => entry.cpq_ruleset === requestedRuleset) ?? null;
-    const activeRuleset = matchedRuleset ?? {
-      ...fallbackRuleset,
-      cpq_ruleset: requestedRuleset,
-    };
+    const activeRuleset = resolveActiveRuleset(requestedRuleset);
+    if (!activeRuleset) {
+      setRequestState({ loading: false, error: 'Select a ruleset to start configuration.' });
+      return null;
+    }
     initInFlightKeyRef.current = initKey;
 
     console.info('[CPQ init] started', {
@@ -567,6 +585,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         sessionId: responsePayload.parsed.sessionId,
       });
       setRequestState({ loading: false });
+      return responsePayload.parsed;
     } catch (error) {
       setRequestState({
         loading: false,
@@ -579,6 +598,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         ruleset: activeRuleset.cpq_ruleset,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      return null;
     } finally {
       if (initInFlightKeyRef.current === initKey) {
         initInFlightKeyRef.current = null;
@@ -674,11 +694,18 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           });
           setRuleset(matchedRuleset.cpq_ruleset);
         }
-        await waitFor(
+        const uiContextApplied = await waitFor(
           () =>
             (!matchedAccount || accountCodeRef.current === matchedAccount.account_code) &&
             (!matchedRuleset || rulesetRef.current === matchedRuleset.cpq_ruleset),
         );
+        if (!uiContextApplied) {
+          console.info('[CPQ replay launch] UI context apply timed out', {
+            targetAccountCode: matchedAccount?.account_code ?? requestedAccountCode ?? null,
+            targetRuleset: matchedRuleset?.cpq_ruleset ?? requestedRuleset ?? null,
+          });
+          return;
+        }
 
         appendDebugEntry({
           id: crypto.randomUUID(),
@@ -697,18 +724,30 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           },
         });
         const replayInitKey = `${accountCodeRef.current}::${rulesetRef.current}`;
-        const started = await waitFor(
-          () =>
-            Boolean(stateRef.current?.sessionId) &&
-            lastInitCompletedRef.current?.key === replayInitKey &&
-            lastInitCompletedRef.current?.sessionId === stateRef.current?.sessionId,
-          12000,
-          40,
-        );
-        if (!started || !stateRef.current?.sessionId) {
-          console.info('[CPQ replay launch] init did not complete in time', { replayInitKey });
+        console.info('[CPQ replay launch] init request started', {
+          replayInitKey,
+          accountCode: accountCodeRef.current,
+          ruleset: rulesetRef.current,
+          sourceIpn: replayPayload.launchIpnCode ?? prefill?.ipn_code ?? null,
+          targetCountryCode: replayPayload.targetCountryCode ?? prefill?.country_code ?? null,
+        });
+        const startedState = await startConfiguration('sales-launch-replay-context-ready', {
+          accountCode: accountCodeRef.current,
+          ruleset: rulesetRef.current,
+        });
+        if (!startedState?.sessionId) {
+          console.info('[CPQ replay launch] init did not complete in time', {
+            replayInitKey,
+            accountCode: accountCodeRef.current,
+            ruleset: rulesetRef.current,
+          });
           return;
         }
+        console.info('[CPQ replay launch] init request completed', {
+          replayInitKey,
+          sessionId: startedState.sessionId,
+          detailId: startedState.detailId ?? null,
+        });
 
         appendDebugEntry({
           id: crypto.randomUUID(),
@@ -717,11 +756,11 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           action: 'SalesLaunchReplay:SessionStarted',
           route: 'local:sales-launch-replay',
           response: {
-            sessionId: stateRef.current.sessionId,
+            sessionId: startedState.sessionId,
           },
         });
         const replayTraceId = createTraceId();
-        const replayedState = await replaySalesLaunchOptions(replayPayload, stateRef.current, replayTraceId);
+        const replayedState = await replaySalesLaunchOptions(replayPayload, startedState, replayTraceId);
         setState(replayedState);
         const configureSnapshot: SamplerSourceSnapshot = {
           source: 'configure',
@@ -1249,12 +1288,29 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   };
 
   const saveConfiguration = async () => {
-    if (!state?.sessionId || !selectedAccount) {
+    const saveAccount = resolveActiveAccount();
+    const saveRulesetValue = rulesetRef.current.trim();
+    const saveRulesetEntry = resolveActiveRuleset(saveRulesetValue);
+    if (!state?.sessionId || !saveAccount) {
       setSaveStatus('error');
       setSaveMessage('Missing session ID before finalize');
       setSaveTechnicalDetail('No active configuration session was found in UI state.');
       return;
     }
+    if (!saveRulesetEntry || !saveRulesetValue) {
+      setSaveStatus('error');
+      setSaveMessage('Missing ruleset before finalize');
+      setSaveTechnicalDetail('No active ruleset was found in UI state.');
+      return;
+    }
+
+    console.info('[CPQ finalize] request context', {
+      sessionId: state.sessionId,
+      accountCode: saveAccount.account_code,
+      ruleset: saveRulesetValue,
+      sourceHeaderId: state.sourceHeaderId ?? null,
+      sourceDetailId: state.sourceDetailId ?? null,
+    });
 
     const traceId = createTraceId();
     setSaveStatus('saving');
@@ -1303,24 +1359,24 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         'SaveConfigurationReference',
         '/api/cpq/configuration-references',
         {
-          ruleset,
-          namespace: selectedRuleset?.namespace ?? fallbackRuleset.namespace,
-          canonical_header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          ruleset: saveRulesetValue,
+          namespace: saveRulesetEntry.namespace ?? fallbackRuleset.namespace,
+          canonical_header_id: saveRulesetEntry.header_id ?? fallbackRuleset.header_id,
           canonical_detail_id: finalizedDetailId,
-          header_id: selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          header_id: saveRulesetEntry.header_id ?? fallbackRuleset.header_id,
           finalized_detail_id: finalizedDetailId,
           source_working_detail_id: state.detailId,
           source_session_id: state.sessionId,
-          source_header_id: saveSourceState.sourceHeaderId ?? selectedRuleset?.header_id ?? fallbackRuleset.header_id,
+          source_header_id: saveSourceState.sourceHeaderId ?? saveRulesetEntry.header_id ?? fallbackRuleset.header_id,
           source_detail_id: saveSourceState.sourceDetailId ?? null,
-          account_code: selectedAccount.account_code,
-          customer_id: selectedAccount.customer_id,
+          account_code: saveAccount.account_code,
+          customer_id: saveAccount.customer_id,
           account_type: 'Dealer',
-          company: selectedAccount.account_code,
-          currency: selectedAccount.currency,
-          language: selectedAccount.language,
-          country_code: selectedAccount.country_code,
-          customer_location: selectedAccount.country_code,
+          company: saveAccount.account_code,
+          currency: saveAccount.currency,
+          language: saveAccount.language,
+          country_code: saveAccount.country_code,
+          customer_location: saveAccount.country_code,
           application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
           application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
           finalized_session_id: state.sessionId,
@@ -1346,7 +1402,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
       setLastSavedReference(saveResult.payload.row);
       setConfigurationReferenceInput(saveResult.payload.row.configuration_reference);
-      const { row: samplerRow } = await saveSamplerSnapshot(traceId, 'AutoSaveSamplerAfterCanonicalSave', saveSource, selectedAccount);
+      const { row: samplerRow } = await saveSamplerSnapshot(traceId, 'AutoSaveSamplerAfterCanonicalSave', saveSource, saveAccount);
       setSamplerSaveStatus('saved');
       setSamplerSaveDetail(null);
       setSamplerSaveMessage(`Auto-saved sampler row ${samplerRow.id} from ${saveSource.source} after canonical save.`);
@@ -1688,19 +1744,21 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         mappedOptionValue,
         optionMatchStrategy: optionRemap.strategy,
       });
+      const activeAccountForConfigure = resolveActiveAccount();
+      const activeRulesetForConfigure = rulesetRef.current.trim();
 
       const configure = await trackedFetch<CpqRouteResponse>(replayTraceId, 'SalesLaunchReplay:Configure', '/api/cpq/configure', {
         sessionId: workingState.sessionId,
         featureId: featureRemap.feature.featureId,
         optionId: mappedOption.optionId,
         optionValue: mappedOptionValue,
-        ruleset,
+        ruleset: activeRulesetForConfigure,
         context: {
-          accountCode: selectedAccount?.account_code,
-          customerId: selectedAccount?.customer_id,
-          currency: selectedAccount?.currency,
-          language: selectedAccount?.language,
-          countryCode: selectedAccount?.country_code,
+          accountCode: activeAccountForConfigure?.account_code,
+          customerId: activeAccountForConfigure?.customer_id,
+          currency: activeAccountForConfigure?.currency,
+          language: activeAccountForConfigure?.language,
+          countryCode: activeAccountForConfigure?.country_code,
         },
       });
       console.info('[CPQ replay launch] configure request issued', {
