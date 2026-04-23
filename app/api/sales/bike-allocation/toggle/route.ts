@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { updateAllocationCellStatus } from '@/lib/sales/bike-allocation/service';
 
 export async function POST(req: NextRequest) {
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No matching sampler rows found for this cell' }, { status: 404 });
     }
 
+    revalidatePath('/sales/bike-allocation');
     return NextResponse.json({ result });
   } catch (error) {
     return NextResponse.json(

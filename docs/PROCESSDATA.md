@@ -52,10 +52,18 @@ Canonical `json_snapshot` and sampler payload source are:
 - Click Active/Inactive cell → toggle `CPQ_sampler_result.active` via `/api/sales/bike-allocation/toggle`.
 - Bulk activate/deactivate visible IPNs across selected countries via `/api/sales/bike-allocation/bulk-update`.
 - Click Not configured → resolve launch context (`/api/sales/bike-allocation/launch-context`) then navigate to `/cpq` with replay token.
+- Toggle and bulk routes call `revalidatePath('/sales/bike-allocation')`, and the client table issues `router.refresh()` so status repaint is immediate and sourced from fresh server data.
 
 ### Replay handoff
 - Sales page stores replay payload in `sessionStorage` key `tp2-cpq-launch-replay:<token>`.
-- `/cpq` reads token payload, applies account/ruleset in UI, waits for init completion, then replays options through normal configure API with remap logic.
+- `/cpq` reads token payload, applies account/ruleset in UI, verifies those UI values are applied, then runs init with those live values.
+- After init completes, `/cpq` replays options from `json_result.selectedOptions` (fallback `dropdownOrderSnapshot`) through existing configure/remap logic.
+- Finalize/save use the active UI/session context from current refs (session + account + ruleset) so replayed configuration persists under the same CPQ context.
+
+## 5.1) `/cpq` init refresh contract
+- Any account code change in UI triggers a fresh `POST /api/cpq/init`.
+- Any ruleset change in UI triggers a fresh `POST /api/cpq/init`.
+- Replay launch path explicitly starts init after UI account/ruleset sync to prevent stale default context leakage.
 
 ## 6) Access/visibility model
 - Admin mode is a UI gate (sessionStorage + static password), not server auth.

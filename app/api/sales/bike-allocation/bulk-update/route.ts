@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { bulkUpdateAllocationStatus } from '@/lib/sales/bike-allocation/service';
 
 export async function POST(req: NextRequest) {
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
       targetStatus,
     });
 
+    revalidatePath('/sales/bike-allocation');
     return NextResponse.json({ result });
   } catch (error) {
     return NextResponse.json(
