@@ -1,43 +1,50 @@
 # Repository structure and ownership
 
 ## Top-level areas
-
-- `app/` — Next.js route entries and API route handlers.
-- `components/` — UI implementations split by domain (`cpq`, `setup`, `docs`, `shared`).
-- `lib/` — runtime/service logic (`cpq/runtime`, `cpq/setup`, `cpq/results`, `db`).
-- `types/` — shared TypeScript domain types.
-- `docs/` — system documentation.
-- `sql/` — baseline SQL schema/seed (must be reconciled with live CSV exports).
-- root CSV schema exports:
-  - `table.csv`
-  - `columns.csv`
-  - `fieldrequired.csv`
-  - `constraints.csv`
-  - `indexes.csv`
+- `app/` — Next.js route entries (pages + API handlers).
+- `components/` — UI modules (`cpq`, `setup`, `sales`, `docs`, `shared`).
+- `lib/` — business/data services (`cpq/runtime`, `cpq/setup`, `cpq/results`, `sales/bike-allocation`, `db`).
+- `types/` — shared TypeScript contracts.
+- `sql/` — baseline schema + migrations + seed.
+- `docs/` — implementation documentation.
 
 ## Route ownership
-
 ### Pages
-- `app/cpq/page.tsx` → Bike Builder page (`components/cpq/bike-builder-page.tsx`).
-- `app/cpq/setup/page.tsx` → setup page (`components/setup/cpq-setup-page.tsx`).
-- `app/cpq/results/page.tsx` → sampler results matrix (`components/cpq/cpq-results-page.tsx`).
-- `app/cpq/ui-docs/page.tsx` → UI label/data mapping page (`components/docs/ui-docs-page.tsx`).
+- `app/cpq/page.tsx` → `components/cpq/bike-builder-page.tsx`
+- `app/cpq/setup/page.tsx` → `components/setup/cpq-setup-page.tsx`
+- `app/cpq/results/page.tsx` → `components/cpq/cpq-results-page.tsx`
+- `app/cpq/process/page.tsx` → `components/docs/process-page.tsx`
+- `app/cpq/ui-docs/page.tsx` → `components/docs/ui-docs-page.tsx`
+- `app/sales/bike-allocation/page.tsx` → `components/sales/sales-bike-allocation-page.tsx`
 
 ### Redirects
 - `app/page.tsx` redirects `/` to `/cpq`.
 - `app/bike-builder/page.tsx` redirects `/bike-builder` to `/cpq`.
 
 ## API ownership
-- `app/api/cpq/*` runtime + persistence routes.
-- `app/api/cpq/setup/*` setup and picture-management admin routes.
+- `app/api/cpq/*` — CPQ lifecycle + persistence + setup + picture routes.
+- `app/api/sales/bike-allocation/*` — allocation toggle/bulk/launch-context APIs.
 
 ## Service ownership
-- `lib/cpq/runtime/*` — CPQ calls, normalization, canonical reference persistence, sampler persistence, debug tracing.
-- `lib/cpq/setup/service.ts` — setup CRUD, sync, image layer resolution.
-- `lib/cpq/results/service.ts` — matrix read-model and filtering source queries.
-- `lib/db/client.ts` — Neon SQL adapter.
+- `lib/cpq/runtime/*`
+  - CPQ API client calls
+  - mapping/normalization
+  - canonical reference persistence
+  - sampler persistence
+  - trace logging
+- `lib/cpq/setup/service.ts`
+  - setup CRUD
+  - picture-management update/sync/layer resolution
+- `lib/cpq/results/service.ts`
+  - sampler results matrix read model
+- `lib/sales/bike-allocation/service.ts`
+  - sales matrix model, status writes, launch replay context resolution
+- `lib/db/client.ts`
+  - Neon client wrapper
 
-## Maintenance note
-When changing runtime behavior, update both:
-1. corresponding docs in `docs/`, and
-2. if labels/sections changed, the `/cpq/ui-docs` source (`components/docs/ui-docs-page.tsx`).
+## Maintenance rule
+When runtime behavior changes, update:
+1. API and/or service code
+2. affected page/component docs
+3. `docs/PAGES_AND_COMPONENTS.md`
+4. `docs/DOC_GAP_ANALYSIS.md` (if correcting stale docs)

@@ -1,148 +1,77 @@
 # Architecture (current implementation)
 
 ## 1) Application scope
-This app is a CPQ-focused Next.js application with five primary user-facing areas. The top ribbon runs in two visibility modes (standard/admin):
+This repository is a CPQ-focused Next.js app with operational setup, runtime configuration, sampler analytics, and sales allocation orchestration.
 
-- `/cpq` — core Bike Builder manual lifecycle page.
-- `/cpq/setup` — setup/admin page for account contexts, rulesets, and picture management.
-- `/cpq/results` — sampler results matrix/pivot exploration page.
-- `/cpq/process` — business SOP/instruction page for setup and configuration workflows.
-- `/cpq/ui-docs` — internal UI label/code/data mapping reference.
+Primary routes:
+- `/cpq` (Bike Builder runtime)
+- `/cpq/setup` (setup + picture management)
+- `/cpq/results` (sampler matrix)
+- `/cpq/process` (SOP content)
+- `/cpq/ui-docs` (UI mapping table)
+- `/sales/bike-allocation` (sales allocation matrix + launch-to-CPQ)
 
-Additional route aliases:
-- `/` redirects to `/cpq`.
-- `/bike-builder` redirects to `/cpq`.
+Aliases:
+- `/` → `/cpq`
+- `/bike-builder` → `/cpq`
 
-## 2) Page/component architecture
+## 2) Shell/navigation/auth model
+- `app/layout.tsx` wraps pages in `AppShell`.
+- `AppShell` provides brand header + nav + `AdminModeProvider`.
+- Admin mode is client-side only (sessionStorage key `tp2-cpq-admin-mode`, password `Br0mpt0n`).
+- Non-admin nav shows Process, Sales allocation, Bike Builder, Setup.
+- Admin nav additionally shows Sampler Results and UI Docs.
 
-### `/cpq`
-- Route file: `app/cpq/page.tsx` (thin wrapper).
-- Main component: `components/cpq/bike-builder-page.tsx`.
-- Responsibilities:
-  - Manual CPQ lifecycle (`StartConfiguration` → `Configure` → `FinalizeConfiguration` → canonical save).
-  - Manual sampler save support action.
-  - Configuration reference retrieval.
-  - Layered preview resolution/download.
-  - Combination generation + bulk configure orchestration with operational-grid controls:
-    - feature-value filter panel generated from current combinations data,
-    - filter model: OR within a feature, AND across features,
-    - visible-row bulk row selection and visible-row bulk country assignment actions,
-    - selected-only row filter,
-    - column picker (feature + dynamic country columns),
-    - pre-run row-country validation,
-    - row-country execution queue with fresh StartConfiguration per unit.
-  - In-page debug timeline and per-row/per-country failure diagnostics.
-  - Non-admin compact desktop layout: compact control strip + two-column workspace (configurator left, layered preview right).
-  - Admin-only Bike Builder technical runtime block (session/detail/IPN/save/retrieve/bulk internals).
+Important boundary: this is **not** server-enforced authentication/RBAC; it is UI visibility gating.
 
-### `/cpq/setup`
-- Route file: `app/cpq/setup/page.tsx`.
-- Main component: `components/setup/cpq-setup-page.tsx`.
-- Responsibilities:
-  - Account context CRUD (`cpq_setup_account_context`).
-  - Ruleset CRUD (`cpq_setup_ruleset`).
-  - Feature-tabbed picture management and modal editing (`cpq_image_management`).
-  - Feature-level `ignore_during_configure` toggling.
-  - Feature-level `feature_layer_order` maintenance (`Layer order (1 = top layer)`).
-  - Sync from sampler results into picture management.
+## 3) Page architecture
+- `/cpq` → `components/cpq/bike-builder-page.tsx`
+  - Start/Configure/Finalize lifecycle
+  - canonical save/retrieve
+  - sampler save
+  - layered image preview
+  - combination generation + bulk row-country execution
+  - replay ingestion from sales launch context
+- `/cpq/setup` → `components/setup/cpq-setup-page.tsx`
+  - CRUD: account context/rulesets
+  - picture management editing
+  - feature-level ignore + layer-order controls
+  - sampler sync into `cpq_image_management`
+- `/cpq/results` → `components/cpq/cpq-results-page.tsx` + client matrix component
+- `/sales/bike-allocation` → server data loader + client matrix/toggle/bulk/replay launcher
+- `/cpq/process` and `/cpq/ui-docs` are static-ish client-doc pages.
 
-### `/cpq/results`
-- Route file: `app/cpq/results/page.tsx`.
-- Main components:
-  - server: `components/cpq/cpq-results-page.tsx`
-  - client table/filter: `components/cpq/cpq-results-matrix.client.tsx`
-- Responsibilities:
-  - Build a matrix from `CPQ_sampler_result` + ruleset lookup metadata.
-  - Group rows by `(sku_code + ruleset + selected feature signature)`.
-  - Pivot `detail_id` values across country columns.
+## 4) API architecture
+### CPQ runtime routes
+- `POST /api/cpq/init`
+- `POST /api/cpq/configure`
+- `POST /api/cpq/finalize`
+- `POST /api/cpq/retrieve-configuration`
 
+### CPQ persistence/setup routes
+- `POST/GET /api/cpq/configuration-references`
+- `POST /api/cpq/sampler-result`
+- `POST /api/cpq/image-layers`
+- `GET/POST/PUT/DELETE /api/cpq/setup/account-context*`
+- `GET/POST/PUT/DELETE /api/cpq/setup/rulesets*`
+- `GET/PUT/POST /api/cpq/setup/picture-management*`
 
-### `/cpq/process`
-- Route file: `app/cpq/process/page.tsx`.
-- Main component: `components/docs/process-page.tsx`.
-- Responsibility:
-  - Business-facing SOP guide for role ownership, setup dependencies, manual single-bike flow, and bulk execution flow.
-  - Read-only instructional content with anchored section navigation.
+### Sales routes
+- `POST /api/sales/bike-allocation/toggle`
+- `POST /api/sales/bike-allocation/bulk-update`
+- `POST /api/sales/bike-allocation/launch-context`
 
-### `/cpq/ui-docs`
-- Route file: `app/cpq/ui-docs/page.tsx`.
-- Main component: `components/docs/ui-docs-page.tsx`.
-- Responsibility:
-  - Human-readable mapping of visible labels to owning code and backing data sources.
+## 5) Data boundaries
+- `cpq_configuration_references` = canonical saved configuration registry for retrieve.
+- `CPQ_sampler_result` = support snapshots + sales allocation status source (`active`).
+- `CPQ_setup_account_context`, `CPQ_setup_ruleset` = setup/master tables.
+- `cpq_image_management` = layered preview mapping + feature-level bulk-ignore and layer order.
 
-## 3) API route architecture
+## 6) Feature flags/runtime switches
+- `NEXT_PUBLIC_CPQ_DEBUG=true`: client debug timeline capture in `/cpq` (still admin-visible only).
+- `CPQ_USE_MOCK=true`: mock responses for init/configure routes.
 
-### Runtime CPQ routes
-- `POST /api/cpq/init` → StartConfiguration.
-- `POST /api/cpq/configure` → Configure.
-- `POST /api/cpq/finalize` → FinalizeConfiguration.
-- `POST /api/cpq/retrieve-configuration` → resolve saved reference + StartConfiguration.
-- `POST /api/cpq/image-layers` → resolve stacked preview layers from `cpq_image_management`.
-
-### Persistence routes
-- `POST /api/cpq/configuration-references` → canonical save to `cpq_configuration_references`.
-- `GET /api/cpq/configuration-references?configuration_reference=...` → resolve canonical row.
-- `POST /api/cpq/sampler-result` → persist support/manual sampler snapshot to `CPQ_sampler_result`.
-  - insert contract includes `active=true` for new rows.
-
-### Setup routes
-- `GET/POST /api/cpq/setup/account-context`
-- `PUT/DELETE /api/cpq/setup/account-context/[id]`
-- `GET/POST /api/cpq/setup/rulesets`
-- `PUT/DELETE /api/cpq/setup/rulesets/[id]`
-- `GET /api/cpq/setup/picture-management`
-- `PUT /api/cpq/setup/picture-management/[id]`
-- `POST /api/cpq/setup/picture-management/sync`
-- `PUT /api/cpq/setup/picture-management/feature-flags`
-- `GET /api/cpq/setup/picture-management/ignored-features`
-
-## 4) Runtime boundaries and modules
-
-- `lib/cpq/runtime/*`
-  - CPQ request building/client calls.
-  - response normalization/mapping to `NormalizedBikeBuilderState`.
-  - debug trace helpers.
-  - canonical reference persistence adapter.
-  - sampler persistence adapter.
-- `lib/cpq/setup/service.ts`
-  - setup CRUD data services.
-  - sampler-to-picture sync.
-  - image layer resolution query ordered by feature layer order (`feature_layer_order`).
-- `lib/cpq/results/service.ts`
-  - results matrix read-model for `/cpq/results`.
-- `lib/db/client.ts`
-  - Neon SQL client wrapper.
-
-## 5) Lifecycle design rules (high level)
-
-- Canonical save registry is `cpq_configuration_references`.
-- Canonical save source snapshot rule is strictly:
-  1. latest Configure snapshot,
-  2. otherwise latest StartConfiguration snapshot.
-- Finalize response is **not** used as canonical save snapshot source (stored only as finalize metadata).
-- After canonical save succeeds, one support row is auto-saved to `CPQ_sampler_result` from the same source snapshot.
-- `CPQ_sampler_result.active` is the canonical active/inactive source for Sales bike allocation state.
-- Sales bike allocation UI rendering contract:
-  - `active=true` (at least one matching row) => green **Active**,
-  - matching rows exist with no active row => light red **Inactive**,
-  - no matching rows => grey **Not configured**.
-- Retrieve flow resolves `configuration_reference` then starts a fresh CPQ session.
-- `/cpq` runtime re-runs `/api/cpq/init` whenever account code or ruleset changes, using the currently applied UI values.
-- Sales `Not configured` launch into `/cpq` uses a replay-token handoff:
-  - compact route params carry target context (`ruleset/country/account/ipn` + `replay_token`),
-  - replay payload (selected options from sampler `json_result`) is stored in browser `sessionStorage`,
-  - `/cpq` replay lifecycle is explicit and ordered: prefill/apply context in UI → auto init after UI values are applied → replay options via existing remap + `/api/cpq/configure`.
-
-## 6) Debug visibility
-
-- API and CPQ/client layers emit structured logs using trace IDs (`x-cpq-trace-id` propagation).
-- `/cpq` maintains a local debug timeline of recent calls when `NEXT_PUBLIC_CPQ_DEBUG=true`.
-- Bulk run failures keep row-local diagnostics (stage, error, last requests/responses) shown via **Inspect failure** modal.
-
-
-## 7) Admin mode visibility model
-- Implemented client-side with `AdminModeProvider` (`components/shared/admin-mode-context.tsx`) and ribbon controls in `components/shared/app-navigation.tsx`.
-- **Open as admin** uses password dialog (`Br0mpt0n`) and stores enabled state in `sessionStorage` for the active browser tab/session.
-- Non-admin navigation surfaces: `/cpq/process`, `/cpq`, `/cpq/setup`.
-- Admin navigation additionally exposes `/cpq/results` and `/cpq/ui-docs` (UI docs page body is also gated).
-- Bike Builder debug timeline + technical runtime details are hidden unless admin mode is enabled.
+## 7) Known constraints
+- UI admin mode is not security.
+- `/cpq/results` can be opened directly by URL even when admin tab is hidden.
+- `/cpq/ui-docs` route renders for all users, but its component content gates detailed table to admin mode.
