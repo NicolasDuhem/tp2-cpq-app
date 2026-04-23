@@ -79,6 +79,8 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `/cpq/ui-docs` route renders for all users, but its component content gates detailed table to admin mode.
 
 ## 8) CPQ context invariants
-- `init` context is driven by current UI `accountCode` + `ruleset` (including replay launch from sales).
-- Replay launch sequence is: apply UI account/ruleset → run init in that context → replay configure steps → finalize/save in same context/session lineage.
+- One authoritative active CPQ context is maintained in `/cpq` state with owner + accountCode + countryCode + ruleset + sessionId (+ ids).
+- `init` context is driven by current UI `accountCode` + `ruleset` (including replay launch from sales), and init requests are sequenced so stale responses cannot win.
+- Replay launch sequence is: apply UI account/ruleset → run init in that context → accept only latest init result → replay configure steps on that session → finalize/save in same context/session lineage.
+- Finalize always reads session id from the authoritative active context (never stale/default/previous session refs).
 - `CPQ_sampler_result.active` remains canonical for Sales Active/Inactive rendering.

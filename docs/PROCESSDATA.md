@@ -57,13 +57,16 @@ Canonical `json_snapshot` and sampler payload source are:
 ### Replay handoff
 - Sales page stores replay payload in `sessionStorage` key `tp2-cpq-launch-replay:<token>`.
 - `/cpq` reads token payload, applies account/ruleset in UI, verifies those UI values are applied, then runs init with those live values.
+- Replay launch owns CPQ context while it runs; default auto-init is prevented from taking over during this phase.
+- Init requests use a sequence id, and only the latest init response is accepted as authoritative context/session; stale init responses are ignored.
 - After init completes, `/cpq` replays options from `json_result.selectedOptions` (fallback `dropdownOrderSnapshot`) through existing configure/remap logic.
-- Finalize/save use the active UI/session context from current refs (session + account + ruleset) so replayed configuration persists under the same CPQ context.
+- Configure/finalize/save all use the same authoritative context session (sessionId + accountCode + ruleset) established by the accepted init.
 
 ## 5.1) `/cpq` init refresh contract
 - Any account code change in UI triggers a fresh `POST /api/cpq/init`.
 - Any ruleset change in UI triggers a fresh `POST /api/cpq/init`.
 - Replay launch path explicitly starts init after UI account/ruleset sync to prevent stale default context leakage.
+- If multiple init requests are in flight, stale responses are dropped and cannot overwrite active session state.
 
 ## 6) Access/visibility model
 - Admin mode is a UI gate (sessionStorage + static password), not server auth.

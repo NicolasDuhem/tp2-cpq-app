@@ -26,11 +26,13 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 ### `/cpq` init trigger contract
 - `POST /api/cpq/init` is re-run whenever account code changes in UI.
 - `POST /api/cpq/init` is re-run whenever ruleset changes in UI.
-- Sales “Not configured” launch applies account/ruleset into UI first, then runs init with those live UI selections, then replays configure options.
+- Each init request is sequenced; only the latest init response is accepted as active context (stale responses are ignored).
+- Sales “Not configured” launch takes temporary ownership of CPQ context: apply account/ruleset in UI → run init with those live values → accept latest init only → replay configure options on that same active session.
+- Finalize/save always read session/ruleset/account from the authoritative active CPQ context set by the accepted init (not from stale/default session refs).
 
 ## Data ownership summary
 - Canonical save/retrieve: `cpq_configuration_references`
-- Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status)
+- Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status: Active=true, Inactive=false, Not configured=no row)
 - Setup master data: `CPQ_setup_account_context`, `CPQ_setup_ruleset`
 - Layered preview + bulk-ignore behavior: `cpq_image_management`
 

@@ -14,6 +14,18 @@ type RequestState = {
   error?: string;
 };
 
+type ActiveCpqContext = {
+  owner: 'standard' | 'sales-launch-replay' | 'retrieved-reference';
+  accountCode: string;
+  countryCode: string;
+  ruleset: string;
+  sessionId: string | null;
+  headerId: string | null;
+  detailId: string | null;
+  source: string;
+  initRequestSeq: number | null;
+};
+
 
 export type BikeBuilderPagePrefill = {
   ruleset?: string;
@@ -366,14 +378,18 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     message: 'Idle',
   });
   const manualSessionClosedRef = useRef(false);
+  const isReplayLaunch = Boolean((prefill?.replay_token ?? '').trim());
   const initQueryAppliedRef = useRef(false);
   const accountCodeRef = useRef('');
   const rulesetRef = useRef('');
   const initInFlightKeyRef = useRef<string | null>(null);
   const lastInitCompletedRef = useRef<{ key: string; sessionId: string } | null>(null);
+  const initRequestSeqRef = useRef(0);
   const replayLaunchAppliedRef = useRef(false);
   const replayInProgressRef = useRef(false);
   const stateRef = useRef<NormalizedBikeBuilderState | null>(null);
+  const [activeCpqContext, setActiveCpqContext] = useState<ActiveCpqContext | null>(null);
+  const activeCpqContextRef = useRef<ActiveCpqContext | null>(null);
   const [imageLayerResolution, setImageLayerResolution] = useState<ImageLayerResolution>({
     layers: [],
     matchedSelections: [],
@@ -418,6 +434,21 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+  useEffect(() => {
+    activeCpqContextRef.current = activeCpqContext;
+  }, [activeCpqContext]);
+  useEffect(() => {
+    if (!activeCpqContext) return;
+    console.info('[CPQ context] active session updated', {
+      owner: activeCpqContext.owner,
+      sessionId: activeCpqContext.sessionId,
+      accountCode: activeCpqContext.accountCode,
+      countryCode: activeCpqContext.countryCode,
+      ruleset: activeCpqContext.ruleset,
+      initRequestSeq: activeCpqContext.initRequestSeq,
+      source: activeCpqContext.source,
+    });
+  }, [activeCpqContext]);
   const availableCountryCodes = useMemo(
     () =>
       [...new Set(accountContexts.map((entry) => entry.country_code?.trim().toUpperCase()).filter((entry): entry is string => Boolean(entry)))]
@@ -501,7 +532,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
   const startConfiguration = async (
     reason: string,
-    overrides?: { accountCode?: string; ruleset?: string },
+    overrides?: { accountCode?: string; ruleset?: string; owner?: ActiveCpqContext['owner'] },
   ): Promise<NormalizedBikeBuilderState | null> => {
     const requestedAccountCode = (overrides?.accountCode ?? accountCodeRef.current).trim();
     const requestedRuleset = (overrides?.ruleset ?? rulesetRef.current).trim();
@@ -512,6 +543,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     }
 
     const initKey = `${activeAccount.account_code}::${requestedRuleset}`;
+    const initRequestSeq = ++initRequestSeqRef.current;
     const traceId = createTraceId();
     const activeRuleset = resolveActiveRuleset(requestedRuleset);
     if (!activeRuleset) {
@@ -522,6 +554,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
     console.info('[CPQ init] started', {
       reason,
+      initRequestSeq,
       accountCode: activeAccount.account_code,
       ruleset: activeRuleset.cpq_ruleset,
       sourceIpn: prefill?.ipn_code ?? null,
@@ -562,7 +595,30 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         throw new Error(responsePayload.error ?? 'StartConfiguration failed');
       }
 
+      if (initRequestSeq !== initRequestSeqRef.current) {
+        console.info('[CPQ init] stale response ignored', {
+          reason,
+          initRequestSeq,
+          latestInitRequestSeq: initRequestSeqRef.current,
+          accountCode: activeAccount.account_code,
+          ruleset: activeRuleset.cpq_ruleset,
+          sessionId: responsePayload.parsed.sessionId,
+        });
+        return null;
+      }
+
       setState(responsePayload.parsed);
+      setActiveCpqContext({
+        owner: overrides?.owner ?? 'standard',
+        accountCode: activeAccount.account_code,
+        countryCode: activeAccount.country_code,
+        ruleset: activeRuleset.cpq_ruleset,
+        sessionId: responsePayload.parsed.sessionId,
+        headerId: activeRuleset.header_id,
+        detailId: responsePayload.parsed.detailId ?? null,
+        source: reason,
+        initRequestSeq,
+      });
       const startSnapshot: SamplerSourceSnapshot = {
         source: 'startconfiguration',
         capturedAt: new Date().toISOString(),
@@ -580,6 +636,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       };
       console.info('[CPQ init] completed', {
         reason,
+        initRequestSeq,
         accountCode: activeAccount.account_code,
         ruleset: activeRuleset.cpq_ruleset,
         sessionId: responsePayload.parsed.sessionId,
@@ -594,6 +651,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       lastInitCompletedRef.current = null;
       console.info('[CPQ init] failed', {
         reason,
+        initRequestSeq,
         accountCode: activeAccount.account_code,
         ruleset: activeRuleset.cpq_ruleset,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -734,6 +792,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         const startedState = await startConfiguration('sales-launch-replay-context-ready', {
           accountCode: accountCodeRef.current,
           ruleset: rulesetRef.current,
+          owner: 'sales-launch-replay',
         });
         if (!startedState?.sessionId) {
           console.info('[CPQ replay launch] init did not complete in time', {
@@ -782,6 +841,13 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   useEffect(() => {
     if (!initQueryAppliedRef.current) return;
     if (!accountContexts.length || !rulesets.length) return;
+    if (isReplayLaunch || replayInProgressRef.current) {
+      console.info('[CPQ init] auto-init skipped while sales replay owns context', {
+        isReplayLaunch,
+        replayInProgress: replayInProgressRef.current,
+      });
+      return;
+    }
     const nextAccountCode = accountCode.trim();
     const nextRuleset = ruleset.trim();
     if (!nextAccountCode || !nextRuleset) return;
@@ -792,7 +858,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     }
     void startConfiguration('account-or-ruleset-change', { accountCode: nextAccountCode, ruleset: nextRuleset });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountCode, ruleset, accountContexts.length, rulesets.length]);
+  }, [accountCode, ruleset, accountContexts.length, rulesets.length, isReplayLaunch]);
 
   useEffect(() => {
     const loadIgnoredFeatures = async () => {
@@ -1076,7 +1142,9 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   );
 
   const configureOption = async (featureId: string, option: BikeBuilderFeatureOption) => {
-    if (!state?.sessionId || manualSessionClosedRef.current) {
+    const currentContext = activeCpqContextRef.current;
+    const activeSessionId = currentContext?.sessionId ?? state?.sessionId ?? null;
+    if (!activeSessionId || manualSessionClosedRef.current) {
       setRequestState({ loading: false, error: 'No active session. Start a new configuration session.' });
       return;
     }
@@ -1087,17 +1155,17 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
     try {
       const { response, payload } = await trackedFetch<CpqRouteResponse>(traceId, 'Configure', '/api/cpq/configure', {
-        sessionId: state.sessionId,
+        sessionId: activeSessionId,
         featureId,
         optionId: option.optionId,
         optionValue: option.value ?? option.optionId,
-        ruleset,
+        ruleset: currentContext?.ruleset ?? ruleset,
         context: {
-          accountCode: selectedAccount?.account_code,
+          accountCode: currentContext?.accountCode ?? selectedAccount?.account_code,
           customerId: selectedAccount?.customer_id,
           currency: selectedAccount?.currency,
           language: selectedAccount?.language,
-          countryCode: selectedAccount?.country_code,
+          countryCode: currentContext?.countryCode ?? selectedAccount?.country_code,
         },
       });
 
@@ -1106,6 +1174,18 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       }
 
       setState(payload.parsed);
+      if (activeCpqContextRef.current) {
+        setActiveCpqContext((current) =>
+          current
+            ? {
+                ...current,
+                sessionId: payload.parsed.sessionId ?? current.sessionId,
+                detailId: payload.parsed.detailId ?? current.detailId,
+                source: 'configure-option',
+              }
+            : current,
+        );
+      }
       const configureSnapshot: SamplerSourceSnapshot = {
         source: 'configure',
         capturedAt: new Date().toISOString(),
@@ -1288,13 +1368,15 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   };
 
   const saveConfiguration = async () => {
-    const saveAccount = resolveActiveAccount();
-    const saveRulesetValue = rulesetRef.current.trim();
+    const currentContext = activeCpqContextRef.current;
+    const saveAccount = resolveActiveAccount(currentContext?.accountCode);
+    const saveRulesetValue = (currentContext?.ruleset ?? rulesetRef.current).trim();
     const saveRulesetEntry = resolveActiveRuleset(saveRulesetValue);
-    if (!state?.sessionId || !saveAccount) {
+    const activeSessionId = currentContext?.sessionId ?? null;
+    if (!activeSessionId || !saveAccount) {
       setSaveStatus('error');
       setSaveMessage('Missing session ID before finalize');
-      setSaveTechnicalDetail('No active configuration session was found in UI state.');
+      setSaveTechnicalDetail('No active authoritative configuration session was found.');
       return;
     }
     if (!saveRulesetEntry || !saveRulesetValue) {
@@ -1305,9 +1387,10 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     }
 
     console.info('[CPQ finalize] request context', {
-      sessionId: state.sessionId,
+      sessionId: activeSessionId,
       accountCode: saveAccount.account_code,
       ruleset: saveRulesetValue,
+      owner: currentContext?.owner ?? 'unknown',
       sourceHeaderId: state.sourceHeaderId ?? null,
       sourceDetailId: state.sourceDetailId ?? null,
     });
@@ -1319,7 +1402,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
     try {
       const finalizePayload: FinalizeConfigurationRequest = {
-        sessionID: state.sessionId,
+        sessionID: activeSessionId,
       };
       const finalizeResult = await trackedFetch<CpqRouteResponse>(
         traceId,
@@ -1353,6 +1436,12 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         return;
       }
       const saveSourceState = saveSource.parsed;
+      console.info('[CPQ save] canonical persistence context', {
+        sessionId: activeSessionId,
+        ruleset: saveRulesetValue,
+        accountCode: saveAccount.account_code,
+        source: saveSource.source,
+      });
 
       const saveResult = await trackedFetch<{ row?: ConfigurationReferenceRow; error?: string; details?: string }>(
         traceId,
@@ -1366,7 +1455,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           header_id: saveRulesetEntry.header_id ?? fallbackRuleset.header_id,
           finalized_detail_id: finalizedDetailId,
           source_working_detail_id: state.detailId,
-          source_session_id: state.sessionId,
+          source_session_id: activeSessionId,
           source_header_id: saveSourceState.sourceHeaderId ?? saveRulesetEntry.header_id ?? fallbackRuleset.header_id,
           source_detail_id: saveSourceState.sourceDetailId ?? null,
           account_code: saveAccount.account_code,
@@ -1379,7 +1468,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           customer_location: saveAccount.country_code,
           application_instance: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
           application_name: process.env.NEXT_PUBLIC_CPQ_INSTANCE ?? null,
-          finalized_session_id: state.sessionId,
+          finalized_session_id: activeSessionId,
           final_ipn_code: saveSourceState.ipnCode ?? null,
           product_description: saveSourceState.productDescription ?? null,
           finalize_response_json: finalizeResult.payload.rawResponse,
@@ -1413,6 +1502,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
       manualSessionClosedRef.current = true;
       setState(null);
+      setActiveCpqContext((current) => (current ? { ...current, sessionId: null, source: 'finalized-and-closed' } : current));
       setRequestState({ loading: false, error: undefined });
     } catch (error) {
       setSaveStatus('error');
@@ -1450,6 +1540,17 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
       manualSessionClosedRef.current = false;
       setRuleset(payload.resolved.ruleset);
       if (payload.resolved.account_code) setAccountCode(payload.resolved.account_code);
+      setActiveCpqContext({
+        owner: 'retrieved-reference',
+        accountCode: payload.resolved.account_code ?? accountCodeRef.current,
+        countryCode: payload.resolved.country_code ?? selectedAccount?.country_code ?? '',
+        ruleset: payload.resolved.ruleset,
+        sessionId: payload.parsed.sessionId,
+        headerId: payload.resolved.header_id ?? null,
+        detailId: payload.parsed.detailId ?? payload.resolved.finalized_detail_id ?? null,
+        source: 'retrieve-configuration',
+        initRequestSeq: null,
+      });
       const retrievedSnapshot: SamplerSourceSnapshot = {
         source: 'startconfiguration',
         capturedAt: new Date().toISOString(),
@@ -1745,7 +1846,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         optionMatchStrategy: optionRemap.strategy,
       });
       const activeAccountForConfigure = resolveActiveAccount();
-      const activeRulesetForConfigure = rulesetRef.current.trim();
+      const activeRulesetForConfigure = activeCpqContextRef.current?.ruleset?.trim() || rulesetRef.current.trim();
 
       const configure = await trackedFetch<CpqRouteResponse>(replayTraceId, 'SalesLaunchReplay:Configure', '/api/cpq/configure', {
         sessionId: workingState.sessionId,
@@ -1777,6 +1878,16 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         continue;
       }
       workingState = configure.payload.parsed;
+      setActiveCpqContext((current) =>
+        current
+          ? {
+              ...current,
+              sessionId: workingState.sessionId ?? current.sessionId,
+              detailId: workingState.detailId ?? current.detailId,
+              source: 'sales-launch-replay-configure',
+            }
+          : current,
+      );
     }
 
     return workingState;
