@@ -1,8 +1,10 @@
-# CPQ API payload contracts (active routes)
+# API payload contracts (current routes)
 
-## Runtime routes
+## CPQ runtime
 
 ## `POST /api/cpq/init`
+Purpose: call StartConfiguration and normalize CPQ response.
+
 Request (representative):
 ```json
 {
@@ -25,82 +27,54 @@ Request (representative):
   }
 }
 ```
-Response includes:
-- `traceId`
-- `sessionId`
-- `parsed` (`NormalizedBikeBuilderState`)
-- `rawResponse`
-- `requestBody`
-- `callType = "StartConfiguration"`
 
 ## `POST /api/cpq/configure`
-Required request fields: `sessionId`, `featureId`, `optionValue`.
-Representative request:
+Required: `sessionId`, `featureId`, `optionValue`.
+
 ```json
 {
   "sessionId": "<session>",
-  "featureId": "<feature>",
+  "featureId": "<feature-id>",
   "optionId": "<option-id>",
   "optionValue": "<option-value>",
   "ruleset": "BBLV6_G-LineMY26"
 }
 ```
-Response includes parsed state, raw response, trace metadata, and downstream request/response echoes.
 
 ## `POST /api/cpq/finalize`
-Request:
 ```json
-{ "sessionID": "<active-session>" }
+{ "sessionID": "<session>" }
 ```
-Error categories:
+Errors:
 - `missing_session_id` (400)
 - `cpq_finalize_failed` (500)
 
 ## `POST /api/cpq/retrieve-configuration`
-Request:
 ```json
 { "configuration_reference": "CFG-YYYYMMDD-XXXXXXXX" }
 ```
-Response includes:
-- resolved canonical row (`resolved`)
-- built StartConfiguration input (`startConfigurationInput`)
-- new session + parsed state (`sessionId`, `parsed`)
+Returns resolved DB row + StartConfiguration input + new parsed session state.
 
-## Persistence routes
+## CPQ persistence
 
 ## `POST /api/cpq/configuration-references`
-Request accepts canonical save payload fields, including:
-- identity: `configuration_reference`, `canonical_header_id`, `canonical_detail_id`, `ruleset`, `namespace`
-- lineage/session/context fields
-- JSONB fields: `finalize_response_json`, `json_snapshot`
+Upsert canonical configuration row in `cpq_configuration_references`.
+Important request fields:
+- identity: `configuration_reference?`, `canonical_header_id`, `canonical_detail_id`, `ruleset`, `namespace`
+- session/source lineage and context fields
+- `finalize_response_json` (object)
+- `json_snapshot` (object)
 
-Success response:
-```json
-{ "traceId": "<uuid>", "row": { "id": 123, "configuration_reference": "CFG-..." } }
-```
-
-## `GET /api/cpq/configuration-references`
-Query param:
-- `configuration_reference`
-
-Returns row if found and active, else 404.
+## `GET /api/cpq/configuration-references?configuration_reference=...`
+Returns active matching row or 404.
 
 ## `POST /api/cpq/sampler-result`
+Inserts support snapshot row into `CPQ_sampler_result` with `active=true`.
 Required:
 - `ruleset`
 - `account_code`
 
-Optional:
-- IPN/account context/header/detail/session fields
-- `json_result`
-
-Response:
-```json
-{ "status": "inserted", "row": { "id": 1, "created_at": "..." } }
-```
-
-## Setup routes
-
+## Setup + picture management
 - `GET/POST /api/cpq/setup/account-context`
 - `PUT/DELETE /api/cpq/setup/account-context/[id]`
 - `GET/POST /api/cpq/setup/rulesets`
@@ -108,23 +82,23 @@ Response:
 - `GET /api/cpq/setup/picture-management`
 - `PUT /api/cpq/setup/picture-management/[id]`
 - `POST /api/cpq/setup/picture-management/sync`
-- `PUT /api/cpq/setup/picture-management/feature-flags`
 - `GET /api/cpq/setup/picture-management/ignored-features`
+- `PUT /api/cpq/setup/picture-management/feature-flags`
 
-### `PUT /api/cpq/setup/picture-management/feature-flags`
-Request body:
-- required: `feature_label`
-- optional: `ignore_during_configure` (boolean)
-- optional: `feature_layer_order` (integer `1..20`)
+`PUT /api/cpq/setup/picture-management/feature-flags` body:
+```json
+{
+  "feature_label": "<required>",
+  "ignore_during_configure": true,
+  "feature_layer_order": 10
+}
+```
+- At least one of `ignore_during_configure` / `feature_layer_order` must be included.
+- `feature_layer_order` must be integer `1..20`.
+- Update scope is all rows with matching `feature_label`.
 
-Behavior:
-- Updates all `cpq_image_management` rows sharing the same `feature_label`.
-- `feature_layer_order` is feature-level business control (`1 = top layer`).
-
-## Layer route
-
+## Layered preview
 ## `POST /api/cpq/image-layers`
-Request:
 ```json
 {
   "selectedOptions": [
@@ -132,8 +106,38 @@ Request:
   ]
 }
 ```
-Response:
-- `layers[]`
-  - each layer includes `featureLayerOrder`
-- `matchedSelections[]`
-- `unmatchedSelections[]`
+Returns `layers[]`, `matchedSelections[]`, `unmatchedSelections[]`.
+
+## Sales allocation APIs
+
+## `POST /api/sales/bike-allocation/toggle`
+```json
+{
+  "ruleset": "...",
+  "ipnCode": "...",
+  "countryCode": "...",
+  "targetStatus": "active | not_active"
+}
+```
+Writes `CPQ_sampler_result.active` for matching cell rows.
+
+## `POST /api/sales/bike-allocation/bulk-update`
+```json
+{
+  "ruleset": "...",
+  "ipnCodes": ["..."],
+  "countryCodes": ["..."],
+  "targetStatus": "active | not_active"
+}
+```
+Bulk updates `CPQ_sampler_result.active` for matching ruleset/IPN/country sets.
+
+## `POST /api/sales/bike-allocation/launch-context`
+```json
+{
+  "ruleset": "...",
+  "ipnCode": "...",
+  "countryCode": "..."
+}
+```
+Returns launch context (`ruleset`, `countryCode`, `accountCode`) + replay options resolved from sampler JSON payload.
