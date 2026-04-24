@@ -186,6 +186,10 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 .pageHeader p { margin:0; color:var(--muted); font-size:13px; }
 .tabRow { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
 .denseGrid4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px; margin-bottom:8px; min-width:0; }
+.denseGrid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:8px; }
+.qpartMetadataCard { border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; background:#fff; }
+.qpartMetadataHeader { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.qpartMetadataActions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .denseGrid4 label { display:grid; gap:6px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; }
 .inlineCheck { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px; }
 .rowButtons { display:flex; gap:6px; flex-wrap:wrap; }

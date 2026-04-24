@@ -125,3 +125,14 @@ Canonical `json_snapshot` and sampler payload source are:
    - primary: `selectedOptions[].featureLabel + optionValue (+ optionLabel)`
    - fallback: `dropdownOrderSnapshot`
 5. QPart unions derived values with active `qpart_compatibility_reference_values`.
+
+
+### Field-by-field metadata AI translation flow
+1. User clicks **Translate** on one translatable metadata field in QPart part edit/create UI.
+2. Backend resolves dynamic locales from `CPQ_setup_account_context.language` and excludes base locale.
+3. Backend builds Brompton spare-part translation prompt with part number, hierarchy L1..L7 context, field key/label, and technical-token preservation rules.
+4. Backend calls OpenAI (`gpt-5.4-mini` by default) and validates structured JSON output.
+5. Backend upserts translated locale rows into `qpart_part_metadata_values` for missing locales only (default safety behavior).
+6. UI refreshes field-level locale values/status (`x/y translated`) without expanding all locale inputs by default.
+
+Future compatibility note: this design allows adding a bulk "new locale backfill" workflow later without changing table design.

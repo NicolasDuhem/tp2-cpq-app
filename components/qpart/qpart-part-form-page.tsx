@@ -25,10 +25,15 @@ export default function QPartPartFormPage({ partId }: Props) {
   const [translations, setTranslations] = useState<Record<string, { name: string; description: string }>>({});
   const [metadataValues, setMetadataValues] = useState<Record<string, unknown>>({});
   const [metadataTranslations, setMetadataTranslations] = useState<Record<string, Record<string, unknown>>>({});
+  const [expandedMetadataLocales, setExpandedMetadataLocales] = useState<Record<string, boolean>>({});
+  const [translatingMetadata, setTranslatingMetadata] = useState<Record<string, boolean>>({});
+  const [metadataMessages, setMetadataMessages] = useState<Record<string, string>>({});
   const [compatibilityRules, setCompatibilityRules] = useState<QPartCompatibilityRule[]>([]);
   const [derivedCandidates, setDerivedCandidates] = useState<QPartCompatibilityCandidate[]>([]);
   const [hierarchySelections, setHierarchySelections] = useState<LevelSelections>(emptyLevelSelections);
   const [message, setMessage] = useState('');
+
+  const nonBaseLocales = useMemo(() => locales.filter((locale) => locale !== baseLocale), [locales, baseLocale]);
 
   const selectedHierarchyNodeId = useMemo(() => {
     for (let level = 7; level >= 1; level -= 1) {
@@ -114,7 +119,7 @@ export default function QPartPartFormPage({ partId }: Props) {
       hydrateSelectionsFromNode(row.part.hierarchy_node_id ?? null);
     };
     void loadPart();
-  }, [partId, hierarchyNodes.length]);
+  }, [partId, hierarchyNodes.length, baseLocale]);
 
   const getLevelOptions = (level: number) => {
     if (level === 1) return hierarchyNodes.filter((node) => node.level === 1 && node.is_active);
@@ -139,17 +144,81 @@ export default function QPartPartFormPage({ partId }: Props) {
     setDerivedCandidates(payload.rows || []);
   };
 
+  const translateMetadataField = async (definition: QPartMetadataDefinition) => {
+    const key = String(definition.id);
+    const baseValue = String(metadataValues[key] ?? '').trim();
+    if (!baseValue) {
+      setMetadataMessages((prev) => ({ ...prev, [key]: `Enter a ${baseLocale} value before translating.` }));
+      return;
+    }
+    if (!partId) {
+      setMetadataMessages((prev) => ({ ...prev, [key]: 'Save the part first before requesting AI translation.' }));
+      return;
+    }
+
+    setMetadataMessages((prev) => ({ ...prev, [key]: '' }));
+    setTranslatingMetadata((prev) => ({ ...prev, [key]: true }));
+
+    const res = await fetch('/api/qpart/translations/field', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        part_id: partId,
+        metadata_definition_id: definition.id,
+        fill_missing_only: true,
+      }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    setTranslatingMetadata((prev) => ({ ...prev, [key]: false }));
+
+    if (!res.ok) {
+      setMetadataMessages((prev) => ({ ...prev, [key]: payload.error || 'Translation failed.' }));
+      return;
+    }
+
+    const translatedRows = Array.isArray(payload.row?.translated) ? payload.row.translated : [];
+    if (translatedRows.length) {
+      setMetadataTranslations((prev) => {
+        const next = { ...prev };
+        const row = { ...(next[key] || {}) };
+        for (const item of translatedRows) {
+          row[item.locale] = item.text;
+        }
+        next[key] = row;
+        return next;
+      });
+      setExpandedMetadataLocales((prev) => ({ ...prev, [key]: true }));
+    }
+
+    const skippedLocales = Array.isArray(payload.row?.skippedLocales) ? payload.row.skippedLocales.length : 0;
+    const failedLocales = Array.isArray(payload.row?.failedLocales) ? payload.row.failedLocales.length : 0;
+
+    if (failedLocales > 0) {
+      setMetadataMessages((prev) => ({
+        ...prev,
+        [key]: `Translated ${translatedRows.length} locale(s), ${failedLocales} failed, ${skippedLocales} skipped (already filled).`,
+      }));
+      return;
+    }
+
+    if (!translatedRows.length) {
+      setMetadataMessages((prev) => ({ ...prev, [key]: 'All locale values are already filled.' }));
+      return;
+    }
+
+    setMetadataMessages((prev) => ({ ...prev, [key]: `Translated ${translatedRows.length} locale(s). ${skippedLocales} skipped (already filled).` }));
+  };
+
   const persist = async () => {
-    const translationRows = locales
-      .filter((locale) => locale !== baseLocale)
-      .map((locale) => ({ locale, name: translations[locale]?.name || '', description: translations[locale]?.description || '' }));
+    const translationRows = nonBaseLocales.map((locale) => ({ locale, name: translations[locale]?.name || '', description: translations[locale]?.description || '' }));
 
     const metadataRows: Array<Record<string, unknown>> = [];
     for (const definition of metadataDefs) {
       const baseValue = metadataValues[String(definition.id)];
       metadataRows.push({ ...toMetadataPayload(definition.field_type, baseValue), metadata_definition_id: definition.id, locale: baseLocale });
       if (definition.is_translatable) {
-        for (const locale of locales.filter((value) => value !== baseLocale)) {
+        for (const locale of nonBaseLocales) {
           const localized = metadataTranslations[String(definition.id)]?.[locale];
           metadataRows.push({ ...toMetadataPayload(definition.field_type, localized), metadata_definition_id: definition.id, locale });
         }
@@ -237,44 +306,76 @@ export default function QPartPartFormPage({ partId }: Props) {
 
       <div className="card">
         <h3>Metadata values</h3>
-        {metadataDefs.map((definition) => (
-          <div key={definition.id} style={{ marginBottom: 12 }}>
-            <label style={{ display: 'grid', gap: 6 }}>
-              {definition.label_en} ({definition.key})
-              <MetadataField
-                definition={definition}
-                value={metadataValues[String(definition.id)]}
-                onChange={(value) => setMetadataValues((prev) => ({ ...prev, [String(definition.id)]: value }))}
-              />
-            </label>
-            {definition.is_translatable ? (
-              <div className="denseGrid4" style={{ marginTop: 8 }}>
-                {locales.filter((locale) => locale !== baseLocale).map((locale) => (
-                  <label key={`${definition.id}-${locale}`}>
-                    {definition.label_en} ({locale})
-                    <MetadataField
-                      definition={definition}
-                      value={metadataTranslations[String(definition.id)]?.[locale]}
-                      onChange={(value) =>
-                        setMetadataTranslations((prev) => ({
-                          ...prev,
-                          [String(definition.id)]: { ...(prev[String(definition.id)] || {}), [locale]: value },
-                        }))
-                      }
-                    />
-                  </label>
-                ))}
+        <div className="denseGrid2">
+          {metadataDefs.map((definition) => {
+            const key = String(definition.id);
+            const translatedCount = definition.is_translatable
+              ? nonBaseLocales.filter((locale) => hasMetadataValue(metadataTranslations[key]?.[locale])).length
+              : 0;
+            const totalTranslations = definition.is_translatable ? nonBaseLocales.length : 0;
+            const isExpanded = Boolean(expandedMetadataLocales[key]);
+
+            return (
+              <div key={definition.id} className="qpartMetadataCard">
+                <div className="qpartMetadataHeader">
+                  <div>
+                    <strong>{definition.label_en}</strong>
+                    <p className="subtle" style={{ margin: 0 }}>{definition.key}</p>
+                  </div>
+                  {definition.is_translatable ? (
+                    <div className="qpartMetadataActions">
+                      <span className="subtle">{translatedCount}/{totalTranslations} translated</span>
+                      <button type="button" onClick={() => setExpandedMetadataLocales((prev) => ({ ...prev, [key]: !prev[key] }))}>
+                        {isExpanded ? '▾' : '▸'}
+                      </button>
+                      <button type="button" disabled={!partId || Boolean(translatingMetadata[key])} onClick={() => void translateMetadataField(definition)}>
+                        {translatingMetadata[key] ? 'Translating…' : 'Translate'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  {definition.label_en} ({baseLocale})
+                  <MetadataField
+                    definition={definition}
+                    value={metadataValues[key]}
+                    onChange={(value) => setMetadataValues((prev) => ({ ...prev, [key]: value }))}
+                  />
+                </label>
+
+                {definition.is_translatable && isExpanded ? (
+                  <div className="denseGrid2" style={{ marginTop: 8 }}>
+                    {nonBaseLocales.map((locale) => (
+                      <label key={`${definition.id}-${locale}`}>
+                        {definition.label_en} ({locale})
+                        <MetadataField
+                          definition={definition}
+                          value={metadataTranslations[key]?.[locale]}
+                          onChange={(value) =>
+                            setMetadataTranslations((prev) => ({
+                              ...prev,
+                              [key]: { ...(prev[key] || {}), [locale]: value },
+                            }))
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+
+                {metadataMessages[key] ? <p className="subtle" style={{ marginBottom: 0 }}>{metadataMessages[key]}</p> : null}
               </div>
-            ) : null}
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
 
       <div className="card">
         <h3>Translations</h3>
         <p className="subtle">Base locale: {baseLocale}</p>
         <div className="denseGrid4">
-          {locales.filter((locale) => locale !== baseLocale).map((locale) => (
+          {nonBaseLocales.map((locale) => (
             <div key={locale} className="tile">
               <strong>{locale}</strong>
               <label>Name
@@ -377,6 +478,13 @@ export default function QPartPartFormPage({ partId }: Props) {
       </div>
     </section>
   );
+}
+
+function hasMetadataValue(value: unknown) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
 }
 
 function toMetadataPayload(fieldType: string, rawValue: unknown) {

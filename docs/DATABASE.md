@@ -87,3 +87,10 @@ QPart dynamic reference reads (read-only):
 - locales from `CPQ_setup_account_context.language` distinct values.
 - bike types from `CPQ_setup_ruleset.bike_type` distinct values.
 - derived compatibility options from `CPQ_sampler_result.json_result` parsing `selectedOptions` with fallback to `dropdownOrderSnapshot`.
+
+
+## QPart metadata AI translation behavior
+- API route `POST /api/qpart/translations/field` reads/writes `qpart_part_metadata_values` only (no schema changes).
+- English/base row (`locale = base locale from locale service`) remains source input for translation requests.
+- Target locale rows are upserted only for locales currently present in distinct `CPQ_setup_account_context.language` values.
+- Default write policy is fill-missing only; non-empty existing locale rows are skipped unless future explicit overwrite mode is introduced.

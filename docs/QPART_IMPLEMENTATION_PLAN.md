@@ -31,6 +31,7 @@ Supporting API routes:
 - `GET /api/qpart/locales` (distinct languages from `CPQ_setup_account_context`).
 - `GET /api/qpart/bike-types` (distinct bike types from `CPQ_setup_ruleset`).
 - CRUD under `/api/qpart/parts`, `/api/qpart/hierarchy`, `/api/qpart/metadata`, `/api/qpart/compatibility`.
+- `POST /api/qpart/translations/field` for field-by-field AI translation of translatable metadata values (server-side OpenAI integration, fill-missing default).
 - `POST /api/qpart/compatibility/derive` for bike-type-driven feature/option discovery from `CPQ_sampler_result.json_result`.
 
 ---
@@ -503,3 +504,12 @@ Implemented MVP in current repo with isolated namespaces:
 Minor implementation choices versus plan:
 - Part edit uses single-page sections instead of tabbed UI, but includes all required MVP sections.
 - Compatibility reference values are managed on dedicated `/qpart/compatibility` page and reused by derive endpoint union logic.
+
+
+## Implemented extension: field-level AI translation
+- Metadata UI keeps base locale input visible and hides non-base locale inputs behind an expand/collapse control.
+- Each translatable field has per-field Translate action + compact status (`translated/target`).
+- Locale targets remain dynamic from `CPQ_setup_account_context.language`; no hardcoded locale list.
+- Translation persistence reuses `qpart_part_metadata_values`; no new translation tables were required.
+- Safety policy is fill-missing-only by default (non-empty locale values are not overwritten).
+- Server configuration: `OPENAI_API_KEY` (required), optional `OPENAI_TRANSLATION_MODEL` with default `gpt-5.4-mini`.
