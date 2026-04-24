@@ -4,6 +4,7 @@ import { listAccountContexts } from '@/lib/cpq/setup/service';
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
   country_code?: string;
+  bike_type?: string;
 };
 
 type SamplerRow = {
@@ -36,6 +37,7 @@ type ReplaySelectedOption = {
 export type SalesBikeAllocationFilterOptions = {
   rulesets: string[];
   countryCodes: string[];
+  bikeTypes: string[];
 };
 
 export type AllocationStatus = 'active' | 'not_active' | 'not_configured';
@@ -43,6 +45,7 @@ export type AllocationStatus = 'active' | 'not_active' | 'not_configured';
 export type SalesBikeAllocationRow = {
   ipnCode: string;
   rowRuleset: string;
+  bikeType: string;
   featureValues: Record<string, string>;
   countryStatuses: Record<string, AllocationStatus>;
 };
@@ -119,19 +122,38 @@ function parseReplaySelectedOptions(jsonResult: unknown): ReplaySelectedOption[]
 }
 
 async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
-  const [rulesetRows, countryRows] = await Promise.all([
+  const [rulesetRows, countryRows, bikeTypeRows] = await Promise.all([
     sql`select distinct ruleset from CPQ_sampler_result where coalesce(trim(ruleset), '') <> '' order by ruleset`,
     sql`select distinct country_code from CPQ_sampler_result where coalesce(trim(country_code), '') <> '' order by country_code`,
+    sql`
+      select distinct bike_type
+      from CPQ_setup_ruleset
+      where coalesce(trim(bike_type), '') <> ''
+      order by bike_type
+    `,
   ]);
 
   return {
     rulesets: (rulesetRows as Array<{ ruleset: string }>).map((row) => row.ruleset),
     countryCodes: (countryRows as Array<{ country_code: string }>).map((row) => row.country_code),
+    bikeTypes: (bikeTypeRows as Array<{ bike_type: string }>).map((row) => row.bike_type),
   };
 }
 
 async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<SamplerRow[]> {
   const ruleset = asTrimmed(filters.ruleset);
+  const bikeType = asTrimmed(filters.bike_type);
+
+  const mappedRulesetRows = bikeType
+    ? ((await sql`
+        select cpq_ruleset
+        from CPQ_setup_ruleset
+        where coalesce(trim(bike_type), '') = ${bikeType}
+          and coalesce(trim(cpq_ruleset), '') <> ''
+      `) as Array<{ cpq_ruleset: string }>)
+    : [];
+  const mappedRulesets = mappedRulesetRows.map((row) => asTrimmed(row.cpq_ruleset)).filter(Boolean);
+  const mappedRulesetsJson = JSON.stringify(mappedRulesets);
 
   return (await sql`
     select
@@ -151,6 +173,13 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
     from CPQ_sampler_result
     where coalesce(trim(ipn_code), '') <> ''
       and (${ruleset} = '' or ruleset = ${ruleset})
+      and (
+        ${bikeType} = ''
+        or ruleset in (
+          select value::text
+          from jsonb_array_elements_text(${mappedRulesetsJson}::jsonb)
+        )
+      )
     order by id desc
   `) as SamplerRow[];
 }
@@ -309,9 +338,24 @@ export async function getSalesBikeAllocationPageData(
   const normalizedFilters = {
     ruleset: asTrimmed(filters.ruleset),
     country_code: asTrimmed(filters.country_code),
+    bike_type: asTrimmed(filters.bike_type),
   };
 
-  const [filterOptions, sourceRows] = await Promise.all([listFilterOptions(), listSamplerRows(normalizedFilters)]);
+  const [filterOptions, sourceRows, rulesetRows] = await Promise.all([
+    listFilterOptions(),
+    listSamplerRows(normalizedFilters),
+    sql`
+      select cpq_ruleset, bike_type
+      from CPQ_setup_ruleset
+      where coalesce(trim(cpq_ruleset), '') <> ''
+    `,
+  ]);
+  const bikeTypeByRuleset = new Map<string, string>();
+  for (const row of rulesetRows as Array<{ cpq_ruleset: string | null; bike_type: string | null }>) {
+    const ruleset = asTrimmed(row.cpq_ruleset);
+    if (!ruleset) continue;
+    bikeTypeByRuleset.set(ruleset, asTrimmed(row.bike_type) || 'Unmapped');
+  }
 
   const countryColumns = [...new Set(sourceRows.map((row) => asTrimmed(row.country_code)).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
@@ -335,6 +379,7 @@ export async function getSalesBikeAllocationPageData(
       matrixRow = {
         ipnCode: ipn,
         rowRuleset,
+        bikeType: bikeTypeByRuleset.get(rowRuleset) ?? 'Unmapped',
         featureValues: {},
         countryStatuses: {},
       };

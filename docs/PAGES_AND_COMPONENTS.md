@@ -1,5 +1,34 @@
 # Pages and Components
 
+## Page: Dashboard
+- Route: `/dashboard`
+- File: `app/dashboard/page.tsx` → `components/dashboard/dashboard-page.tsx` with server aggregation in `lib/dashboard/service.ts`
+- Purpose: executive-ready operational cockpit for territory coverage, bike-type health, picture completeness, and prioritized drill-down actions.
+- Access control: visible to all users in top-level nav.
+- Main data sources:
+  - `CPQ_sampler_result` (active/inactive totals and country/ruleset rollups)
+  - `CPQ_setup_ruleset` (ruleset to bike-type mapping)
+  - `cpq_country_mappings` (region/sub-region metadata for map placement)
+  - `cpq_image_management` (feature picture completeness)
+- Key sections implemented:
+  - KPI cards (click-through to operational pages)
+  - territory coverage map (zoom/pan + country click drill-down)
+  - territory stacked active/inactive bars
+  - country × bike-type heatmap
+  - picture completeness by feature
+  - actionable gaps panel + top-gaps leaderboards
+  - extra insights: active/inactive share donut and rulesets-by-bike-type chart
+- Drill-down routes:
+  - `/sales/bike-allocation?country_code=<ISO2>`
+  - `/sales/bike-allocation?bike_type=<bike_type>`
+  - `/sales/bike-allocation?country_code=<ISO2>&bike_type=<bike_type>`
+  - `/cpq/setup?tab=pictures&feature=<feature>&onlyMissingPicture=true`
+- Notes / constraints:
+  - map is a lightweight internal territory map using region/sub-region projected placement (not polygon choropleth boundaries).
+  - heatmap health states: none / weak / mixed / strong based on active/inactive presence for each country+bike-type pair.
+
+---
+
 ## Page: CPQ - Bike Builder
 - Route: `/cpq` (alias: `/bike-builder` redirects here)
 - File: `app/cpq/page.tsx` → `components/cpq/bike-builder-page.tsx`

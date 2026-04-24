@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 type AccountContext = {
   id: number;
@@ -107,6 +108,9 @@ const countPictureLinks = (row: Pick<ImageManagementRow, 'picture_link_1' | 'pic
 };
 
 export default function CpqSetupPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabKey>('accounts');
   const [accounts, setAccounts] = useState<AccountContext[]>([]);
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
@@ -127,6 +131,17 @@ export default function CpqSetupPage() {
   const [selectedFeature, setSelectedFeature] = useState('');
   const [pictureDraft, setPictureDraft] = useState<PictureDraft | null>(null);
   const [featureLayerOrderDraft, setFeatureLayerOrderDraft] = useState<number>(10);
+
+  useEffect(() => {
+    const tabParam = (searchParams.get('tab') ?? '').trim();
+    if (tabParam === 'accounts' || tabParam === 'rulesets' || tabParam === 'pictures') {
+      setTab(tabParam);
+    }
+    const onlyMissingParam = (searchParams.get('onlyMissingPicture') ?? '').trim().toLowerCase();
+    if (onlyMissingParam === 'true') setOnlyMissingPicture(true);
+    const featureParam = (searchParams.get('feature') ?? '').trim();
+    if (featureParam) setSelectedFeature(featureParam);
+  }, [searchParams]);
 
   const canSubmitAccount = useMemo(
     () =>
@@ -211,6 +226,16 @@ export default function CpqSetupPage() {
       setSelectedFeature(featureTabs[0]);
     }
   }, [featureTabs, selectedFeature]);
+
+  const updateRouteContext = (updates: Record<string, string | boolean | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === '' || value === false) params.delete(key);
+      else params.set(key, String(value));
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
 
   const featureRows = useMemo(
     () => visiblePictureRows.filter((row) => row.feature_label === selectedFeature),
@@ -504,9 +529,9 @@ export default function CpqSetupPage() {
         <h1>CPQ Setup</h1>
         <p>Manage account context defaults, CPQ rulesets, and picture-management option mappings stored in Neon.</p>
         <div className="tabRow">
-          <button className={tab === 'accounts' ? 'primary' : ''} onClick={() => setTab('accounts')}>Account code management</button>
-          <button className={tab === 'rulesets' ? 'primary' : ''} onClick={() => setTab('rulesets')}>Ruleset management</button>
-          <button className={tab === 'pictures' ? 'primary' : ''} onClick={() => setTab('pictures')}>Picture management</button>
+          <button className={tab === 'accounts' ? 'primary' : ''} onClick={() => { setTab('accounts'); updateRouteContext({ tab: 'accounts', feature: null, onlyMissingPicture: null }); }}>Account code management</button>
+          <button className={tab === 'rulesets' ? 'primary' : ''} onClick={() => { setTab('rulesets'); updateRouteContext({ tab: 'rulesets', feature: null, onlyMissingPicture: null }); }}>Ruleset management</button>
+          <button className={tab === 'pictures' ? 'primary' : ''} onClick={() => { setTab('pictures'); updateRouteContext({ tab: 'pictures' }); }}>Picture management</button>
         </div>
         {status && <div className="note compactNote">{status}</div>}
       </section>
@@ -718,7 +743,10 @@ export default function CpqSetupPage() {
               <input value={pictureSearch} onChange={(e) => setPictureSearch(e.target.value)} placeholder="Type to filter picture mappings" />
             </label>
             <label className="inlineCheck" style={{ marginBottom: 0 }}>
-              <input type="checkbox" checked={onlyMissingPicture} onChange={(e) => setOnlyMissingPicture(e.target.checked)} />
+              <input type="checkbox" checked={onlyMissingPicture} onChange={(e) => {
+                setOnlyMissingPicture(e.target.checked);
+                updateRouteContext({ tab: 'pictures', onlyMissingPicture: e.target.checked });
+              }} />
               Missing all picture links only
             </label>
           </div>
@@ -742,7 +770,10 @@ export default function CpqSetupPage() {
                 role="tab"
                 aria-selected={selectedFeature === feature}
                 className={selectedFeature === feature ? 'primary' : ''}
-                onClick={() => setSelectedFeature(feature)}
+                onClick={() => {
+                  setSelectedFeature(feature);
+                  updateRouteContext({ tab: 'pictures', feature });
+                }}
               >
                 {feature}
               </button>

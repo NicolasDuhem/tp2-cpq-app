@@ -10,6 +10,7 @@ type NavLink = { href: string; label: string; adminOnly?: boolean };
 const ADMIN_PASSWORD = 'Br0mpt0n';
 
 const links: NavLink[] = [
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/cpq/process', label: 'CPQ - Process' },
   { href: '/sales/bike-allocation', label: 'Sales - bike allocation' },
   { href: '/cpq', label: 'CPQ - Bike Builder' },

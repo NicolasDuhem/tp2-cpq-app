@@ -9,8 +9,10 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/setup` → setup console for account context, rulesets, and picture management.
 - `/cpq/results` → sampler matrix explorer (admin-tab link only, route itself is not server-blocked).
 - `/cpq/process` → SOP/process instruction page.
+- `/dashboard` → executive operational dashboard (territory coverage, bike-type health, picture completeness, and gap leaderboards).
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
+  - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 
 ## Core lifecycle contract (`/cpq`)
@@ -35,6 +37,7 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 - Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status: Active=true, Inactive=false, Not configured=no row)
 - Setup master data: `CPQ_setup_account_context`, `CPQ_setup_ruleset`
 - Layered preview + bulk-ignore behavior: `cpq_image_management`
+- Dashboard aggregation source: `CPQ_sampler_result` + `CPQ_setup_ruleset` bike-type mapping + `cpq_country_mappings` territory metadata + `cpq_image_management` completeness status
 
 ## Admin mode and visibility
 - Client-side admin visibility gate in top nav (`Open as admin`, password `Br0mpt0n`).
