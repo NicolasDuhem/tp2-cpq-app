@@ -113,6 +113,8 @@ type AccountContextRecord = {
   customer_id: string;
   currency: string;
   language: string;
+  region: string | null;
+  sub_region: string | null;
   country_code: string;
 };
 
@@ -678,7 +680,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         const accountPayload = (await accountRes.json().catch(() => ({ rows: [] }))) as { rows?: AccountContextRecord[] };
         const rulesetPayload = (await rulesetRes.json().catch(() => ({ rows: [] }))) as { rows?: RulesetRecord[] };
 
-        const nextAccounts = accountPayload.rows ?? [];
+        const nextAccounts = (accountPayload.rows ?? []).filter((row) => row.account_code.trim().length > 0);
         const nextRulesets = rulesetPayload.rows ?? [];
         setAccountContexts(nextAccounts);
         setRulesets(nextRulesets);
@@ -2656,6 +2658,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           <label style={styles.compactField}>
             <span>Account code</span>
             <select value={accountCode} onChange={(event) => setAccountCode(event.target.value)} style={styles.select}>
+              <option value="" disabled>Select account code</option>
               {accountContexts.map((item) => (
                 <option key={item.id} value={item.account_code}>
                   {item.account_code} ({item.country_code}, {item.currency})

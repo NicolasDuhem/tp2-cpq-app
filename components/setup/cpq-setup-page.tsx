@@ -8,6 +8,16 @@ type AccountContext = {
   customer_id: string;
   currency: string;
   language: string;
+  region: string | null;
+  sub_region: string | null;
+  country_code: string;
+  is_active: boolean;
+};
+
+type CountryMapping = {
+  id: number;
+  region: string;
+  sub_region: string;
   country_code: string;
   is_active: boolean;
 };
@@ -69,7 +79,16 @@ const emptyAccount: Omit<AccountContext, 'id'> = {
   customer_id: '',
   currency: 'GBP',
   language: 'en-GB',
-  country_code: 'GB',
+  region: '',
+  sub_region: '',
+  country_code: '',
+  is_active: true,
+};
+
+const emptyCountryMapping: Omit<CountryMapping, 'id'> = {
+  region: '',
+  sub_region: '',
+  country_code: '',
   is_active: true,
 };
 
@@ -93,8 +112,11 @@ export default function CpqSetupPage() {
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
   const [imageRows, setImageRows] = useState<ImageManagementRow[]>([]);
   const [accountDraft, setAccountDraft] = useState(emptyAccount);
+  const [countryMappings, setCountryMappings] = useState<CountryMapping[]>([]);
+  const [countryMappingDraft, setCountryMappingDraft] = useState(emptyCountryMapping);
   const [rulesetDraft, setRulesetDraft] = useState(emptyRuleset);
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
+  const [editingCountryMappingId, setEditingCountryMappingId] = useState<number | null>(null);
   const [editingRulesetId, setEditingRulesetId] = useState<number | null>(null);
   const [status, setStatus] = useState('');
   const [pictureSearch, setPictureSearch] = useState('');
@@ -112,8 +134,18 @@ export default function CpqSetupPage() {
       !!accountDraft.customer_id.trim() &&
       !!accountDraft.currency.trim() &&
       !!accountDraft.language.trim() &&
+      !!accountDraft.region?.trim() &&
+      !!accountDraft.sub_region?.trim() &&
       /^[A-Za-z]{2}$/.test(accountDraft.country_code.trim()),
     [accountDraft],
+  );
+
+  const canSubmitCountryMapping = useMemo(
+    () =>
+      !!countryMappingDraft.region.trim() &&
+      !!countryMappingDraft.sub_region.trim() &&
+      /^[A-Za-z]{2}$/.test(countryMappingDraft.country_code.trim()),
+    [countryMappingDraft],
   );
 
   const canSubmitRuleset = useMemo(
@@ -122,16 +154,19 @@ export default function CpqSetupPage() {
   );
 
   const load = async () => {
-    const [accountRes, rulesetRes] = await Promise.all([
+    const [accountRes, rulesetRes, countryMappingRes] = await Promise.all([
       fetch('/api/cpq/setup/account-context'),
       fetch('/api/cpq/setup/rulesets'),
+      fetch('/api/cpq/setup/country-mappings'),
     ]);
 
     const accountPayload = await accountRes.json().catch(() => ({ rows: [] }));
     const rulesetPayload = await rulesetRes.json().catch(() => ({ rows: [] }));
+    const countryMappingPayload = await countryMappingRes.json().catch(() => ({ rows: [] }));
 
     setAccounts(accountPayload.rows || []);
     setRulesets(rulesetPayload.rows || []);
+    setCountryMappings(countryMappingPayload.rows || []);
   };
 
   const loadPictures = async () => {
@@ -214,6 +249,11 @@ export default function CpqSetupPage() {
     setAccountDraft(emptyAccount);
   };
 
+  const resetCountryMappingDraft = () => {
+    setEditingCountryMappingId(null);
+    setCountryMappingDraft(emptyCountryMapping);
+  };
+
   const resetRulesetDraft = () => {
     setEditingRulesetId(null);
     setRulesetDraft(emptyRuleset);
@@ -221,7 +261,7 @@ export default function CpqSetupPage() {
 
   const saveAccount = async () => {
     if (!canSubmitAccount) {
-      setStatus('Account code, customer ID, currency, language, and 2-letter country code are required.');
+      setStatus('Account code, customer ID, currency, language, region, sub-region, and 2-letter country code are required.');
       return;
     }
 
@@ -245,6 +285,77 @@ export default function CpqSetupPage() {
     resetAccountDraft();
     await load();
   };
+
+  const saveCountryMapping = async () => {
+    if (!canSubmitCountryMapping) {
+      setStatus('Region, sub-region, and 2-letter country code are required for country mapping.');
+      return;
+    }
+
+    const isEdit = Number.isFinite(editingCountryMappingId);
+    const url = isEdit ? `/api/cpq/setup/country-mappings/${editingCountryMappingId}` : '/api/cpq/setup/country-mappings';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...countryMappingDraft,
+        country_code: countryMappingDraft.country_code.toUpperCase(),
+      }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(payload.error || 'Failed to save country mapping');
+      return;
+    }
+
+    setStatus(isEdit ? 'Country mapping updated.' : 'Country mapping created.');
+    resetCountryMappingDraft();
+    await load();
+  };
+
+  const deleteCountryMapping = async (id: number) => {
+    if (!window.confirm('Delete this country mapping?')) return;
+
+    const res = await fetch(`/api/cpq/setup/country-mappings/${id}`, { method: 'DELETE' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(payload.error || 'Failed to delete country mapping');
+      return;
+    }
+
+    if (editingCountryMappingId === id) resetCountryMappingDraft();
+    setStatus('Country mapping deleted.');
+    await load();
+  };
+
+  const availableRegions = useMemo(
+    () =>
+      [...new Set(countryMappings.filter((row) => row.is_active).map((row) => row.region.trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b)),
+    [countryMappings],
+  );
+
+  const availableSubRegions = useMemo(() => {
+    const selectedRegion = (accountDraft.region ?? '').trim();
+    if (!selectedRegion) return [];
+    return [...new Set(countryMappings
+      .filter((row) => row.is_active && row.region === selectedRegion)
+      .map((row) => row.sub_region.trim())
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [countryMappings, accountDraft.region]);
+
+  const availableCountries = useMemo(() => {
+    const selectedRegion = (accountDraft.region ?? '').trim();
+    const selectedSubRegion = (accountDraft.sub_region ?? '').trim();
+    if (!selectedRegion || !selectedSubRegion) return [];
+    return [...new Set(countryMappings
+      .filter((row) => row.is_active && row.region === selectedRegion && row.sub_region === selectedSubRegion)
+      .map((row) => row.country_code.trim().toUpperCase())
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [countryMappings, accountDraft.region, accountDraft.sub_region]);
 
   const deleteAccount = async (id: number) => {
     if (!window.confirm('Delete this account context?')) return;
@@ -411,12 +522,34 @@ export default function CpqSetupPage() {
             <label>Customer ID<input value={accountDraft.customer_id} onChange={(e) => setAccountDraft((prev) => ({ ...prev, customer_id: e.target.value }))} /></label>
             <label>Currency<input value={accountDraft.currency} onChange={(e) => setAccountDraft((prev) => ({ ...prev, currency: e.target.value }))} /></label>
             <label>Language<input value={accountDraft.language} onChange={(e) => setAccountDraft((prev) => ({ ...prev, language: e.target.value }))} /></label>
+            <label>Region
+              <select
+                value={accountDraft.region ?? ''}
+                onChange={(e) => setAccountDraft((prev) => ({ ...prev, region: e.target.value, sub_region: '', country_code: '' }))}
+              >
+                <option value="">Select region</option>
+                {availableRegions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>Sub-region
+              <select
+                value={accountDraft.sub_region ?? ''}
+                disabled={!accountDraft.region}
+                onChange={(e) => setAccountDraft((prev) => ({ ...prev, sub_region: e.target.value, country_code: '' }))}
+              >
+                <option value="">Select sub-region</option>
+                {availableSubRegions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
             <label>Country code
-              <input
+              <select
                 value={accountDraft.country_code}
-                maxLength={2}
+                disabled={!accountDraft.region || !accountDraft.sub_region}
                 onChange={(e) => setAccountDraft((prev) => ({ ...prev, country_code: e.target.value.toUpperCase() }))}
-              />
+              >
+                <option value="">Select country</option>
+                {availableCountries.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
             </label>
           </div>
           <label className="inlineCheck"><input type="checkbox" checked={accountDraft.is_active} onChange={(e) => setAccountDraft((prev) => ({ ...prev, is_active: e.target.checked }))} /> Active</label>
@@ -427,7 +560,7 @@ export default function CpqSetupPage() {
           <div className="tableWrap" style={{ maxHeight: 420 }}>
             <table>
               <thead>
-                <tr><th>Account</th><th>Customer ID</th><th>Currency</th><th>Language</th><th>Country</th><th>Active</th><th>Actions</th></tr>
+                <tr><th>Account</th><th>Customer ID</th><th>Currency</th><th>Language</th><th>Region</th><th>Sub-region</th><th>Country</th><th>Active</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {accounts.map((row) => (
@@ -436,12 +569,78 @@ export default function CpqSetupPage() {
                     <td>{row.customer_id}</td>
                     <td>{row.currency}</td>
                     <td>{row.language}</td>
+                    <td>{row.region ?? '-'}</td>
+                    <td>{row.sub_region ?? '-'}</td>
                     <td>{row.country_code}</td>
                     <td>{row.is_active ? 'Yes' : 'No'}</td>
                     <td>
                       <div className="rowButtons">
-                        <button onClick={() => { setEditingAccountId(row.id); setAccountDraft({ account_code: row.account_code, customer_id: row.customer_id, currency: row.currency, language: row.language, country_code: row.country_code, is_active: row.is_active }); }}>Edit</button>
+                        <button onClick={() => {
+                          setEditingAccountId(row.id);
+                          setAccountDraft({
+                            account_code: row.account_code,
+                            customer_id: row.customer_id,
+                            currency: row.currency,
+                            language: row.language,
+                            region: row.region ?? '',
+                            sub_region: row.sub_region ?? '',
+                            country_code: row.country_code,
+                            is_active: row.is_active,
+                          });
+                        }}>Edit</button>
                         <button onClick={() => void deleteAccount(row.id)}>Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="filtersHeader" style={{ marginTop: 18 }}>
+            <strong>{editingCountryMappingId ? 'Edit region/sub-region/country mapping' : 'Add region/sub-region/country mapping'}</strong>
+            {editingCountryMappingId && <button onClick={resetCountryMappingDraft}>Cancel edit</button>}
+          </div>
+          <div className="denseGrid4">
+            <label>Region<input value={countryMappingDraft.region} onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, region: e.target.value }))} /></label>
+            <label>Sub-region<input value={countryMappingDraft.sub_region} onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, sub_region: e.target.value }))} /></label>
+            <label>Country code
+              <input
+                value={countryMappingDraft.country_code}
+                maxLength={2}
+                onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, country_code: e.target.value.toUpperCase() }))}
+              />
+            </label>
+          </div>
+          <label className="inlineCheck"><input type="checkbox" checked={countryMappingDraft.is_active} onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, is_active: e.target.checked }))} /> Active</label>
+          <div className="toolbar compactToolbar">
+            <button className="primary" onClick={saveCountryMapping}>{editingCountryMappingId ? 'Update mapping' : 'Create mapping'}</button>
+          </div>
+
+          <div className="tableWrap" style={{ maxHeight: 320 }}>
+            <table>
+              <thead>
+                <tr><th>Region</th><th>Sub-region</th><th>Country</th><th>Active</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {countryMappings.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.region}</td>
+                    <td>{row.sub_region}</td>
+                    <td>{row.country_code}</td>
+                    <td>{row.is_active ? 'Yes' : 'No'}</td>
+                    <td>
+                      <div className="rowButtons">
+                        <button onClick={() => {
+                          setEditingCountryMappingId(row.id);
+                          setCountryMappingDraft({
+                            region: row.region,
+                            sub_region: row.sub_region,
+                            country_code: row.country_code,
+                            is_active: row.is_active,
+                          });
+                        }}>Edit</button>
+                        <button onClick={() => void deleteCountryMapping(row.id)}>Delete</button>
                       </div>
                     </td>
                   </tr>

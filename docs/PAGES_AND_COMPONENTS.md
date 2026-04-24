@@ -122,11 +122,12 @@
   - sampler-to-picture sync
 - API endpoints used:
   - account/ruleset CRUD endpoints
+  - `/api/cpq/setup/country-mappings`
   - `/api/cpq/setup/picture-management/[id]`
   - `/api/cpq/setup/picture-management/feature-flags`
   - `/api/cpq/setup/picture-management/sync`
 - Database tables involved:
-  - Reads: `CPQ_setup_account_context`, `CPQ_setup_ruleset`, `cpq_image_management`, `CPQ_sampler_result` (sync source)
+  - Reads: `CPQ_setup_account_context`, `cpq_country_mappings`, `CPQ_setup_ruleset`, `cpq_image_management`, `CPQ_sampler_result` (sync source)
   - Writes: all same tables except ruleset/account only via own CRUD; sync also updates `CPQ_sampler_result.processed_for_image_sync`
 - Key components:
 
@@ -137,15 +138,18 @@
 - Inputs / props: none
 - Data displayed:
   - account table + draft form
+  - country-mapping table + draft form (same accounts tab)
   - ruleset table + draft form
   - picture feature tabs, tile cards, summary cards, modal editor
 - User-editable fields:
-  - account fields (`account_code`, `customer_id`, `currency`, `language`, `country_code`, `is_active`)
+  - account fields (`account_code`, `customer_id`, `currency`, `language`, `region`, `sub_region`, `country_code`, `is_active`)
+  - country mapping fields (`region`, `sub_region`, `country_code`, `is_active`)
   - ruleset fields (`cpq_ruleset`, `description`, `bike_type`, `namespace`, `header_id`, `sort_order`, `is_active`)
   - picture links and active flag
   - feature-level ignore and layer order
 - Validation / rules:
-  - account requires all fields and 2-letter country code
+  - account requires all fields including region + sub-region and 2-letter country code
+  - account region/sub-region/country options are dynamically read from `cpq_country_mappings`
   - ruleset requires ruleset+namespace+header
   - layer order forced to 1..20
 - Write actions: API calls listed above

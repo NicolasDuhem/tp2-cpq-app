@@ -1,6 +1,14 @@
 import { sql } from '@/lib/db/client';
 
-import { CpqAccountContextRecord, CpqImageLayerResolution, CpqImageManagementRecord, CpqImageSelectionLookup, CpqResolvedImageLayer, CpqRulesetRecord } from '@/types/setup';
+import {
+  CpqAccountContextRecord,
+  CpqCountryMappingRecord,
+  CpqImageLayerResolution,
+  CpqImageManagementRecord,
+  CpqImageSelectionLookup,
+  CpqResolvedImageLayer,
+  CpqRulesetRecord,
+} from '@/types/setup';
 
 const parseBoolean = (value: unknown, fallback = true) => {
   if (typeof value === 'boolean') return value;
@@ -30,16 +38,18 @@ const parseFeatureLayerOrder = (value: unknown, fallback = IMAGE_LAYER_ORDER_DEF
 export async function listAccountContexts(activeOnly = false) {
   if (activeOnly) {
     return (await sql`
-      select id, account_code, customer_id, currency, language, country_code, is_active, created_at, updated_at
+      select id, account_code, customer_id, currency, language, region, sub_region, country_code, is_active, created_at, updated_at
       from CPQ_setup_account_context
       where is_active = true
+        and btrim(account_code) <> ''
       order by account_code
     `) as CpqAccountContextRecord[];
   }
 
   return (await sql`
-    select id, account_code, customer_id, currency, language, country_code, is_active, created_at, updated_at
+    select id, account_code, customer_id, currency, language, region, sub_region, country_code, is_active, created_at, updated_at
     from CPQ_setup_account_context
+    where btrim(account_code) <> ''
     order by account_code
   `) as CpqAccountContextRecord[];
 }
@@ -49,20 +59,36 @@ export async function createAccountContext(input: Record<string, unknown>) {
   const customerId = asTrimmedText(input.customer_id);
   const currency = asTrimmedText(input.currency).toUpperCase();
   const language = asTrimmedText(input.language);
+  const region = asTrimmedText(input.region);
+  const subRegion = asTrimmedText(input.sub_region);
   const countryCode = asTrimmedText(input.country_code).toUpperCase();
 
-  if (!accountCode || !customerId || !currency || !language || !countryCode) {
-    throw new Error('account_code, customer_id, currency, language, and country_code are required');
+  if (!accountCode || !customerId || !currency || !language || !region || !subRegion || !countryCode) {
+    throw new Error('account_code, customer_id, currency, language, region, sub_region, and country_code are required');
   }
 
   if (!ISO2_COUNTRY_REGEX.test(countryCode)) {
     throw new Error('country_code must be a 2-letter ISO code (for example, GB)');
   }
 
+  const mappingRows = (await sql`
+    select id
+    from cpq_country_mappings
+    where region = ${region}
+      and sub_region = ${subRegion}
+      and country_code = ${countryCode}
+      and is_active = true
+    limit 1
+  `) as Array<{ id: number }>;
+
+  if (!mappingRows[0]) {
+    throw new Error('region, sub_region, and country_code must match an active country mapping');
+  }
+
   const rows = (await sql`
-    insert into CPQ_setup_account_context (account_code, customer_id, currency, language, country_code, is_active)
-    values (${accountCode}, ${customerId}, ${currency}, ${language}, ${countryCode}, ${parseBoolean(input.is_active, true)})
-    returning id, account_code, customer_id, currency, language, country_code, is_active, created_at, updated_at
+    insert into CPQ_setup_account_context (account_code, customer_id, currency, language, region, sub_region, country_code, is_active)
+    values (${accountCode}, ${customerId}, ${currency}, ${language}, ${region}, ${subRegion}, ${countryCode}, ${parseBoolean(input.is_active, true)})
+    returning id, account_code, customer_id, currency, language, region, sub_region, country_code, is_active, created_at, updated_at
   `) as CpqAccountContextRecord[];
 
   return rows[0];
@@ -73,14 +99,30 @@ export async function updateAccountContext(id: number, input: Record<string, unk
   const customerId = asTrimmedText(input.customer_id);
   const currency = asTrimmedText(input.currency).toUpperCase();
   const language = asTrimmedText(input.language);
+  const region = asTrimmedText(input.region);
+  const subRegion = asTrimmedText(input.sub_region);
   const countryCode = asTrimmedText(input.country_code).toUpperCase();
 
-  if (!accountCode || !customerId || !currency || !language || !countryCode) {
-    throw new Error('account_code, customer_id, currency, language, and country_code are required');
+  if (!accountCode || !customerId || !currency || !language || !region || !subRegion || !countryCode) {
+    throw new Error('account_code, customer_id, currency, language, region, sub_region, and country_code are required');
   }
 
   if (!ISO2_COUNTRY_REGEX.test(countryCode)) {
     throw new Error('country_code must be a 2-letter ISO code (for example, GB)');
+  }
+
+  const mappingRows = (await sql`
+    select id
+    from cpq_country_mappings
+    where region = ${region}
+      and sub_region = ${subRegion}
+      and country_code = ${countryCode}
+      and is_active = true
+    limit 1
+  `) as Array<{ id: number }>;
+
+  if (!mappingRows[0]) {
+    throw new Error('region, sub_region, and country_code must match an active country mapping');
   }
 
   const rows = (await sql`
@@ -89,10 +131,12 @@ export async function updateAccountContext(id: number, input: Record<string, unk
         customer_id = ${customerId},
         currency = ${currency},
         language = ${language},
+        region = ${region},
+        sub_region = ${subRegion},
         country_code = ${countryCode},
         is_active = ${parseBoolean(input.is_active, true)}
     where id = ${id}
-    returning id, account_code, customer_id, currency, language, country_code, is_active, created_at, updated_at
+    returning id, account_code, customer_id, currency, language, region, sub_region, country_code, is_active, created_at, updated_at
   `) as CpqAccountContextRecord[];
 
   return rows[0] ?? null;
@@ -100,6 +144,73 @@ export async function updateAccountContext(id: number, input: Record<string, unk
 
 export async function deleteAccountContext(id: number) {
   await sql`delete from CPQ_setup_account_context where id = ${id}`;
+}
+
+export async function listCountryMappings(activeOnly = false) {
+  if (activeOnly) {
+    return (await sql`
+      select id, region, sub_region, country_code, is_active, created_at, updated_at
+      from cpq_country_mappings
+      where is_active = true
+      order by region, sub_region, country_code
+    `) as CpqCountryMappingRecord[];
+  }
+
+  return (await sql`
+    select id, region, sub_region, country_code, is_active, created_at, updated_at
+    from cpq_country_mappings
+    order by region, sub_region, country_code
+  `) as CpqCountryMappingRecord[];
+}
+
+export async function createCountryMapping(input: Record<string, unknown>) {
+  const region = asTrimmedText(input.region);
+  const subRegion = asTrimmedText(input.sub_region);
+  const countryCode = asTrimmedText(input.country_code).toUpperCase();
+  const isActive = parseBoolean(input.is_active, true);
+
+  if (!region || !subRegion || !countryCode) {
+    throw new Error('region, sub_region, and country_code are required');
+  }
+  if (!ISO2_COUNTRY_REGEX.test(countryCode)) {
+    throw new Error('country_code must be a 2-letter ISO code (for example, GB)');
+  }
+
+  const rows = (await sql`
+    insert into cpq_country_mappings (region, sub_region, country_code, is_active)
+    values (${region}, ${subRegion}, ${countryCode}, ${isActive})
+    returning id, region, sub_region, country_code, is_active, created_at, updated_at
+  `) as CpqCountryMappingRecord[];
+  return rows[0];
+}
+
+export async function updateCountryMapping(id: number, input: Record<string, unknown>) {
+  const region = asTrimmedText(input.region);
+  const subRegion = asTrimmedText(input.sub_region);
+  const countryCode = asTrimmedText(input.country_code).toUpperCase();
+  const isActive = parseBoolean(input.is_active, true);
+
+  if (!region || !subRegion || !countryCode) {
+    throw new Error('region, sub_region, and country_code are required');
+  }
+  if (!ISO2_COUNTRY_REGEX.test(countryCode)) {
+    throw new Error('country_code must be a 2-letter ISO code (for example, GB)');
+  }
+
+  const rows = (await sql`
+    update cpq_country_mappings
+    set region = ${region},
+        sub_region = ${subRegion},
+        country_code = ${countryCode},
+        is_active = ${isActive}
+    where id = ${id}
+    returning id, region, sub_region, country_code, is_active, created_at, updated_at
+  `) as CpqCountryMappingRecord[];
+  return rows[0] ?? null;
+}
+
+export async function deleteCountryMapping(id: number) {
+  await sql`delete from cpq_country_mappings where id = ${id}`;
 }
 
 export async function listRulesets(activeOnly = false) {
