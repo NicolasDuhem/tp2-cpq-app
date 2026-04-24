@@ -5,6 +5,7 @@ import styles from './sales-bike-allocation-page.module.css';
 type SearchParams = {
   ruleset?: string;
   country_code?: string;
+  bike_type?: string;
 };
 
 export default async function SalesBikeAllocationPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
@@ -12,6 +13,7 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
   const filters = {
     ruleset: String(resolvedSearch.ruleset ?? '').trim(),
     country_code: String(resolvedSearch.country_code ?? '').trim(),
+    bike_type: String(resolvedSearch.bike_type ?? '').trim(),
   };
 
   const data = await getSalesBikeAllocationPageData(filters);

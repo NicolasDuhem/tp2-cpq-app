@@ -88,7 +88,7 @@ export default function SalesBikeAllocationTableClient({
     });
   }, [rows, ipnFilter, visibleFeatureColumns, featureFilters, countryColumns, countryFilters]);
 
-  const updateFilter = (key: 'ruleset' | 'country_code', value: string) => {
+  const updateFilter = (key: 'ruleset' | 'country_code' | 'bike_type', value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
@@ -288,6 +288,18 @@ export default function SalesBikeAllocationTableClient({
             {filterOptions.countryCodes.map((countryCode) => (
               <option key={countryCode} value={countryCode}>
                 {countryCode}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className={styles.filterItem}>
+          <span>Bike type</span>
+          <select value={filters.bike_type ?? ''} onChange={(event) => updateFilter('bike_type', event.target.value)}>
+            <option value="">All</option>
+            {filterOptions.bikeTypes.map((bikeType) => (
+              <option key={bikeType} value={bikeType}>
+                {bikeType}
               </option>
             ))}
           </select>

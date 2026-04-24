@@ -4,6 +4,7 @@
 This repository is a CPQ-focused Next.js app with operational setup, runtime configuration, sampler analytics, and sales allocation orchestration.
 
 Primary routes:
+- `/dashboard` (executive operations dashboard)
 - `/cpq` (Bike Builder runtime)
 - `/cpq/setup` (setup + picture management)
 - `/cpq/results` (sampler matrix)
@@ -20,6 +21,7 @@ Aliases:
 - `AppShell` provides brand header + nav + `AdminModeProvider`.
 - Admin mode is client-side only (sessionStorage key `tp2-cpq-admin-mode`, password `Br0mpt0n`).
 - Non-admin nav shows Process, Sales allocation, Bike Builder, Setup.
+- Non-admin nav now also includes Dashboard.
 - Admin nav additionally shows Sampler Results and UI Docs.
 
 Important boundary: this is **not** server-enforced authentication/RBAC; it is UI visibility gating.
@@ -39,6 +41,9 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
   - sampler sync into `cpq_image_management`
 - `/cpq/results` → `components/cpq/cpq-results-page.tsx` + client matrix component
 - `/sales/bike-allocation` → server data loader + client matrix/toggle/bulk/replay launcher
+- `/dashboard` → `lib/dashboard/service.ts` + `components/dashboard/dashboard-page.tsx`
+  - Aggregates server-side data from sampler/config setup tables into KPI cards, territory map, stacked coverage bars, heatmap, picture completeness chart, actionable gap list, and ranked leaderboards.
+  - Drill-down links route to `/sales/bike-allocation` and `/cpq/setup` with query-param context.
   - Page is explicitly dynamic and sales mutation routes revalidate `/sales/bike-allocation` to avoid stale server-component cache after Active/Inactive writes.
 - `/cpq/process` and `/cpq/ui-docs` are static-ish client-doc pages.
 
@@ -69,6 +74,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `CPQ_sampler_result` = support snapshots + sales allocation status source (`active`).
 - `CPQ_setup_account_context`, `cpq_country_mappings`, `CPQ_setup_ruleset` = setup/master tables.
 - `cpq_image_management` = layered preview mapping + feature-level bulk-ignore and layer order.
+- Bike-type source of truth used by dashboard and sales deep-links: `CPQ_setup_ruleset.cpq_ruleset -> CPQ_setup_ruleset.bike_type`.
 
 ## 6) Feature flags/runtime switches
 - `NEXT_PUBLIC_CPQ_DEBUG=true`: client debug timeline capture in `/cpq` (still admin-visible only).

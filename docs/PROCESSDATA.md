@@ -43,6 +43,7 @@ Canonical `json_snapshot` and sampler payload source are:
 ## 5) Sales allocation workflow (`/sales/bike-allocation`)
 ### Status matrix
 - Data source: grouped `CPQ_sampler_result` rows by `ruleset + ipn_code + country_code`.
+- Optional route filters: `ruleset`, `country_code`, `bike_type` (bike type resolves to one-or-many rulesets via `CPQ_setup_ruleset`).
 - Status logic:
   - any `active=true` → Active
   - rows exist but all inactive → Inactive
@@ -53,6 +54,26 @@ Canonical `json_snapshot` and sampler payload source are:
 - Bulk activate/deactivate visible IPNs across selected countries via `/api/sales/bike-allocation/bulk-update`.
 - Click Not configured → resolve launch context (`/api/sales/bike-allocation/launch-context`) then navigate to `/cpq` with replay token.
 - Toggle and bulk routes call `revalidatePath('/sales/bike-allocation')`, and the client table issues `router.refresh()` so status repaint is immediate and sourced from fresh server data.
+
+## 8) Dashboard workflow (`/dashboard`)
+- Server aggregation in `lib/dashboard/service.ts` combines:
+  - `CPQ_sampler_result` (active/inactive configuration counts),
+  - `CPQ_setup_ruleset` (ruleset-to-bike-type mapping),
+  - `cpq_country_mappings` (territory metadata for map placement),
+  - `cpq_image_management` (picture completeness by feature).
+- Heatmap scoring contract:
+  - **none**: no rows for country+bike type,
+  - **weak**: rows exist but all inactive,
+  - **mixed**: both active and inactive rows exist,
+  - **strong**: rows exist and all are active.
+- Picture completeness contract:
+  - configured = any of `picture_link_1..4` contains a non-empty value,
+  - missing = all four links blank.
+- Drill-down contract:
+  - territory clicks navigate to `/sales/bike-allocation?country_code=<ISO2>`,
+  - bike-type clicks navigate to `/sales/bike-allocation?bike_type=<type>`,
+  - country+bike-type cells navigate to both filters,
+  - picture gaps navigate to `/cpq/setup?tab=pictures&feature=<feature>&onlyMissingPicture=true`.
 
 ### Replay handoff
 - Sales page stores replay payload in `sessionStorage` key `tp2-cpq-launch-replay:<token>`.
