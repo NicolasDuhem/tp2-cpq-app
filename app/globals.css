@@ -187,29 +187,30 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
 .tabRow { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
 .denseGrid4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px; margin-bottom:8px; min-width:0; }
 .denseGrid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:8px; }
-.qpartMetadataCard { border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; background:#fff; }
-.qpartMetadataHeader { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
-.qpartMetadataActions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .qpartSectionHeader { display:flex; justify-content:space-between; gap:8px; align-items:center; }
 .qpartSectionHeader h3 { margin:0; }
 .qpartCoreField { display:grid; gap:6px; }
-.qpartTopHeader { display:grid; grid-template-columns:minmax(240px,1fr) auto minmax(210px,1fr); gap:12px; align-items:start; padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:10px; }
-.qpartTopHeaderEyebrow { margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+.qpartTopHeader { display:grid; grid-template-columns:minmax(240px,1fr) auto minmax(210px,1fr); gap:12px; align-items:center; padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:10px; }
+.qpartTopIdentity { display:grid; gap:6px; align-content:start; }
 .qpartPartNumberTitle { margin:0; font-size:26px; line-height:1.1; color:#1e3059; }
 .qpartTopHeaderInput { margin-top:8px; display:grid; gap:6px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; }
-.qpartTopHeaderCenter { display:grid; gap:6px; align-self:end; justify-items:center; }
-.qpartStatusSegmented { display:inline-flex; border:1px solid #c4d2f0; border-radius:10px; background:#f3f7ff; overflow:hidden; }
-.qpartStatusSegmented button { border:0; border-right:1px solid #c4d2f0; border-radius:0; background:transparent; color:#314b7a; font-weight:700; padding:8px 14px; min-width:90px; text-transform:capitalize; }
+.qpartTopHeaderStatus { justify-self:center; }
+.qpartStatusSegmented { display:inline-flex; border:1px solid #cfd8ea; border-radius:8px; background:#fff; overflow:hidden; }
+.qpartStatusSegmented button { border:0; border-right:1px solid #d8e0ef; border-radius:0; background:transparent; color:#314b7a; font-weight:700; padding:6px 12px; min-width:84px; text-transform:capitalize; }
 .qpartStatusSegmented button:last-child { border-right:none; }
-.qpartStatusSegmented button.isSelected { background:#1f9a4c; color:#fff; }
+.qpartStatusSegmented button.isSelected { background:#2f5ea7; color:#fff; }
 .qpartTopHeaderRight { justify-self:end; align-self:end; }
-.qpartCoreColumns { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; align-items:start; }
-.qpartCoreColumn { display:grid; gap:8px; align-content:start; min-width:0; }
+.qpartCoreColumns { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; align-items:stretch; }
+.qpartCoreColumn { display:grid; gap:8px; align-content:start; min-width:0; padding:10px; border:1px solid var(--line); border-radius:10px; background:#fff; }
 .qpartFieldLabel { display:grid; gap:6px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; }
 .qpartFieldActions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .qpartFieldActions .subtle { margin:0; }
 .qpartTranslationStack { display:grid; gap:8px; }
+.qpartCoreMainField { min-height:74px; }
 .qpartBooleanStrip { display:flex; gap:12px; flex-wrap:wrap; align-items:center; border-top:1px solid var(--line); padding-top:8px; }
+.qpartMetadataGrid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; align-items:start; }
+.qpartMetadataColumn { display:grid; gap:10px; align-content:start; min-width:0; }
+.qpartMetadataRow { display:grid; gap:8px; padding:10px; border:1px solid var(--line); border-radius:10px; background:#fff; }
 .denseGrid4 label { display:grid; gap:6px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; }
 .inlineCheck { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px; }
 .rowButtons { display:flex; gap:6px; flex-wrap:wrap; }
@@ -262,9 +263,10 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
   .roleAccessGrid { grid-template-columns:1fr; }
   .pictureModalGrid { grid-template-columns:1fr; }
   .qpartTopHeader { grid-template-columns:1fr; }
-  .qpartTopHeaderCenter { justify-items:start; align-self:start; }
+  .qpartTopHeaderStatus { justify-self:start; align-self:start; }
   .qpartTopHeaderRight { justify-self:start; }
   .qpartCoreColumns { grid-template-columns:1fr; }
+  .qpartMetadataGrid { grid-template-columns:1fr; }
 }
 @media (max-width: 680px) {
   .addRuleGrid { grid-template-columns:1fr; }
