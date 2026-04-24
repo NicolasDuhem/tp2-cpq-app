@@ -76,17 +76,30 @@ All QPart tables are prefixed `qpart_` and are isolated from CPQ runtime persist
 6. `qpart_part_bike_type_compatibility`
 7. `qpart_part_compatibility_rules`
 8. `qpart_compatibility_reference_values`
+9. `qpart_country_allocation`
 
 Additional integrity object:
 - trigger function `qpart_validate_hierarchy_parent()` + trigger `qpart_hierarchy_parent_trg` enforces parent level = child level - 1 and level-1-without-parent rule.
 
 QPart migration added:
 - `sql/migrations/2026-04-24_qpart_mvp.sql` (foundation + initial metadata definition seed rows).
+- `sql/migrations/2026-04-24_qpart_country_allocation.sql` (territory allocation table for sales matrix).
 
 QPart dynamic reference reads (read-only):
 - locales from `CPQ_setup_account_context.language` distinct values.
 - bike types from `CPQ_setup_ruleset.bike_type` distinct values.
 - derived compatibility options from `CPQ_sampler_result.json_result` parsing `selectedOptions` with fallback to `dropdownOrderSnapshot`.
+- allocation countries from active `cpq_country_mappings.country_code` values.
+
+## QPart allocation matrix storage
+- Route: `/sales/qpart-allocation`.
+- Canonical allocation state is `qpart_country_allocation.active` (`true=Active`, `false=Inactive`).
+- Unique business key: `(part_id, country_code)` via `qpart_country_allocation_part_country_uniq`.
+- Additional indexes: `qpart_country_allocation_country_idx`, `qpart_country_allocation_active_idx`.
+- Missing-row prevention:
+  - create part path seeds inactive rows for all active countries.
+  - page load + toggle/bulk mutation paths call a sync helper to insert any missing rows safely.
+- No “Not configured” state is modeled for QPart allocation.
 
 ## QPart CSV export/import mapping
 - API routes: `GET /api/qpart/parts/export` and `POST /api/qpart/parts/import`.

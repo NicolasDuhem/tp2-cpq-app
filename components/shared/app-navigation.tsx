@@ -13,6 +13,7 @@ const links: NavLink[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/cpq/process', label: 'CPQ - Process' },
   { href: '/sales/bike-allocation', label: 'Sales - bike allocation' },
+  { href: '/sales/qpart-allocation', label: 'Sales - QPart allocation' },
   { href: '/cpq', label: 'CPQ - Bike Builder' },
   { href: '/cpq/setup', label: 'CPQ - Setup' },
   { href: '/qpart', label: 'QPart - Spare Parts PIM' },

@@ -1,5 +1,6 @@
 import { sql } from '@/lib/db/client';
 import { getBaseLocale } from '@/lib/qpart/locales/service';
+import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { QPartCompatibilityRule, QPartMetadataValue, QPartPartDetail, QPartRecord, QPartTranslation } from '@/types/qpart';
 
 type PartInput = {
@@ -222,6 +223,7 @@ export async function createPart(rawInput: Record<string, unknown>) {
   if (!partId) throw new Error('Failed to create part');
 
   await saveChildCollections(partId, input);
+  await syncQPartCountryAllocationRows({ partIds: [partId] });
   return getPartDetail(partId);
 }
 
