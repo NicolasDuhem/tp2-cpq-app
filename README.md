@@ -64,3 +64,10 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - Dynamic locale source for QPart translations: `CPQ_setup_account_context.language` (distinct values).
 - Dynamic bike type source: `CPQ_setup_ruleset.bike_type` (distinct values).
 - Dynamic compatibility derivation source: `CPQ_sampler_result.json_result` (`selectedOptions` preferred, `dropdownOrderSnapshot` fallback).
+
+
+## QPart AI translation configuration
+- `OPENAI_API_KEY` (required): server-side key for `POST /api/qpart/translations/field`.
+- `OPENAI_TRANSLATION_MODEL` (optional): defaults to `gpt-5.4-mini`.
+- QPart field translation is server-side only and never exposes API keys in browser code.
+- Supported translation locales stay dynamic from distinct `CPQ_setup_account_context.language` values (excluding base locale).
