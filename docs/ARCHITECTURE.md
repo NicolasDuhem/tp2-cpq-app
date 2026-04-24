@@ -99,7 +99,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - Domain services: `lib/qpart/locales`, `lib/qpart/hierarchy`, `lib/qpart/metadata`, `lib/qpart/parts`, `lib/qpart/compatibility`.
 - Types: `types/qpart.ts`.
 
-- QPart AI translation endpoint: `POST /api/qpart/translations/field` (server-only OpenAI call, field-by-field metadata translation, fill-missing by default).
+- QPart AI translation endpoint: `POST /api/qpart/translations/field` (server-only OpenAI call, field-by-field translation for core title/description plus translatable metadata, fill-missing by default).
 - Isolation rule implemented: QPart only reads CPQ setup/sampler tables for dynamic reference data (locales, bike types, compatibility derivation). It does not hook into CPQ configure/finalize/runtime flows.
 
 QPart source-of-truth reads from CPQ tables:
@@ -109,7 +109,7 @@ QPart source-of-truth reads from CPQ tables:
 
 
 ## 10) QPart AI translation (field scoped)
-- Triggered per metadata field from `/qpart/parts/new` + `/qpart/parts/[id]` metadata UI.
+- Triggered inline from `/qpart/parts/new` + `/qpart/parts/[id]` on English title, English description, and each translatable metadata field.
 - Server path only: browser calls QPart API route, route calls OpenAI with `OPENAI_API_KEY`; no key in client bundle.
 - Locale targets are always derived from `CPQ_setup_account_context.language` via `/api/qpart/locales`.
 - Base locale value is source-of-truth and is never replaced by AI output.

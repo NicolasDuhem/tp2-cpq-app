@@ -11,6 +11,11 @@ type TranslationRequest = {
   metadataDefinitionId: number;
   fillMissingOnly?: boolean;
 };
+type CoreFieldTranslationRequest = {
+  partId: number;
+  coreField: 'name' | 'description';
+  fillMissingOnly?: boolean;
+};
 
 type MetadataDefinitionRow = {
   id: number;
@@ -40,6 +45,17 @@ type TranslationResult = {
   partId: number;
   metadataDefinitionId: number;
   fieldKey: string;
+  sourceLocale: string;
+  baseValue: string;
+  fillMissingOnly: boolean;
+  translated: LocaleTranslation[];
+  skippedLocales: string[];
+  failedLocales: string[];
+  totalTargetLocales: number;
+};
+type CoreFieldTranslationResult = {
+  partId: number;
+  coreField: 'name' | 'description';
   sourceLocale: string;
   baseValue: string;
   fillMissingOnly: boolean;
@@ -212,6 +228,107 @@ async function callOpenAiForFieldTranslations(params: {
   return parseModelTranslations(parsed);
 }
 
+async function callOpenAiForCoreTranslations(params: {
+  model: string;
+  partNumber: string;
+  fieldLabel: string;
+  sourceLocale: string;
+  sourceText: string;
+  hierarchyContext: Array<{ level: number; label_en: string }>;
+  targetLocales: string[];
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('Missing OPENAI_API_KEY');
+
+  const hierarchyLines = params.hierarchyContext.length
+    ? params.hierarchyContext.map((row) => `L${row.level}: ${row.label_en}`).join('\n')
+    : 'Unassigned';
+
+  const prompt = [
+    'Translate one Brompton spare-part core field for PIM usage.',
+    `Part number: ${params.partNumber || 'Unknown'}`,
+    `Field: ${params.fieldLabel}`,
+    `Source locale: ${params.sourceLocale}`,
+    `Source value: ${params.sourceText}`,
+    `Target locales: ${params.targetLocales.join(', ')}`,
+    'Hierarchy context:',
+    hierarchyLines,
+    'Rules:',
+    '- Preserve technical meaning and controlled terms.',
+    '- Preserve identifiers/codes/SKUs/EANs/part numbers and raw measurements exactly when present.',
+    '- Do not add or invent information.',
+    '- Return only requested locale translations.',
+  ].join('\n');
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: params.model,
+      temperature: 0.2,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a translation engine for Brompton spare-part data. Output valid JSON only and keep technical tokens unchanged when appropriate.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'qpart_core_field_translation',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              source_locale: { type: 'string' },
+              target_translations: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    locale: { type: 'string' },
+                    text: { type: 'string' },
+                  },
+                  required: ['locale', 'text'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['source_locale', 'target_translations'],
+            additionalProperties: false,
+          },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`OpenAI request failed (${response.status}): ${body.slice(0, 300)}`);
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) throw new Error('OpenAI returned an empty response');
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Malformed structured output from OpenAI');
+  }
+
+  return parseModelTranslations(parsed);
+}
+
 export async function translateMetadataField(request: TranslationRequest): Promise<TranslationResult> {
   const partId = Number(request.partId);
   const metadataDefinitionId = Number(request.metadataDefinitionId);
@@ -348,6 +465,118 @@ export async function translateMetadataField(request: TranslationRequest): Promi
     partId,
     metadataDefinitionId,
     fieldKey: definition.key,
+    sourceLocale: baseLocale,
+    baseValue,
+    fillMissingOnly,
+    translated,
+    skippedLocales,
+    failedLocales,
+    totalTargetLocales: targetLocales.length,
+  };
+}
+
+export async function translateCoreField(request: CoreFieldTranslationRequest): Promise<CoreFieldTranslationResult> {
+  const partId = Number(request.partId);
+  const coreField = request.coreField;
+  const fillMissingOnly = request.fillMissingOnly !== false;
+  if (!Number.isFinite(partId)) throw new Error('Invalid partId');
+  if (coreField !== 'name' && coreField !== 'description') throw new Error('Invalid coreField');
+
+  const [baseLocale, locales] = await Promise.all([getBaseLocale(), listSupportedLocales()]);
+  const targetLocales = locales.filter((locale) => locale !== baseLocale);
+  if (!targetLocales.length) throw new Error('No target locales available');
+
+  const [partRows, translationRows] = await Promise.all([
+    sql`
+      select part_number, hierarchy_node_id, default_name, default_description
+      from qpart_parts
+      where id = ${partId}
+      limit 1
+    `,
+    sql`
+      select locale, name, description
+      from qpart_part_translations
+      where part_id = ${partId}
+    `,
+  ]);
+
+  const part = (partRows as Array<PartContextRow & { default_name: string; default_description: string | null }>)[0];
+  if (!part) throw new Error('Part not found');
+
+  const baseValue = asTrimmedString(coreField === 'name' ? part.default_name : part.default_description);
+  if (!baseValue) throw new Error(`Base (${baseLocale}) value is required before translation`);
+
+  const existingByLocale = new Map<string, string>();
+  for (const locale of targetLocales) existingByLocale.set(locale, '');
+  for (const row of translationRows as Array<{ locale: string; name: string | null; description: string | null }>) {
+    if (!existingByLocale.has(row.locale)) continue;
+    existingByLocale.set(row.locale, asTrimmedString(coreField === 'name' ? row.name : row.description));
+  }
+
+  const localesToTranslate = fillMissingOnly
+    ? targetLocales.filter((locale) => !asTrimmedString(existingByLocale.get(locale)))
+    : targetLocales;
+
+  if (!localesToTranslate.length) {
+    return {
+      partId,
+      coreField,
+      sourceLocale: baseLocale,
+      baseValue,
+      fillMissingOnly,
+      translated: [],
+      skippedLocales: targetLocales,
+      failedLocales: [],
+      totalTargetLocales: targetLocales.length,
+    };
+  }
+
+  const model = asTrimmedString(process.env.OPENAI_TRANSLATION_MODEL) || DEFAULT_TRANSLATION_MODEL;
+  const hierarchyContext = await getHierarchyContext(part.hierarchy_node_id);
+  const generated = await callOpenAiForCoreTranslations({
+    model,
+    partNumber: part.part_number,
+    fieldLabel: coreField === 'name' ? 'part title' : 'part description',
+    sourceLocale: baseLocale,
+    sourceText: baseValue,
+    hierarchyContext,
+    targetLocales: localesToTranslate,
+  });
+
+  const generatedByLocale = new Map<string, string>();
+  for (const row of generated) {
+    if (localesToTranslate.includes(row.locale)) generatedByLocale.set(row.locale, row.text);
+  }
+
+  const translated: LocaleTranslation[] = [];
+  const failedLocales: string[] = [];
+  for (const locale of localesToTranslate) {
+    const translatedText = asTrimmedString(generatedByLocale.get(locale));
+    if (!translatedText) {
+      failedLocales.push(locale);
+      continue;
+    }
+    const name = coreField === 'name' ? translatedText : null;
+    const description = coreField === 'description' ? translatedText : null;
+
+    await sql`
+      insert into qpart_part_translations (part_id, locale, name, description)
+      values (${partId}, ${locale}, ${name}, ${description})
+      on conflict (part_id, locale)
+      do update
+      set name = case when excluded.name is null then qpart_part_translations.name else excluded.name end,
+          description = case when excluded.description is null then qpart_part_translations.description else excluded.description end
+    `;
+    translated.push({ locale, text: translatedText });
+  }
+
+  const skippedLocales = fillMissingOnly
+    ? targetLocales.filter((locale) => locale !== baseLocale && asTrimmedString(existingByLocale.get(locale)))
+    : [];
+
+  return {
+    partId,
+    coreField,
     sourceLocale: baseLocale,
     baseValue,
     fillMissingOnly,

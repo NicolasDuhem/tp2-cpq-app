@@ -28,6 +28,11 @@ export default function QPartPartFormPage({ partId }: Props) {
   const [expandedMetadataLocales, setExpandedMetadataLocales] = useState<Record<string, boolean>>({});
   const [translatingMetadata, setTranslatingMetadata] = useState<Record<string, boolean>>({});
   const [metadataMessages, setMetadataMessages] = useState<Record<string, string>>({});
+  const [expandedCoreLocales, setExpandedCoreLocales] = useState<Record<'name' | 'description', boolean>>({ name: false, description: false });
+  const [translatingCore, setTranslatingCore] = useState<Record<'name' | 'description', boolean>>({ name: false, description: false });
+  const [coreMessages, setCoreMessages] = useState<Record<'name' | 'description', string>>({ name: '', description: '' });
+  const [metadataExpanded, setMetadataExpanded] = useState(true);
+  const [compatibilityExpanded, setCompatibilityExpanded] = useState(true);
   const [compatibilityRules, setCompatibilityRules] = useState<QPartCompatibilityRule[]>([]);
   const [derivedCandidates, setDerivedCandidates] = useState<QPartCompatibilityCandidate[]>([]);
   const [hierarchySelections, setHierarchySelections] = useState<LevelSelections>(emptyLevelSelections);
@@ -41,6 +46,14 @@ export default function QPartPartFormPage({ partId }: Props) {
     }
     return null;
   }, [hierarchySelections]);
+  const booleanMetadataDefs = useMemo(
+    () => metadataDefs.filter((definition) => definition.field_type === 'boolean'),
+    [metadataDefs],
+  );
+  const nonBooleanMetadataDefs = useMemo(
+    () => metadataDefs.filter((definition) => definition.field_type !== 'boolean'),
+    [metadataDefs],
+  );
 
   const loadDependencies = async () => {
     const [localeRes, hierarchyRes, metadataRes, bikeTypeRes] = await Promise.all([
@@ -210,6 +223,72 @@ export default function QPartPartFormPage({ partId }: Props) {
     setMetadataMessages((prev) => ({ ...prev, [key]: `Translated ${translatedRows.length} locale(s). ${skippedLocales} skipped (already filled).` }));
   };
 
+  const translateCoreField = async (field: 'name' | 'description') => {
+    const baseValue = (field === 'name' ? defaultName : defaultDescription).trim();
+    if (!baseValue) {
+      const label = field === 'name' ? 'English title' : 'English description';
+      setCoreMessages((prev) => ({ ...prev, [field]: `Enter ${label} before translating.` }));
+      return;
+    }
+    if (!partId) {
+      setCoreMessages((prev) => ({ ...prev, [field]: 'Save the part first before requesting AI translation.' }));
+      return;
+    }
+
+    setCoreMessages((prev) => ({ ...prev, [field]: '' }));
+    setTranslatingCore((prev) => ({ ...prev, [field]: true }));
+
+    const res = await fetch('/api/qpart/translations/field', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        part_id: partId,
+        core_field: field,
+        fill_missing_only: true,
+      }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    setTranslatingCore((prev) => ({ ...prev, [field]: false }));
+
+    if (!res.ok) {
+      setCoreMessages((prev) => ({ ...prev, [field]: payload.error || 'Translation failed.' }));
+      return;
+    }
+
+    const translatedRows = Array.isArray(payload.row?.translated) ? payload.row.translated : [];
+    if (translatedRows.length) {
+      setTranslations((prev) => {
+        const next = { ...prev };
+        for (const item of translatedRows) {
+          next[item.locale] = {
+            name: next[item.locale]?.name || '',
+            description: next[item.locale]?.description || '',
+            [field]: item.text,
+          };
+        }
+        return next;
+      });
+      setExpandedCoreLocales((prev) => ({ ...prev, [field]: true }));
+    }
+
+    const skippedLocales = Array.isArray(payload.row?.skippedLocales) ? payload.row.skippedLocales.length : 0;
+    const failedLocales = Array.isArray(payload.row?.failedLocales) ? payload.row.failedLocales.length : 0;
+
+    if (failedLocales > 0) {
+      setCoreMessages((prev) => ({
+        ...prev,
+        [field]: `Translated ${translatedRows.length} locale(s), ${failedLocales} failed, ${skippedLocales} skipped (already filled).`,
+      }));
+      return;
+    }
+    if (!translatedRows.length) {
+      setCoreMessages((prev) => ({ ...prev, [field]: 'All locale values are already filled.' }));
+      return;
+    }
+    setCoreMessages((prev) => ({ ...prev, [field]: `Translated ${translatedRows.length} locale(s). ${skippedLocales} skipped (already filled).` }));
+  };
+
   const persist = async () => {
     const translationRows = nonBaseLocales.map((locale) => ({ locale, name: translations[locale]?.name || '', description: translations[locale]?.description || '' }));
 
@@ -258,7 +337,7 @@ export default function QPartPartFormPage({ partId }: Props) {
       <div className="compactPageHeader">
         <div>
           <h1>{partId ? `Edit part #${partId}` : 'Create part'}</h1>
-          <p className="subtle">Core info, hierarchy, metadata, translations, and compatibility in one isolated QPart workflow.</p>
+          <p className="subtle">Core info, hierarchy, metadata, and compatibility in one isolated QPart workflow.</p>
         </div>
         <div className="rowButtons">
           <Link className="tab" href="/qpart/parts">Back to parts</Link>
@@ -272,7 +351,41 @@ export default function QPartPartFormPage({ partId }: Props) {
         <h3>Core</h3>
         <div className="denseGrid4">
           <label>Part number<input value={partNumber} onChange={(event) => setPartNumber(event.target.value)} /></label>
-          <label>English title<input value={defaultName} onChange={(event) => setDefaultName(event.target.value)} /></label>
+          <div className="qpartCoreField">
+            <div className="qpartMetadataHeader">
+              <label>English title<input value={defaultName} onChange={(event) => setDefaultName(event.target.value)} /></label>
+              <div className="qpartMetadataActions">
+                <span className="subtle">
+                  {nonBaseLocales.filter((locale) => translations[locale]?.name?.trim()).length}/{nonBaseLocales.length} translated
+                </span>
+                <button type="button" onClick={() => setExpandedCoreLocales((prev) => ({ ...prev, name: !prev.name }))}>
+                  {expandedCoreLocales.name ? '▾' : '▸'}
+                </button>
+                <button type="button" disabled={!partId || translatingCore.name} onClick={() => void translateCoreField('name')}>
+                  {translatingCore.name ? 'Translating…' : 'Translate'}
+                </button>
+              </div>
+            </div>
+            {expandedCoreLocales.name ? (
+              <div className="denseGrid2">
+                {nonBaseLocales.map((locale) => (
+                  <label key={`name-${locale}`}>
+                    Title ({locale})
+                    <input
+                      value={translations[locale]?.name || ''}
+                      onChange={(event) =>
+                        setTranslations((prev) => ({
+                          ...prev,
+                          [locale]: { ...prev[locale], name: event.target.value, description: prev[locale]?.description || '' },
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            {coreMessages.name ? <p className="subtle" style={{ margin: 0 }}>{coreMessages.name}</p> : null}
+          </div>
           <label>Status
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="active">active</option>
@@ -281,10 +394,62 @@ export default function QPartPartFormPage({ partId }: Props) {
             </select>
           </label>
         </div>
-        <label style={{ display: 'grid', gap: 6 }}>
-          English description
-          <textarea value={defaultDescription} onChange={(event) => setDefaultDescription(event.target.value)} rows={3} />
-        </label>
+        <div className="qpartCoreField">
+          <div className="qpartMetadataHeader">
+            <label style={{ display: 'grid', gap: 6 }}>
+              English description
+              <textarea value={defaultDescription} onChange={(event) => setDefaultDescription(event.target.value)} rows={3} />
+            </label>
+            <div className="qpartMetadataActions">
+              <span className="subtle">
+                {nonBaseLocales.filter((locale) => translations[locale]?.description?.trim()).length}/{nonBaseLocales.length} translated
+              </span>
+              <button type="button" onClick={() => setExpandedCoreLocales((prev) => ({ ...prev, description: !prev.description }))}>
+                {expandedCoreLocales.description ? '▾' : '▸'}
+              </button>
+              <button type="button" disabled={!partId || translatingCore.description} onClick={() => void translateCoreField('description')}>
+                {translatingCore.description ? 'Translating…' : 'Translate'}
+              </button>
+            </div>
+          </div>
+          {expandedCoreLocales.description ? (
+            <div className="denseGrid2">
+              {nonBaseLocales.map((locale) => (
+                <label key={`description-${locale}`}>
+                  Description ({locale})
+                  <textarea
+                    rows={2}
+                    value={translations[locale]?.description || ''}
+                    onChange={(event) =>
+                      setTranslations((prev) => ({
+                        ...prev,
+                        [locale]: { ...prev[locale], description: event.target.value, name: prev[locale]?.name || '' },
+                      }))
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
+          {coreMessages.description ? <p className="subtle" style={{ margin: 0 }}>{coreMessages.description}</p> : null}
+        </div>
+        {booleanMetadataDefs.length ? (
+          <div className="qpartBooleanStrip">
+            {booleanMetadataDefs.map((definition) => {
+              const key = String(definition.id);
+              return (
+                <label key={definition.id} className="inlineCheck" style={{ marginBottom: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(metadataValues[key])}
+                    onChange={(event) => setMetadataValues((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  {definition.label_en}
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div className="card">
@@ -305,9 +470,14 @@ export default function QPartPartFormPage({ partId }: Props) {
       </div>
 
       <div className="card">
-        <h3>Metadata values</h3>
-        <div className="denseGrid2">
-          {metadataDefs.map((definition) => {
+        <div className="qpartSectionHeader">
+          <h3>Metadata values</h3>
+          <button type="button" onClick={() => setMetadataExpanded((prev) => !prev)}>
+            {metadataExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+        {metadataExpanded ? <div className="denseGrid2">
+          {nonBooleanMetadataDefs.map((definition) => {
             const key = String(definition.id);
             const translatedCount = definition.is_translatable
               ? nonBaseLocales.filter((locale) => hasMetadataValue(metadataTranslations[key]?.[locale])).length
@@ -320,7 +490,6 @@ export default function QPartPartFormPage({ partId }: Props) {
                 <div className="qpartMetadataHeader">
                   <div>
                     <strong>{definition.label_en}</strong>
-                    <p className="subtle" style={{ margin: 0 }}>{definition.key}</p>
                   </div>
                   {definition.is_translatable ? (
                     <div className="qpartMetadataActions">
@@ -336,7 +505,7 @@ export default function QPartPartFormPage({ partId }: Props) {
                 </div>
 
                 <label style={{ display: 'grid', gap: 6 }}>
-                  {definition.label_en} ({baseLocale})
+                  {baseLocale}
                   <MetadataField
                     definition={definition}
                     value={metadataValues[key]}
@@ -348,7 +517,7 @@ export default function QPartPartFormPage({ partId }: Props) {
                   <div className="denseGrid2" style={{ marginTop: 8 }}>
                     {nonBaseLocales.map((locale) => (
                       <label key={`${definition.id}-${locale}`}>
-                        {definition.label_en} ({locale})
+                        {locale}
                         <MetadataField
                           definition={definition}
                           value={metadataTranslations[key]?.[locale]}
@@ -368,36 +537,18 @@ export default function QPartPartFormPage({ partId }: Props) {
               </div>
             );
           })}
-        </div>
+        </div> : null}
       </div>
 
       <div className="card">
-        <h3>Translations</h3>
-        <p className="subtle">Base locale: {baseLocale}</p>
-        <div className="denseGrid4">
-          {nonBaseLocales.map((locale) => (
-            <div key={locale} className="tile">
-              <strong>{locale}</strong>
-              <label>Name
-                <input
-                  value={translations[locale]?.name || ''}
-                  onChange={(event) => setTranslations((prev) => ({ ...prev, [locale]: { ...prev[locale], name: event.target.value, description: prev[locale]?.description || '' } }))}
-                />
-              </label>
-              <label>Description
-                <textarea
-                  rows={2}
-                  value={translations[locale]?.description || ''}
-                  onChange={(event) => setTranslations((prev) => ({ ...prev, [locale]: { ...prev[locale], description: event.target.value, name: prev[locale]?.name || '' } }))}
-                />
-              </label>
-            </div>
-          ))}
+        <div className="qpartSectionHeader">
+          <h3>Compatibility</h3>
+          <button type="button" onClick={() => setCompatibilityExpanded((prev) => !prev)}>
+            {compatibilityExpanded ? 'Collapse' : 'Expand'}
+          </button>
         </div>
-      </div>
-
-      <div className="card">
-        <h3>Compatibility</h3>
+        {compatibilityExpanded ? (
+          <>
         <label>Bike types
           <select
             multiple
@@ -475,6 +626,8 @@ export default function QPartPartFormPage({ partId }: Props) {
             </tbody>
           </table>
         </div>
+          </>
+        ) : null}
       </div>
     </section>
   );

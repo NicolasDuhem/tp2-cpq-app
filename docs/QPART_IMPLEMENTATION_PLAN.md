@@ -31,7 +31,7 @@ Supporting API routes:
 - `GET /api/qpart/locales` (distinct languages from `CPQ_setup_account_context`).
 - `GET /api/qpart/bike-types` (distinct bike types from `CPQ_setup_ruleset`).
 - CRUD under `/api/qpart/parts`, `/api/qpart/hierarchy`, `/api/qpart/metadata`, `/api/qpart/compatibility`.
-- `POST /api/qpart/translations/field` for field-by-field AI translation of translatable metadata values (server-side OpenAI integration, fill-missing default).
+- `POST /api/qpart/translations/field` for field-by-field AI translation of English core fields (title/description) and translatable metadata values (server-side OpenAI integration, fill-missing default).
 - `POST /api/qpart/compatibility/derive` for bike-type-driven feature/option discovery from `CPQ_sampler_result.json_result`.
 
 ---
@@ -174,19 +174,19 @@ All parsing/derivation must live in QPart service layer (not in CPQ runtime serv
 - Table columns: part number, name, hierarchy path, status, updated_at.
 
 ### `/qpart/parts/new` and `/qpart/parts/[id]`
-Tabbed sections:
-1. Core info
+Compact sectioned layout:
+1. Core info (includes inline translation controls for English title/description and compact boolean metadata checkboxes)
 2. Hierarchy
-3. Metadata
-4. Translations
-5. Compatibility
-6. Audit/status
+3. Metadata (collapsible, translatable fields have inline locale expansion + translate action)
+4. Compatibility (collapsible)
+5. Audit/status (future)
 
 Behavior:
 - English/base values required on create.
 - Metadata controls rendered from active definitions by display order.
-- For translatable metadata: locale matrix editor from dynamic locale list.
+- For translatable metadata: base locale field + compact translation status, inline locale expansion, and per-field translate action from dynamic locale list.
 - For English-only metadata: single base field.
+- Standalone translations block is removed in favor of field-level translation UX where values are edited.
 - Compatibility section: bike type multi-select, then derived feature/option pickers.
 
 ### `/qpart/hierarchy`
