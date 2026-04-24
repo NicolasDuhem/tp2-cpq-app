@@ -14,6 +14,10 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
+- `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
+  - Active/Inactive only (no Not configured state).
+  - Part and territory matrix state is stored in `qpart_country_allocation.active`.
+  - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
 
 ## Core lifecycle contract (`/cpq`)
 1. `POST /api/cpq/init` (StartConfiguration)
@@ -35,6 +39,7 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 ## Data ownership summary
 - Canonical save/retrieve: `cpq_configuration_references`
 - Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status: Active=true, Inactive=false, Not configured=no row)
+- QPart sales territory allocation state: `qpart_country_allocation` (`active` is authoritative, one row per `part_id + country_code`)
 - Setup master data: `CPQ_setup_account_context`, `CPQ_setup_ruleset`
 - Layered preview + bulk-ignore behavior: `cpq_image_management`
 - Dashboard aggregation source: `CPQ_sampler_result` + `CPQ_setup_ruleset` bike-type mapping + `cpq_country_mappings` territory metadata + `cpq_image_management` completeness status
@@ -65,6 +70,8 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - Dynamic locale source for QPart translations: `CPQ_setup_account_context.language` (distinct values).
 - Dynamic bike type source: `CPQ_setup_ruleset.bike_type` (distinct values).
 - Dynamic compatibility derivation source: `CPQ_sampler_result.json_result` (`selectedOptions` preferred, `dropdownOrderSnapshot` fallback).
+- Dynamic country source for QPart sales allocation: active `cpq_country_mappings.country_code`.
+- QPart allocation sync rule: missing `(part_id, country_code)` rows are auto-created as inactive on part create and during matrix load/mutation paths.
 - QPart CSV export/import contract is intentionally flat/business-facing while persistence stays normalized in `qpart_*` tables.
 - CSV metadata columns are dynamic from active `qpart_metadata_definitions` (`metadata__<key>` + `metadata__<key>__<locale>` for translatable definitions).
 - CSV translation locale columns are dynamic from distinct `CPQ_setup_account_context.language` values (`title__<locale>`, `description__<locale>`, non-base locales only).

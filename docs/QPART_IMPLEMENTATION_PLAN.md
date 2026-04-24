@@ -35,6 +35,7 @@ Supporting API routes:
 - `POST /api/qpart/parts/import` for CSV dry-run/apply import with upsert by `part_number`.
 - `POST /api/qpart/translations/field` for field-by-field AI translation of English core fields (title/description) and translatable metadata values (server-side OpenAI integration, fill-missing default).
 - `POST /api/qpart/compatibility/derive` for bike-type-driven feature/option discovery from `CPQ_sampler_result.json_result`.
+- `POST /api/sales/qpart-allocation/toggle` and `POST /api/sales/qpart-allocation/bulk-update` for Sales territory allocation updates (QPart-only state table).
 
 ---
 
@@ -135,16 +136,28 @@ Supporting API routes:
 - `is_active boolean not null default true`
 - unique `(bike_type, feature_label, option_value)`
 
-### 3.5 Locale reference helper
+### 3.5 Sales territory allocation model
+
+10. `qpart_country_allocation`
+- `id bigserial pk`
+- `part_id bigint not null references qpart_parts(id) on delete cascade`
+- `country_code char(2) not null`
+- `active boolean not null default false`
+- unique `(part_id, country_code)`
+- indexes on `country_code` and `active` for matrix filtering/update operations.
+- no “Not configured” state; every part-country cell exists and is either active or inactive.
+
+### 3.6 Locale reference helper
 
 10. optional view: `qpart_supported_locales_v`
 - `select distinct language from CPQ_setup_account_context where language is not null and btrim(language) <> ''`
 
-### 3.6 Migration sequencing
+### 3.7 Migration sequencing
 
 - **Migration A (foundation)**: create all `qpart_*` tables + constraints + indexes.
 - **Migration B (seed)**: insert initial metadata definitions (`ean13`, `description`, `material`, etc.) with validation JSON.
 - **Migration C (optional view/helpers)**: locale view + utility SQL functions for hierarchy integrity.
+- **Migration D**: `qpart_country_allocation` + uniqueness/index constraints for sales matrix.
 
 ---
 

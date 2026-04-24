@@ -11,6 +11,7 @@ Primary routes:
 - `/cpq/process` (SOP content)
 - `/cpq/ui-docs` (UI mapping table)
 - `/sales/bike-allocation` (sales allocation matrix + launch-to-CPQ)
+- `/sales/qpart-allocation` (sales territory matrix for QPart spare parts)
 
 Aliases:
 - `/` → `/cpq`
@@ -41,6 +42,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
   - sampler sync into `cpq_image_management`
 - `/cpq/results` → `components/cpq/cpq-results-page.tsx` + client matrix component
 - `/sales/bike-allocation` → server data loader + client matrix/toggle/bulk/replay launcher
+- `/sales/qpart-allocation` → server data loader + client matrix/toggle/bulk controls for QPart active/inactive by country
 - `/dashboard` → `lib/dashboard/service.ts` + `components/dashboard/dashboard-page.tsx`
   - Aggregates server-side data from sampler/config setup tables into KPI cards, territory map, stacked coverage bars, heatmap, picture completeness chart, actionable gap list, and ranked leaderboards.
   - Drill-down links route to `/sales/bike-allocation` and `/cpq/setup` with query-param context.
@@ -68,12 +70,16 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `POST /api/sales/bike-allocation/bulk-update`
 - `POST /api/sales/bike-allocation/launch-context`
   - Toggle/bulk routes revalidate `/sales/bike-allocation` so App Router refresh picks up latest Neon state.
+- `POST /api/sales/qpart-allocation/toggle`
+- `POST /api/sales/qpart-allocation/bulk-update`
+  - Toggle/bulk routes revalidate `/sales/qpart-allocation` after writes.
 
 ## 5) Data boundaries
 - `cpq_configuration_references` = canonical saved configuration registry for retrieve.
 - `CPQ_sampler_result` = support snapshots + sales allocation status source (`active`).
 - `CPQ_setup_account_context`, `cpq_country_mappings`, `CPQ_setup_ruleset` = setup/master tables.
 - `cpq_image_management` = layered preview mapping + feature-level bulk-ignore and layer order.
+- `qpart_country_allocation` = canonical QPart sales territory allocation state (`active=true|false`) with one row per `(part_id, country_code)`.
 - Bike-type source of truth used by dashboard and sales deep-links: `CPQ_setup_ruleset.cpq_ruleset -> CPQ_setup_ruleset.bike_type`.
 
 ## 6) Feature flags/runtime switches
@@ -108,6 +114,12 @@ QPart source-of-truth reads from CPQ tables:
 - locales: `CPQ_setup_account_context.language`
 - bike types: `CPQ_setup_ruleset.bike_type`
 - sampler compatibility candidates: `CPQ_sampler_result.json_result`
+- country list for QPart allocation: active `cpq_country_mappings.country_code`
+
+QPart sales allocation behavior:
+- no “Not configured” state; only Active/Inactive cells are rendered.
+- matrix completeness is enforced by a sync helper that inserts missing `(part_id, country_code)` rows before load and before mutations.
+- new part creation seeds default inactive rows across all active countries.
 
 
 ## 10) QPart AI translation (field scoped)
