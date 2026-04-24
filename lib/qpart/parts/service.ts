@@ -95,26 +95,29 @@ export async function getPartDetail(id: number): Promise<QPartPartDetail | null>
   const part = await getPartById(id);
   if (!part) return null;
 
-  const [translations, metadataValues, compatibilityRules] = await Promise.all([
+  const [translationsRaw, metadataValuesRaw, compatibilityRulesRaw] = await Promise.all([
     sql`
       select locale, name, description
       from qpart_part_translations
       where part_id = ${id}
       order by locale
-    ` as Promise<QPartTranslation[]>,
+    `,
     sql`
       select metadata_definition_id, locale, value_text, value_number, value_boolean, value_date, value_json
       from qpart_part_metadata_values
       where part_id = ${id}
       order by metadata_definition_id, locale
-    ` as Promise<QPartMetadataValue[]>,
+    `,
     sql`
       select bike_type, feature_label, option_value, option_label, source, is_active
       from qpart_part_compatibility_rules
       where part_id = ${id}
       order by bike_type, feature_label, option_value
-    ` as Promise<QPartCompatibilityRule[]>,
+    `,
   ]);
+  const translations = translationsRaw as QPartTranslation[];
+  const metadataValues = metadataValuesRaw as QPartMetadataValue[];
+  const compatibilityRules = compatibilityRulesRaw as QPartCompatibilityRule[];
 
   return {
     part,
@@ -251,11 +254,14 @@ export async function deletePart(id: number) {
 }
 
 export async function getQPartSummary() {
-  const [partRows, hierarchyRows, metadataRows] = await Promise.all([
-    sql`select count(*)::int as count from qpart_parts` as Promise<Array<{ count: number }>>,
-    sql`select count(*)::int as count from qpart_hierarchy_nodes` as Promise<Array<{ count: number }>>,
-    sql`select count(*)::int as count from qpart_metadata_definitions where is_active = true` as Promise<Array<{ count: number }>>,
+  const [partRowsRaw, hierarchyRowsRaw, metadataRowsRaw] = await Promise.all([
+    sql`select count(*)::int as count from qpart_parts`,
+    sql`select count(*)::int as count from qpart_hierarchy_nodes`,
+    sql`select count(*)::int as count from qpart_metadata_definitions where is_active = true`,
   ]);
+  const partRows = partRowsRaw as Array<{ count: number }>;
+  const hierarchyRows = hierarchyRowsRaw as Array<{ count: number }>;
+  const metadataRows = metadataRowsRaw as Array<{ count: number }>;
 
   return {
     parts: partRows[0]?.count ?? 0,
