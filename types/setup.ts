@@ -4,6 +4,18 @@ export type CpqAccountContextRecord = {
   customer_id: string;
   currency: string;
   language: string;
+  region: string | null;
+  sub_region: string | null;
+  country_code: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CpqCountryMappingRecord = {
+  id: number;
+  region: string;
+  sub_region: string;
   country_code: string;
   is_active: boolean;
   created_at?: string;

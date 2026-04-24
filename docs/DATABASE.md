@@ -8,6 +8,7 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 3. `CPQ_sampler_result`
 4. `cpq_configuration_references`
 5. `cpq_image_management`
+6. `cpq_country_mappings`
 
 ## Canonical vs supporting data
 
@@ -28,8 +29,9 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 - Allocation status source: `CPQ_sampler_result.active` (not JSON field)
 
 ### Setup/master tables
-- `CPQ_setup_account_context`: account/customer/currency/language/country setup by country
+- `CPQ_setup_account_context`: account/customer/currency/language + region/sub-region/country setup
 - `CPQ_setup_ruleset`: ruleset metadata + bike_type + namespace/header defaults
+- `cpq_country_mappings`: region/sub-region/country master mapping used by setup dropdowns
 
 ### Image/layer mapping table
 - `cpq_image_management`
@@ -39,6 +41,7 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 - `/cpq` save writes `cpq_configuration_references`, then writes `CPQ_sampler_result`.
 - Setup page writes:
   - account contexts (`CPQ_setup_account_context`)
+  - country mappings (`cpq_country_mappings`)
   - rulesets (`CPQ_setup_ruleset`)
   - picture rows and feature-wide settings (`cpq_image_management`)
 - Picture sync writes:
@@ -49,6 +52,10 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 
 ## Constraints/behaviors that matter in code
 - `CPQ_setup_account_context.country_code` must match ISO2 uppercase format.
+- `CPQ_setup_account_context` enforces non-blank `account_code`.
+- `CPQ_setup_account_context` enforces unique `(country_code, currency)` combinations.
+- `CPQ_setup_account_context(region, sub_region, country_code)` references `cpq_country_mappings`.
+- `cpq_country_mappings` enforces unique `(region, sub_region, country_code)` rows.
 - `cpq_image_management` has unique `(feature_label, option_label, option_value)`.
 - `cpq_image_management.feature_layer_order` constrained to `1..20`.
 - `CPQ_sampler_result.active` is `NOT NULL DEFAULT true`.

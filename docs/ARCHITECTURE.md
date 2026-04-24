@@ -33,7 +33,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
   - combination generation + bulk row-country execution
   - replay ingestion from sales launch context
 - `/cpq/setup` → `components/setup/cpq-setup-page.tsx`
-  - CRUD: account context/rulesets
+  - CRUD: account context/rulesets/country mappings
   - picture management editing
   - feature-level ignore + layer-order controls
   - sampler sync into `cpq_image_management`
@@ -54,6 +54,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `POST /api/cpq/sampler-result`
 - `POST /api/cpq/image-layers`
 - `GET/POST/PUT/DELETE /api/cpq/setup/account-context*`
+- `GET/POST/PUT/DELETE /api/cpq/setup/country-mappings*`
 - `GET/POST/PUT/DELETE /api/cpq/setup/rulesets*`
 - `GET/PUT/POST /api/cpq/setup/picture-management*`
 
@@ -66,7 +67,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 ## 5) Data boundaries
 - `cpq_configuration_references` = canonical saved configuration registry for retrieve.
 - `CPQ_sampler_result` = support snapshots + sales allocation status source (`active`).
-- `CPQ_setup_account_context`, `CPQ_setup_ruleset` = setup/master tables.
+- `CPQ_setup_account_context`, `cpq_country_mappings`, `CPQ_setup_ruleset` = setup/master tables.
 - `cpq_image_management` = layered preview mapping + feature-level bulk-ignore and layer order.
 
 ## 6) Feature flags/runtime switches
@@ -80,6 +81,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 
 ## 8) CPQ context invariants
 - One authoritative active CPQ context is maintained in `/cpq` state with owner + accountCode + countryCode + ruleset + sessionId (+ ids).
+- Bike Builder setup loading filters out blank account codes and blocks session actions until a valid account code is selected.
 - `init` context is driven by current UI `accountCode` + `ruleset` (including replay launch from sales), and init requests are sequenced so stale responses cannot win.
 - Replay launch sequence is: apply UI account/ruleset → run init in that context → accept only latest init result → replay configure steps on that session → finalize/save in same context/session lineage.
 - Finalize always reads session id from the authoritative active context (never stale/default/previous session refs).

@@ -1,9 +1,45 @@
-insert into CPQ_setup_account_context (account_code, customer_id, currency, language, country_code, is_active)
-values ('A000286', 'A000286', 'GBP', 'en-GB', 'GB', true)
+insert into cpq_country_mappings (region, sub_region, country_code, is_active)
+values
+  ('America', 'North America', 'CA', true),
+  ('America', 'North America', 'US', true),
+  ('APAC', 'APAC', 'JP', true),
+  ('APAC', 'APAC', 'SG', true),
+  ('APAC', 'China', 'CN', true),
+  ('Europe', 'DACH', 'AT', true),
+  ('Europe', 'DACH', 'CH', true),
+  ('Europe', 'DACH', 'DE', true),
+  ('Europe', 'EMEA', 'BE', true),
+  ('Europe', 'EMEA', 'CZ', true),
+  ('Europe', 'EMEA', 'DK', true),
+  ('Europe', 'EMEA', 'EL', true),
+  ('Europe', 'EMEA', 'ES', true),
+  ('Europe', 'EMEA', 'FI', true),
+  ('Europe', 'EMEA', 'FR', true),
+  ('Europe', 'EMEA', 'HU', true),
+  ('Europe', 'EMEA', 'IT', true),
+  ('Europe', 'EMEA', 'LT', true),
+  ('Europe', 'EMEA', 'LU', true),
+  ('Europe', 'EMEA', 'LV', true),
+  ('Europe', 'EMEA', 'NL', true),
+  ('Europe', 'EMEA', 'PL', true),
+  ('Europe', 'EMEA', 'PT', true),
+  ('Europe', 'EMEA', 'RO', true),
+  ('Europe', 'EMEA', 'SE', true),
+  ('Europe', 'EMEA', 'SI', true),
+  ('Europe', 'UK', 'GB', true),
+  ('Europe', 'UK', 'IE', true)
+on conflict (region, sub_region, country_code) do update
+set is_active = excluded.is_active,
+    updated_at = now();
+
+insert into CPQ_setup_account_context (account_code, customer_id, currency, language, region, sub_region, country_code, is_active)
+values ('A000286', 'A000286', 'GBP', 'en-GB', 'Europe', 'UK', 'GB', true)
 on conflict (account_code) do update
 set customer_id = excluded.customer_id,
     currency = excluded.currency,
     language = excluded.language,
+    region = excluded.region,
+    sub_region = excluded.sub_region,
     country_code = excluded.country_code,
     is_active = excluded.is_active,
     updated_at = now();

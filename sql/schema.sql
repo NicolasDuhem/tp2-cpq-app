@@ -6,12 +6,44 @@ create table if not exists CPQ_setup_account_context (
   customer_id text not null,
   currency text not null,
   language text not null,
+  region text,
+  sub_region text,
   country_code char(2) not null,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint cpq_setup_account_context_country_code_chk check (country_code ~ '^[A-Z]{2}$')
+  constraint cpq_setup_account_context_country_code_chk check (country_code ~ '^[A-Z]{2}$'),
+  constraint cpq_setup_account_context_account_code_nonblank_chk check (btrim(account_code) <> '')
 );
+
+create table if not exists cpq_country_mappings (
+  id bigserial primary key,
+  region text not null,
+  sub_region text not null,
+  country_code char(2) not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint cpq_country_mappings_country_code_chk check (country_code ~ '^[A-Z]{2}$'),
+  constraint cpq_country_mappings_uniq unique (region, sub_region, country_code)
+);
+
+create unique index if not exists cpq_setup_account_context_country_currency_uniq
+  on CPQ_setup_account_context (country_code, currency);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'cpq_setup_account_context_region_sub_region_country_fk'
+  ) then
+    alter table CPQ_setup_account_context
+      add constraint cpq_setup_account_context_region_sub_region_country_fk
+      foreign key (region, sub_region, country_code)
+      references cpq_country_mappings (region, sub_region, country_code);
+  end if;
+end$$;
 
 create table if not exists CPQ_setup_ruleset (
   id bigserial primary key,
@@ -25,6 +57,12 @@ create table if not exists CPQ_setup_ruleset (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists CPQ_setup_account_context
+  add column if not exists region text;
+
+alter table if exists CPQ_setup_account_context
+  add column if not exists sub_region text;
 
 create table if not exists CPQ_sampler_result (
   id bigserial primary key,
