@@ -13,6 +13,10 @@ export default function QPartPartsListPage() {
   const [hierarchyNodes, setHierarchyNodes] = useState<QPartHierarchyNode[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<Record<string, unknown> | null>(null);
+  const [importError, setImportError] = useState('');
   const [selections, setSelections] = useState<LevelSelections>(defaultSelections);
 
   const selectedHierarchyNodeId = useMemo(() => {
@@ -63,6 +67,36 @@ export default function QPartPartsListPage() {
     setSelections(next);
   };
 
+  const runImport = async (dryRun: boolean) => {
+    if (!importFile) {
+      setImportError('Choose a CSV file first.');
+      return;
+    }
+
+    setImporting(true);
+    setImportError('');
+    setImportSummary(null);
+
+    const formData = new FormData();
+    formData.set('file', importFile);
+    formData.set('dry_run', dryRun ? 'true' : 'false');
+
+    const res = await fetch('/api/qpart/parts/import', {
+      method: 'POST',
+      body: formData,
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok && !payload.summary) {
+      setImportError(payload.error || 'Import failed');
+      setImporting(false);
+      return;
+    }
+
+    setImportSummary(payload.summary || null);
+    setImporting(false);
+    if (!dryRun && res.ok) await load();
+  };
+
   return (
     <section className="pageRoot">
       <div className="compactPageHeader">
@@ -73,7 +107,29 @@ export default function QPartPartsListPage() {
         <div className="rowButtons">
           <Link className="tab" href="/qpart">Back to QPart home</Link>
           <Link className="tab tabActive" href="/qpart/parts/new">Create part</Link>
+          <a className="tab" href="/api/qpart/parts/export">Export CSV</a>
         </div>
+      </div>
+
+      <div className="card">
+        <h3>CSV import</h3>
+        <p className="subtle">CSV uses business columns with dynamic metadata and locale translation fields. Preview (dry-run) before apply.</p>
+        <div className="rowButtons">
+          <input type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
+          <button className="tab" onClick={() => void runImport(true)} disabled={importing}>{importing ? 'Running…' : 'Preview import'}</button>
+          <button className="primary" onClick={() => void runImport(false)} disabled={importing}>{importing ? 'Applying…' : 'Apply import'}</button>
+        </div>
+        {importError ? <p className="errorText">{importError}</p> : null}
+        {importSummary ? (
+          <div className="note" style={{ marginTop: 12 }}>
+            <strong>Summary:</strong>{' '}
+            created {String(importSummary.created ?? 0)}, updated {String(importSummary.updated ?? 0)}, skipped {String(importSummary.skipped ?? 0)}, errors {String(importSummary.errors ?? 0)}
+            <details style={{ marginTop: 8 }}>
+              <summary>Row details</summary>
+              <pre>{JSON.stringify(importSummary.rowResults ?? [], null, 2)}</pre>
+            </details>
+          </div>
+        ) : null}
       </div>
 
       <div className="denseGrid4">

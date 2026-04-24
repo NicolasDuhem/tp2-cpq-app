@@ -341,6 +341,7 @@ export default function QPartPartFormPage({ partId }: Props) {
         </div>
         <div className="rowButtons">
           <Link className="tab" href="/qpart/parts">Back to parts</Link>
+          {partId ? <a className="tab" href={`/api/qpart/parts/export?part_id=${partId}`}>Export CSV</a> : null}
           <button className="primary" onClick={persist}>Save part</button>
         </div>
       </div>

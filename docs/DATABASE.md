@@ -88,6 +88,19 @@ QPart dynamic reference reads (read-only):
 - bike types from `CPQ_setup_ruleset.bike_type` distinct values.
 - derived compatibility options from `CPQ_sampler_result.json_result` parsing `selectedOptions` with fallback to `dropdownOrderSnapshot`.
 
+## QPart CSV export/import mapping
+- API routes: `GET /api/qpart/parts/export` and `POST /api/qpart/parts/import`.
+- Upsert business key: `qpart_parts.part_number` (already unique in schema).
+- CSV is flat by design (one row per part), but import maps to normalized writes:
+  - core fields → `qpart_parts`
+  - hierarchy path (`hierarchy_1..hierarchy_7`) → `qpart_parts.hierarchy_node_id`
+  - core translations (`title__<locale>`, `description__<locale>`) → `qpart_part_translations`
+  - metadata (`metadata__<key>`, `metadata__<key>__<locale>`) → `qpart_part_metadata_values`
+  - bike types / compatibility rules → `qpart_part_bike_type_compatibility` + `qpart_part_compatibility_rules`
+- Dynamic columns:
+  - metadata columns come from active `qpart_metadata_definitions`
+  - locale columns come from distinct `CPQ_setup_account_context.language` (non-base locales only).
+
 
 ## QPart metadata AI translation behavior
 - API route `POST /api/qpart/translations/field` reads/writes `qpart_part_metadata_values` only (no schema changes).

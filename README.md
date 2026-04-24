@@ -53,6 +53,7 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 See `docs/README.md` for the full documentation map, including deep architecture, page/component breakdown, and gap analysis.
 - `/qpart` → QPart spare-parts PIM landing page.
 - `/qpart/parts` → spare part search/list and edit links.
+- `/qpart/parts` also supports CSV export/import (dry-run preview + apply upsert by `part_number`).
 - `/qpart/parts/new` and `/qpart/parts/[id]` → create/edit spare parts with hierarchy, metadata, translations, and compatibility.
 - `/qpart/hierarchy` → hierarchy level 1..7 management.
 - `/qpart/metadata` → metadata definition management.
@@ -64,6 +65,9 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - Dynamic locale source for QPart translations: `CPQ_setup_account_context.language` (distinct values).
 - Dynamic bike type source: `CPQ_setup_ruleset.bike_type` (distinct values).
 - Dynamic compatibility derivation source: `CPQ_sampler_result.json_result` (`selectedOptions` preferred, `dropdownOrderSnapshot` fallback).
+- QPart CSV export/import contract is intentionally flat/business-facing while persistence stays normalized in `qpart_*` tables.
+- CSV metadata columns are dynamic from active `qpart_metadata_definitions` (`metadata__<key>` + `metadata__<key>__<locale>` for translatable definitions).
+- CSV translation locale columns are dynamic from distinct `CPQ_setup_account_context.language` values (`title__<locale>`, `description__<locale>`, non-base locales only).
 
 
 ## QPart AI translation configuration
