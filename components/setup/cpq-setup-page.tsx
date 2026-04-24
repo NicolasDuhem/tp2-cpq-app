@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 type AccountContext = {
   id: number;
@@ -107,11 +107,20 @@ const countPictureLinks = (row: Pick<ImageManagementRow, 'picture_link_1' | 'pic
   return [row.picture_link_1, row.picture_link_2, row.picture_link_3, row.picture_link_4].filter((value) => (value ?? '').trim().length > 0).length;
 };
 
-export default function CpqSetupPage() {
+type CpqSetupPageProps = {
+  initialTab?: TabKey;
+  initialOnlyMissingPicture?: boolean;
+  initialFeature?: string;
+};
+
+export default function CpqSetupPage({
+  initialTab = 'accounts',
+  initialOnlyMissingPicture = false,
+  initialFeature = '',
+}: CpqSetupPageProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [tab, setTab] = useState<TabKey>('accounts');
+  const [tab, setTab] = useState<TabKey>(initialTab);
   const [accounts, setAccounts] = useState<AccountContext[]>([]);
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
   const [imageRows, setImageRows] = useState<ImageManagementRow[]>([]);
@@ -124,24 +133,13 @@ export default function CpqSetupPage() {
   const [editingRulesetId, setEditingRulesetId] = useState<number | null>(null);
   const [status, setStatus] = useState('');
   const [pictureSearch, setPictureSearch] = useState('');
-  const [onlyMissingPicture, setOnlyMissingPicture] = useState(false);
+  const [onlyMissingPicture, setOnlyMissingPicture] = useState(initialOnlyMissingPicture);
   const [savingImageId, setSavingImageId] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
-  const [selectedFeature, setSelectedFeature] = useState('');
+  const [selectedFeature, setSelectedFeature] = useState(initialFeature);
   const [pictureDraft, setPictureDraft] = useState<PictureDraft | null>(null);
   const [featureLayerOrderDraft, setFeatureLayerOrderDraft] = useState<number>(10);
-
-  useEffect(() => {
-    const tabParam = (searchParams.get('tab') ?? '').trim();
-    if (tabParam === 'accounts' || tabParam === 'rulesets' || tabParam === 'pictures') {
-      setTab(tabParam);
-    }
-    const onlyMissingParam = (searchParams.get('onlyMissingPicture') ?? '').trim().toLowerCase();
-    if (onlyMissingParam === 'true') setOnlyMissingPicture(true);
-    const featureParam = (searchParams.get('feature') ?? '').trim();
-    if (featureParam) setSelectedFeature(featureParam);
-  }, [searchParams]);
 
   const canSubmitAccount = useMemo(
     () =>
@@ -228,7 +226,7 @@ export default function CpqSetupPage() {
   }, [featureTabs, selectedFeature]);
 
   const updateRouteContext = (updates: Record<string, string | boolean | null>) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
     for (const [key, value] of Object.entries(updates)) {
       if (value === null || value === '' || value === false) params.delete(key);
       else params.set(key, String(value));
