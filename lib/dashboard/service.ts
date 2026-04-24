@@ -156,13 +156,13 @@ function resolveCountryName(countryCode: string): string {
 }
 
 export async function getDashboardPageData(): Promise<DashboardPageData> {
-  const [countryMappings, samplerAggRows, rulesetRows, pictureRows] = await Promise.all([
+  const [countryMappingsRaw, samplerAggRowsRaw, rulesetRowsRaw, pictureRowsRaw] = await Promise.all([
     sql`
       select distinct country_code, region, sub_region
       from cpq_country_mappings
       where is_active = true
         and coalesce(trim(country_code), '') <> ''
-    ` as Promise<CountryMappingRow[]>,
+    `,
     sql`
       select
         upper(trim(country_code)) as country_code,
@@ -174,18 +174,28 @@ export async function getDashboardPageData(): Promise<DashboardPageData> {
       where coalesce(trim(country_code), '') <> ''
         and coalesce(trim(ruleset), '') <> ''
       group by upper(trim(country_code)), trim(ruleset)
-    ` as Promise<SamplerAggregateRow[]>,
+    `,
     sql`
       select cpq_ruleset, bike_type
       from CPQ_setup_ruleset
       where coalesce(trim(cpq_ruleset), '') <> ''
-    ` as Promise<Array<{ cpq_ruleset: string | null; bike_type: string | null }>>,
+    `,
     sql`
       select feature_label, picture_link_1, picture_link_2, picture_link_3, picture_link_4
       from cpq_image_management
       where is_active = true
-    ` as Promise<Array<{ feature_label: string | null; picture_link_1: string | null; picture_link_2: string | null; picture_link_3: string | null; picture_link_4: string | null }>>,
+    `,
   ]);
+  const countryMappings = countryMappingsRaw as CountryMappingRow[];
+  const samplerAggRows = samplerAggRowsRaw as SamplerAggregateRow[];
+  const rulesetRows = rulesetRowsRaw as Array<{ cpq_ruleset: string | null; bike_type: string | null }>;
+  const pictureRows = pictureRowsRaw as Array<{
+    feature_label: string | null;
+    picture_link_1: string | null;
+    picture_link_2: string | null;
+    picture_link_3: string | null;
+    picture_link_4: string | null;
+  }>;
 
   const rulesetToBikeType = new Map<string, string>();
   const rulesetsByBikeTypeCounter = new Map<string, Set<string>>();
