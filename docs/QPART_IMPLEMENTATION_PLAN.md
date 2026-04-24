@@ -31,6 +31,8 @@ Supporting API routes:
 - `GET /api/qpart/locales` (distinct languages from `CPQ_setup_account_context`).
 - `GET /api/qpart/bike-types` (distinct bike types from `CPQ_setup_ruleset`).
 - CRUD under `/api/qpart/parts`, `/api/qpart/hierarchy`, `/api/qpart/metadata`, `/api/qpart/compatibility`.
+- `GET /api/qpart/parts/export` for business-flat CSV export (all parts or a single part via `part_id`).
+- `POST /api/qpart/parts/import` for CSV dry-run/apply import with upsert by `part_number`.
 - `POST /api/qpart/translations/field` for field-by-field AI translation of English core fields (title/description) and translatable metadata values (server-side OpenAI integration, fill-missing default).
 - `POST /api/qpart/compatibility/derive` for bike-type-driven feature/option discovery from `CPQ_sampler_result.json_result`.
 

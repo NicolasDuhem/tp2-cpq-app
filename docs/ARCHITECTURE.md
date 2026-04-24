@@ -96,10 +96,12 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 ## 9) QPart module architecture (isolated)
 - Domain entry route: `/qpart` with child pages `/qpart/parts`, `/qpart/hierarchy`, `/qpart/metadata`, `/qpart/compatibility`.
 - API namespace: `/api/qpart/*` only.
-- Domain services: `lib/qpart/locales`, `lib/qpart/hierarchy`, `lib/qpart/metadata`, `lib/qpart/parts`, `lib/qpart/compatibility`.
+- Domain services: `lib/qpart/locales`, `lib/qpart/hierarchy`, `lib/qpart/metadata`, `lib/qpart/parts`, `lib/qpart/parts/csv-service`, `lib/qpart/compatibility`.
 - Types: `types/qpart.ts`.
 
 - QPart AI translation endpoint: `POST /api/qpart/translations/field` (server-only OpenAI call, field-by-field translation for core title/description plus translatable metadata, fill-missing by default).
+- QPart CSV endpoints: `GET /api/qpart/parts/export` and `POST /api/qpart/parts/import` (supports dry-run summary + apply upsert by `part_number`).
+- CSV contract is intentionally flat while writes remain normalized across qpart core/translation/metadata/compatibility tables.
 - Isolation rule implemented: QPart only reads CPQ setup/sampler tables for dynamic reference data (locales, bike types, compatibility derivation). It does not hook into CPQ configure/finalize/runtime flows.
 
 QPart source-of-truth reads from CPQ tables:
