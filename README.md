@@ -51,3 +51,16 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 
 ## Documentation
 See `docs/README.md` for the full documentation map, including deep architecture, page/component breakdown, and gap analysis.
+- `/qpart` → QPart spare-parts PIM landing page.
+- `/qpart/parts` → spare part search/list and edit links.
+- `/qpart/parts/new` and `/qpart/parts/[id]` → create/edit spare parts with hierarchy, metadata, translations, and compatibility.
+- `/qpart/hierarchy` → hierarchy level 1..7 management.
+- `/qpart/metadata` → metadata definition management.
+- `/qpart/compatibility` → compatibility reference values and sampler derivation preview.
+
+## QPart isolation summary
+- Namespace isolation: routes are under `/qpart`, APIs under `/api/qpart/*`, services under `lib/qpart/*`, and tables are prefixed `qpart_`.
+- CPQ/runtime pages (`/cpq`, `/cpq/setup`, `/sales/*`, dashboard) remain unchanged in behavior and do not depend on QPart tables at runtime.
+- Dynamic locale source for QPart translations: `CPQ_setup_account_context.language` (distinct values).
+- Dynamic bike type source: `CPQ_setup_ruleset.bike_type` (distinct values).
+- Dynamic compatibility derivation source: `CPQ_sampler_result.json_result` (`selectedOptions` preferred, `dropdownOrderSnapshot` fallback).

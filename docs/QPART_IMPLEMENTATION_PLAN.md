@@ -491,3 +491,15 @@ If a small subset becomes highly query-critical later, materialized/projection c
 - Compatibility scaffolding prepared for phase 2 derivation.
 - Docs updated (`ARCHITECTURE`, `PROCESSDATA`, `DATABASE`, `PAGES_AND_COMPONENTS`).
 - CPQ runtime smoke check confirms no regression.
+
+---
+
+## 12) Implementation status update (2026-04-24)
+Implemented MVP in current repo with isolated namespaces:
+- Pages: `/qpart`, `/qpart/parts`, `/qpart/parts/new`, `/qpart/parts/[id]`, `/qpart/hierarchy`, `/qpart/metadata`, `/qpart/compatibility`.
+- APIs: `/api/qpart/locales`, `/api/qpart/bike-types`, CRUD for parts/hierarchy/metadata/reference values, and `/api/qpart/compatibility/derive`.
+- DB: `qpart_*` table suite + hierarchy parent-level trigger + initial metadata seeds.
+
+Minor implementation choices versus plan:
+- Part edit uses single-page sections instead of tabbed UI, but includes all required MVP sections.
+- Compatibility reference values are managed on dedicated `/qpart/compatibility` page and reused by derive endpoint union logic.

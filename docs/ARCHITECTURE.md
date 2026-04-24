@@ -92,3 +92,15 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - Replay launch sequence is: apply UI account/ruleset → run init in that context → accept only latest init result → replay configure steps on that session → finalize/save in same context/session lineage.
 - Finalize always reads session id from the authoritative active context (never stale/default/previous session refs).
 - `CPQ_sampler_result.active` remains canonical for Sales Active/Inactive rendering.
+
+## 9) QPart module architecture (isolated)
+- Domain entry route: `/qpart` with child pages `/qpart/parts`, `/qpart/hierarchy`, `/qpart/metadata`, `/qpart/compatibility`.
+- API namespace: `/api/qpart/*` only.
+- Domain services: `lib/qpart/locales`, `lib/qpart/hierarchy`, `lib/qpart/metadata`, `lib/qpart/parts`, `lib/qpart/compatibility`.
+- Types: `types/qpart.ts`.
+- Isolation rule implemented: QPart only reads CPQ setup/sampler tables for dynamic reference data (locales, bike types, compatibility derivation). It does not hook into CPQ configure/finalize/runtime flows.
+
+QPart source-of-truth reads from CPQ tables:
+- locales: `CPQ_setup_account_context.language`
+- bike types: `CPQ_setup_ruleset.bike_type`
+- sampler compatibility candidates: `CPQ_sampler_result.json_result`

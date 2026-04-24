@@ -64,3 +64,26 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 ## Notable schema nuance
 `saveConfigurationReference()` writes fields including `canonical_header_id`, `canonical_detail_id`, and `source_working_detail_id`.
 Ensure deployed DB schema includes all columns expected by current runtime code when provisioning new environments.
+
+## QPart tables (MVP)
+All QPart tables are prefixed `qpart_` and are isolated from CPQ runtime persistence.
+
+1. `qpart_parts`
+2. `qpart_hierarchy_nodes`
+3. `qpart_metadata_definitions`
+4. `qpart_part_metadata_values`
+5. `qpart_part_translations`
+6. `qpart_part_bike_type_compatibility`
+7. `qpart_part_compatibility_rules`
+8. `qpart_compatibility_reference_values`
+
+Additional integrity object:
+- trigger function `qpart_validate_hierarchy_parent()` + trigger `qpart_hierarchy_parent_trg` enforces parent level = child level - 1 and level-1-without-parent rule.
+
+QPart migration added:
+- `sql/migrations/2026-04-24_qpart_mvp.sql` (foundation + initial metadata definition seed rows).
+
+QPart dynamic reference reads (read-only):
+- locales from `CPQ_setup_account_context.language` distinct values.
+- bike types from `CPQ_setup_ruleset.bike_type` distinct values.
+- derived compatibility options from `CPQ_sampler_result.json_result` parsing `selectedOptions` with fallback to `dropdownOrderSnapshot`.

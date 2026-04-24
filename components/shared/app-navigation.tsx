@@ -15,6 +15,7 @@ const links: NavLink[] = [
   { href: '/sales/bike-allocation', label: 'Sales - bike allocation' },
   { href: '/cpq', label: 'CPQ - Bike Builder' },
   { href: '/cpq/setup', label: 'CPQ - Setup' },
+  { href: '/qpart', label: 'QPart - Spare Parts PIM' },
   { href: '/cpq/results', label: 'CPQ - Sampler Results', adminOnly: true },
   { href: '/cpq/ui-docs', label: 'CPQ - UI Docs', adminOnly: true },
 ];

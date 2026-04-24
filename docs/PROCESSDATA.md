@@ -97,3 +97,31 @@ Canonical `json_snapshot` and sampler payload source are:
 ## 7) Runtime toggles
 - `NEXT_PUBLIC_CPQ_DEBUG=true`: debug timeline capture in `/cpq`.
 - `CPQ_USE_MOCK=true`: mock CPQ init/configure responses in API routes.
+
+## 9) QPart spare-parts PIM flow (`/qpart`)
+### Module boundaries
+- QPart has no write path into CPQ runtime/setup tables.
+- QPart writes only to `qpart_*` tables and reads CPQ tables for reference derivation.
+
+### Part management flow
+1. `/qpart/parts` lists part records with search + hierarchy filters.
+2. `/qpart/parts/new` and `/qpart/parts/[id]` persist:
+   - core part fields (`qpart_parts`),
+   - hierarchy assignment (`qpart_parts.hierarchy_node_id`),
+   - metadata values (`qpart_part_metadata_values`),
+   - locale translations (`qpart_part_translations`),
+   - bike type assignment (`qpart_part_bike_type_compatibility`),
+   - compatibility conditions (`qpart_part_compatibility_rules`).
+
+### Dynamic locale flow
+- Locale list is read from distinct `CPQ_setup_account_context.language` via `/api/qpart/locales`.
+- Base locale preference: `en-GB`, else first `en-*`, else first available locale.
+
+### Compatibility derivation flow
+1. User selects bike types.
+2. QPart resolves related rulesets using `CPQ_setup_ruleset`.
+3. QPart reads `CPQ_sampler_result` rows for those rulesets.
+4. QPart parses `json_result`:
+   - primary: `selectedOptions[].featureLabel + optionValue (+ optionLabel)`
+   - fallback: `dropdownOrderSnapshot`
+5. QPart unions derived values with active `qpart_compatibility_reference_values`.
