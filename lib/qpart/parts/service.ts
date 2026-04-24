@@ -24,7 +24,7 @@ const normalizePartInput = (input: Record<string, unknown>): PartInput => ({
   part_number: asTrimmedText(input.part_number),
   default_name: asTrimmedText(input.default_name),
   default_description: asNullableText(input.default_description),
-  status: asTrimmedText(input.status || 'active') || 'active',
+  status: asTrimmedText(input.status || 'draft') || 'draft',
   hierarchy_node_id: input.hierarchy_node_id === null || input.hierarchy_node_id === '' ? null : Number(input.hierarchy_node_id),
   translations: Array.isArray(input.translations) ? (input.translations as QPartTranslation[]) : [],
   metadata_values: Array.isArray(input.metadata_values) ? (input.metadata_values as QPartMetadataValue[]) : [],
