@@ -233,6 +233,9 @@ export default function SalesBikeAllocationTableClient({
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         errorType?: string;
+        errorCode?: string;
+        errorDetail?: string;
+        errorHint?: string;
         stage?: string;
         result?: { action: 'inserted' | 'updated' };
       };
@@ -240,7 +243,10 @@ export default function SalesBikeAllocationTableClient({
       if (!response.ok || !payload.result) {
         const detail = [
           payload.errorType ? `type=${payload.errorType}` : null,
+          payload.errorCode ? `code=${payload.errorCode}` : null,
           payload.stage ? `stage=${payload.stage}` : null,
+          payload.errorDetail ? `detail=${payload.errorDetail}` : null,
+          payload.errorHint ? `hint=${payload.errorHint}` : null,
         ]
           .filter(Boolean)
           .join(', ');

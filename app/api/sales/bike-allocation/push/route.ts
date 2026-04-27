@@ -39,10 +39,20 @@ export async function POST(req: NextRequest) {
     console.error('[bike-allocation-push] error', {
       stage: currentStage,
       errorType: apiError.errorType,
+      errorCode: apiError.errorCode,
+      errorDetail: apiError.errorDetail,
+      errorHint: apiError.errorHint,
       message: apiError.error,
     });
     return NextResponse.json(
-      { error: apiError.error, errorType: apiError.errorType, stage: currentStage },
+      {
+        error: apiError.error,
+        errorType: apiError.errorType,
+        errorCode: apiError.errorCode,
+        errorDetail: apiError.errorDetail,
+        errorHint: apiError.errorHint,
+        stage: currentStage,
+      },
       { status: apiError.status },
     );
   }

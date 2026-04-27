@@ -239,11 +239,11 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
           and n.nspname = $1
           and t.relname = 'cpq_sampler_result'
           and array(
-            select a.attname
+            select a.attname::text
             from unnest(c.conkey) with ordinality as ck(attnum, ord)
             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = ck.attnum
             order by ck.ord
-          ) = array['namespace', 'ipn_code', 'country_code']
+          ) = array['namespace', 'ipn_code', 'country_code']::text[]
       ) as has_required_unique
       `,
       [config.schema],
