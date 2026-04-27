@@ -1,4 +1,5 @@
 import 'server-only';
+import { normalizeExternalPgError } from '@/lib/external-pg/errors';
 
 const DEFAULT_PORT = 5432;
 
@@ -90,10 +91,11 @@ export async function withExternalPgClient<T>(runner: (client: Queryable, schema
     ssl: config.ssl ? { rejectUnauthorized: false } : false,
   });
 
-  await client.query('select 1');
-
   try {
+    await client.query('select 1');
     return await runner(client, config.schema);
+  } catch (error) {
+    throw normalizeExternalPgError(error);
   } finally {
     await client.end();
   }
