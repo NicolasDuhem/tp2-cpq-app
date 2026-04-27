@@ -8,8 +8,11 @@ export default async function SalesQPartAllocationPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1>Sales - QPart allocation</h1>
-        <p>Active = part is enabled for that territory. Inactive = part is disabled for that territory.</p>
+        <div>
+          <h1>Sales - QPart allocation</h1>
+          <p>Review and manage QPart activation by market. Toggle status or push specific country changes without leaving the matrix.</p>
+        </div>
+        <div className={styles.statsBadge}>Total rows: {data.rows.length}</div>
       </header>
       <SalesQPartAllocationTableClient rows={data.rows} countryColumns={data.countries} filterOptions={data.filterOptions} />
     </div>

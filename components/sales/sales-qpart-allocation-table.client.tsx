@@ -271,7 +271,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
   return (
     <>
-      <section className={styles.filterPanel}>
+      <section className={`${styles.panel} ${styles.filterPanel}`}>
         <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
           {filtersOpen ? 'Hide filters' : 'Show filters'}
         </button>
@@ -372,8 +372,11 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         ) : null}
       </section>
 
-      <section className={styles.bulkActions}>
-        <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
+      <section className={`${styles.panel} ${styles.bulkActions}`}>
+        <div className={styles.bulkHeader}>
+          <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
+          <div className={styles.bulkSelection}>Selected countries: {selectedBulkCountries.length}</div>
+        </div>
         <div className={styles.bulkCountryList}>
           {countryColumns.map((countryCode) => (
             <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
@@ -423,19 +426,23 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={row.partId}>
+                <tr key={row.partId} className={styles.tableRow}>
                   <td className={styles.stickyFirstColumn}>
-                    <Link href={`/qpart/parts/${row.partId}`}>{row.partNumber}</Link>
+                    <Link className={styles.partLink} href={`/qpart/parts/${row.partId}`}>
+                      {row.partNumber}
+                    </Link>
                   </td>
-                  <td>
-                    <Link href={`/qpart/parts/${row.partId}`}>{row.englishTitle}</Link>
+                  <td className={styles.titleCell}>
+                    <Link className={styles.titleLink} href={`/qpart/parts/${row.partId}`}>
+                      <span className={styles.titleText}>{row.englishTitle}</span>
+                    </Link>
                   </td>
-                  <td>{row.hierarchySummary || '—'}</td>
+                  <td className={styles.hierarchyCell}>{row.hierarchySummary || '—'}</td>
                   {visibleCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
                     return (
-                      <td key={`${row.partId}-${countryCode}`}>
+                      <td key={`${row.partId}-${countryCode}`} className={styles.countryCell}>
                         <div className={styles.cellActions}>
                           <button
                             type="button"
