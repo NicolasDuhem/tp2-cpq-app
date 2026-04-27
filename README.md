@@ -89,6 +89,9 @@ See `docs/README.md` for the full documentation map, including deep architecture
 ## External PostgreSQL row push configuration
 The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes to an external PostgreSQL table (`cpq_sampler_result`) server-side only.
 
+Runtime dependency requirement:
+- `pg` must be present in production dependencies (not just devDependencies) so server-side push routes can load the Node PostgreSQL client at runtime (for example in Vercel serverless functions).
+
 Required environment variables:
 - `EXTERNAL_PG_HOST`
 - `EXTERNAL_PG_PORT` (default `5432`)
@@ -98,4 +101,9 @@ Required environment variables:
 - `EXTERNAL_PG_SSL` (`true` recommended for Azure PostgreSQL)
 - `EXTERNAL_PG_SCHEMA` (default `public`)
 
-Important: external upsert matching relies on unique business key `(namespace, ipn_code, country_code)` in the destination table.
+Important: external upsert matching relies on unique business key `(namespace, ipn_code, country_code)` in the destination table. Ensure this index/constraint exists before using Push:
+
+```sql
+create unique index if not exists cpq_sampler_result_namespace_ipn_country_uniq
+  on public.cpq_sampler_result(namespace, ipn_code, country_code);
+```

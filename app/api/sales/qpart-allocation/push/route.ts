@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { buildQpartExternalSamplerPayload, upsertExternalSamplerResult } from '@/lib/external-pg/cpq-sampler-result';
+import { toExternalPgApiError } from '@/lib/external-pg/errors';
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -16,9 +17,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ result });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to push QPart row to external PostgreSQL' },
-      { status: 400 },
-    );
+    const apiError = toExternalPgApiError(error);
+    return NextResponse.json({ error: apiError.error, errorType: apiError.errorType }, { status: apiError.status });
   }
 }

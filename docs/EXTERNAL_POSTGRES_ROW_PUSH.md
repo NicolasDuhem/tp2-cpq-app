@@ -7,6 +7,10 @@ This first-step integration adds row-level push actions from:
 Destination:
 - External PostgreSQL table `public.cpq_sampler_result`.
 
+## Runtime dependency
+- Server-side push routes require the Node PostgreSQL client package `pg` at runtime.
+- Keep `pg` in `dependencies` (not only `devDependencies`) so production/serverless deployments can import it.
+
 ## Required upsert business key
 Application upsert logic matches rows using:
 - `namespace`
@@ -15,7 +19,7 @@ Application upsert logic matches rows using:
 
 > Do not rely on target `id` primary key for matching.
 
-## Azure SQL preparation
+## Azure PostgreSQL preparation
 
 ### 1) Duplicate detection (before unique index)
 ```sql
