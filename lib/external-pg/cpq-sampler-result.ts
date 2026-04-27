@@ -39,8 +39,12 @@ export type ExternalSamplerWriteDiagnosticResult = {
 };
 
 type ExternalPushStage =
-  | 'running_upsert'
-  | 'upsert_succeeded'
+  | 'begin_start'
+  | 'begin_success'
+  | 'upsert_start'
+  | 'upsert_success'
+  | 'rollback_start'
+  | 'rollback_success'
   | 'loading_source_data'
   | 'source_data_loaded';
 
@@ -81,7 +85,7 @@ export async function upsertExternalSamplerResult(
 
   return withExternalPgClient(async (client, schema) => {
     const tableName = `${schema}.cpq_sampler_result`;
-    options.onStage?.('running_upsert', { tableName });
+    options.onStage?.('upsert_start', { tableName });
 
     let result;
     try {
@@ -166,7 +170,7 @@ export async function upsertExternalSamplerResult(
       throw new Error('No result returned by external upsert');
     }
 
-    options.onStage?.('upsert_succeeded', {
+    options.onStage?.('upsert_success', {
       id: Number(row.id),
       action: row.inserted ? 'inserted' : 'updated',
       businessKey: {
@@ -197,9 +201,11 @@ export async function runExternalSamplerWriteDiagnostic(
 
   return withExternalPgClient(async (client, schema) => {
     const tableName = `${schema}.cpq_sampler_result`;
-    options.onStage?.('running_upsert', { tableName, mode: 'write_diagnostic_rollback' });
+    options.onStage?.('begin_start', { tableName, mode: 'write_diagnostic_rollback' });
     try {
       await client.query('begin');
+      options.onStage?.('begin_success', { tableName, mode: 'write_diagnostic_rollback' });
+      options.onStage?.('upsert_start', { tableName, mode: 'write_diagnostic_rollback' });
       await client.query(
         `
       insert into ${tableName} (
@@ -271,15 +277,19 @@ export async function runExternalSamplerWriteDiagnostic(
           payload.createdAt,
         ],
       );
+      options.onStage?.('upsert_success', { mode: 'write_diagnostic_rollback' });
+      options.onStage?.('rollback_start', { mode: 'write_diagnostic_rollback' });
       await client.query('rollback');
-      options.onStage?.('upsert_succeeded', { mode: 'write_diagnostic_rollback' });
+      options.onStage?.('rollback_success', { mode: 'write_diagnostic_rollback' });
       return {
         rolledBack: true,
         tableName,
         durationMs: Math.max(0, Date.now() - startedAt),
       };
     } catch (error) {
+      options.onStage?.('rollback_start', { mode: 'write_diagnostic_rollback', from: 'catch' });
       await client.query('rollback').catch(() => undefined);
+      options.onStage?.('rollback_success', { mode: 'write_diagnostic_rollback', from: 'catch' });
       throw normalizeExternalPgError(error, { stage: 'upsert_execute' });
     }
   }, options);

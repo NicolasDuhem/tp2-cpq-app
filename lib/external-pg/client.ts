@@ -95,11 +95,11 @@ type Queryable = {
 
 export type ExternalPgStage =
   | 'env_validation_ok'
-  | 'building_external_pg_client'
-  | 'attempting_connection'
-  | 'connection_established'
-  | 'closing_connection'
-  | 'connection_closed';
+  | 'client_create'
+  | 'client_connect_start'
+  | 'client_connect_success'
+  | 'client_close_start'
+  | 'client_close_success';
 
 type WithExternalPgClientOptions = {
   onStage?: (stage: ExternalPgStage, details?: Record<string, unknown>) => void;
@@ -121,7 +121,7 @@ export async function withExternalPgClient<T>(
     queryTimeoutMs: config.queryTimeoutMs,
     statementTimeoutMs: config.statementTimeoutMs,
   });
-  options.onStage?.('building_external_pg_client');
+  options.onStage?.('client_create');
   const client = new Client({
     host: config.host,
     port: config.port,
@@ -135,15 +135,18 @@ export async function withExternalPgClient<T>(
   });
 
   try {
-    options.onStage?.('attempting_connection');
-    await client.query('select 1');
-    options.onStage?.('connection_established');
-    return await runner(client, config.schema);
+    options.onStage?.('client_connect_start');
+    await client.connect();
+    options.onStage?.('client_connect_success');
   } catch (error) {
     throw normalizeExternalPgError(error, { stage: 'connect' });
+  }
+
+  try {
+    return await runner(client, config.schema);
   } finally {
-    options.onStage?.('closing_connection');
-    await client.end();
-    options.onStage?.('connection_closed');
+    options.onStage?.('client_close_start');
+    await client.end().catch(() => undefined);
+    options.onStage?.('client_close_success');
   }
 }
