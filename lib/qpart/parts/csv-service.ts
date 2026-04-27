@@ -2,11 +2,13 @@ import { getBaseLocale, listSupportedLocales } from '@/lib/qpart/locales/service
 import { listMetadataDefinitions } from '@/lib/qpart/metadata/service';
 import { createPart, getPartDetail, listParts, updatePart } from '@/lib/qpart/parts/service';
 import { listHierarchyNodes } from '@/lib/qpart/hierarchy/service';
+import { listQPartAllocationCountries } from '@/lib/qpart/allocation/service';
+import { QPART_CHANNEL_SET } from '@/lib/qpart/channels';
 import { QPartCompatibilityRule, QPartMetadataDefinition, QPartMetadataValue, QPartPartDetail } from '@/types/qpart';
 
 const CORE_COLUMNS = ['part_number', 'english_title', 'english_description', 'status'] as const;
 const HIERARCHY_COLUMNS = ['hierarchy_1', 'hierarchy_2', 'hierarchy_3', 'hierarchy_4', 'hierarchy_5', 'hierarchy_6', 'hierarchy_7'] as const;
-const STATIC_COLLECTION_COLUMNS = ['bike_types', 'compatibility_rules'] as const;
+const STATIC_COLLECTION_COLUMNS = ['channels', 'countries', 'bike_types', 'compatibility_rules'] as const;
 
 const PART_STATUSES = new Set(['active', 'inactive', 'draft']);
 
@@ -15,6 +17,7 @@ type CsvContext = {
   baseLocale: string;
   metadataDefinitions: QPartMetadataDefinition[];
   hierarchyNodes: Awaited<ReturnType<typeof listHierarchyNodes>>;
+  countries: string[];
 };
 
 type ImportRowResult = {
@@ -111,11 +114,12 @@ const coreTranslationColumnName = (field: 'title' | 'description', locale: strin
 const metadataTranslationColumnName = (key: string, locale: string) => `metadata__${key}__${locale}`;
 
 async function getCsvContext(): Promise<CsvContext> {
-  const [locales, baseLocale, metadataDefinitions, hierarchyNodes] = await Promise.all([
+  const [locales, baseLocale, metadataDefinitions, hierarchyNodes, countries] = await Promise.all([
     listSupportedLocales(),
     getBaseLocale(),
     listMetadataDefinitions(true),
     listHierarchyNodes(),
+    listQPartAllocationCountries(),
   ]);
 
   const normalizedLocales = [...new Set(locales.map((locale) => locale.trim()).filter(Boolean))];
@@ -125,6 +129,7 @@ async function getCsvContext(): Promise<CsvContext> {
     baseLocale,
     metadataDefinitions,
     hierarchyNodes,
+    countries,
   };
 }
 
@@ -326,6 +331,8 @@ export async function exportPartsCsv(partId?: number) {
       english_title: detail.part.default_name,
       english_description: detail.part.default_description ?? '',
       status: detail.part.status,
+      channels: detail.channels.join('|'),
+      countries: detail.country_codes.join('|'),
       bike_types: detail.bike_types.join('|'),
       compatibility_rules: JSON.stringify(detail.compatibility_rules),
     };
@@ -481,6 +488,24 @@ async function normalizeImportRows(rawRows: ParsedCell[], context: CsvContext) {
       .split('|')
       .map((value) => value.trim())
       .filter(Boolean);
+    const channels = asText(row.values.channels)
+      .split('|')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const invalidChannels = channels.filter((channel) => !QPART_CHANNEL_SET.has(channel));
+    if (invalidChannels.length) {
+      errors.push(`Invalid channels: ${invalidChannels.join(', ')}`);
+    }
+
+    const countries = asText(row.values.countries)
+      .split('|')
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
+    const countrySet = new Set(context.countries);
+    const invalidCountries = countries.filter((countryCode) => !countrySet.has(countryCode));
+    if (invalidCountries.length) {
+      errors.push(`Invalid countries: ${invalidCountries.join(', ')}`);
+    }
 
     const invalidLocaleColumns = Object.keys(row.values)
       .filter((column) => column.startsWith('title__') || column.startsWith('description__'))
@@ -530,6 +555,8 @@ async function normalizeImportRows(rawRows: ParsedCell[], context: CsvContext) {
         hierarchy_node_id: hierarchyNodeId,
         translations,
         metadata_values: metadataValues,
+        channels,
+        country_codes: countries,
         bike_types: bikeTypes,
         compatibility_rules: compatibilityRules,
       },

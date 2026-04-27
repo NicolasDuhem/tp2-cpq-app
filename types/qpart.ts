@@ -70,6 +70,8 @@ export type QPartPartDetail = {
   part: QPartRecord;
   translations: QPartTranslation[];
   metadata_values: QPartMetadataValue[];
+  channels: string[];
+  country_codes: string[];
   bike_types: string[];
   compatibility_rules: QPartCompatibilityRule[];
 };

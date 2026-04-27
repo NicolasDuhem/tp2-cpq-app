@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { QPART_CHANNEL_OPTIONS } from '@/lib/qpart/channels';
 import { QPartCompatibilityCandidate, QPartCompatibilityRule, QPartHierarchyNode, QPartMetadataDefinition } from '@/types/qpart';
 
 type Props = { partId?: number };
@@ -34,7 +35,11 @@ export default function QPartPartFormPage({ partId }: Props) {
   const [hierarchyExpanded, setHierarchyExpanded] = useState(false);
   const [metadataExpanded, setMetadataExpanded] = useState(false);
   const [compatibilityExpanded, setCompatibilityExpanded] = useState(false);
+  const [assignmentExpanded, setAssignmentExpanded] = useState(false);
   const [compatibilityRules, setCompatibilityRules] = useState<QPartCompatibilityRule[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [countryOptions, setCountryOptions] = useState<string[]>([]);
+  const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [derivedCandidates, setDerivedCandidates] = useState<QPartCompatibilityCandidate[]>([]);
   const [hierarchySelections, setHierarchySelections] = useState<LevelSelections>(emptyLevelSelections);
   const [message, setMessage] = useState('');
@@ -70,22 +75,25 @@ export default function QPartPartFormPage({ partId }: Props) {
   }, [nonBooleanMetadataDefs]);
 
   const loadDependencies = async () => {
-    const [localeRes, hierarchyRes, metadataRes, bikeTypeRes] = await Promise.all([
+    const [localeRes, hierarchyRes, metadataRes, bikeTypeRes, countryRes] = await Promise.all([
       fetch('/api/qpart/locales'),
       fetch('/api/qpart/hierarchy'),
       fetch('/api/qpart/metadata?activeOnly=true'),
       fetch('/api/qpart/bike-types'),
+      fetch('/api/qpart/countries'),
     ]);
     const localePayload = await localeRes.json().catch(() => ({ locales: [], baseLocale: 'en-GB' }));
     const hierarchyPayload = await hierarchyRes.json().catch(() => ({ rows: [] }));
     const metadataPayload = await metadataRes.json().catch(() => ({ rows: [] }));
     const bikeTypePayload = await bikeTypeRes.json().catch(() => ({ bikeTypes: [] }));
+    const countryPayload = await countryRes.json().catch(() => ({ countries: [] }));
 
     setLocales(localePayload.locales || []);
     setBaseLocale(localePayload.baseLocale || 'en-GB');
     setHierarchyNodes(hierarchyPayload.rows || []);
     setMetadataDefs(metadataPayload.rows || []);
     setBikeTypes(bikeTypePayload.bikeTypes || []);
+    setCountryOptions(countryPayload.countries || []);
   };
 
   const hydrateSelectionsFromNode = (nodeId: number | null) => {
@@ -117,6 +125,8 @@ export default function QPartPartFormPage({ partId }: Props) {
       setDefaultDescription(row.part.default_description || '');
       setStatus(row.part.status || 'draft');
       setSelectedBikeTypes(row.bike_types || []);
+      setSelectedChannels(row.channels || []);
+      setSelectedCountries(row.country_codes || []);
       setCompatibilityRules(row.compatibility_rules || []);
 
       const nextTranslations: Record<string, { name: string; description: string }> = {};
@@ -327,6 +337,8 @@ export default function QPartPartFormPage({ partId }: Props) {
       translations: translationRows,
       metadata_values: metadataRows,
       bike_types: selectedBikeTypes,
+      channels: selectedChannels,
+      country_codes: selectedCountries,
       compatibility_rules: compatibilityRules,
     };
 
@@ -594,6 +606,48 @@ export default function QPartPartFormPage({ partId }: Props) {
               ))}
             </div>
           </div>
+        ) : null}
+      </div>
+
+      <div className="card">
+        <div className="qpartSectionHeader">
+          <h3>Channel &amp; Country assignment</h3>
+          <button type="button" onClick={() => setAssignmentExpanded((prev) => !prev)}>
+            {assignmentExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+        {assignmentExpanded ? (
+          <>
+            <div className="denseGrid4">
+              <label>Channels
+                <select
+                  multiple
+                  className="multiSelect"
+                  value={selectedChannels}
+                  onChange={(event) => setSelectedChannels(Array.from(event.target.selectedOptions).map((opt) => opt.value))}
+                >
+                  {QPART_CHANNEL_OPTIONS.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
+                </select>
+              </label>
+              <label>Countries
+                <select
+                  multiple
+                  className="multiSelect"
+                  value={selectedCountries}
+                  onChange={(event) => setSelectedCountries(Array.from(event.target.selectedOptions).map((opt) => opt.value))}
+                >
+                  {countryOptions.map((countryCode) => (
+                    <option key={countryCode} value={countryCode}>
+                      {countryCode}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="subtle" style={{ marginBottom: 0 }}>
+              Country selection edits the same allocation matrix used by /sales/qpart-allocation (selected = active, unselected = inactive).
+            </p>
+          </>
         ) : null}
       </div>
 
