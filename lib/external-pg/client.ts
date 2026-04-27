@@ -1,4 +1,5 @@
 import 'server-only';
+import { Client } from 'pg';
 import { normalizeExternalPgError } from '@/lib/external-pg/errors';
 
 const DEFAULT_PORT = 5432;
@@ -68,20 +69,8 @@ type Queryable = {
   end: () => Promise<void>;
 };
 
-function loadPgClientClass(): new (config: Record<string, unknown>) => Queryable {
-  try {
-    const dynamicRequire = Function('return require')() as (id: string) => { Client: new (config: Record<string, unknown>) => Queryable };
-    const pg = dynamicRequire('pg');
-    if (!pg?.Client) throw new Error('pg Client export not found');
-    return pg.Client;
-  } catch {
-    throw new Error('Missing dependency "pg". Install it in this app before using external PostgreSQL push features.');
-  }
-}
-
 export async function withExternalPgClient<T>(runner: (client: Queryable, schema: string) => Promise<T>): Promise<T> {
   const config = getExternalPgConfig();
-  const Client = loadPgClientClass();
   const client = new Client({
     host: config.host,
     port: config.port,
