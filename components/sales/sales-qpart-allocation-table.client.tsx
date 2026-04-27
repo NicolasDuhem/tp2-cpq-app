@@ -44,6 +44,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<Message>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [pushBusyKey, setPushBusyKey] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const selectedBulkCountries = useMemo(
@@ -171,6 +172,36 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to update allocation' });
     } finally {
       setBusyKey(null);
+    }
+  };
+
+
+
+  const pushCell = async (row: SalesQPartAllocationRow, countryCode: string) => {
+    const key = `${row.partId}:${countryCode}`;
+    setPushBusyKey(key);
+    setMessage(null);
+
+    try {
+      const response = await fetch('/api/sales/qpart-allocation/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partId: row.partId, countryCode }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { action: 'inserted' | 'updated' };
+      };
+
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error ?? 'Failed to push allocation to external PostgreSQL');
+      }
+
+      setMessage({ type: 'success', text: `${row.partNumber} ${countryCode} pushed (${payload.result.action}).` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push allocation' });
+    } finally {
+      setPushBusyKey(null);
     }
   };
 
@@ -391,14 +422,24 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                     const cellKey = `${row.partId}:${countryCode}`;
                     return (
                       <td key={`${row.partId}-${countryCode}`}>
-                        <button
-                          type="button"
-                          className={`${styles.statusButton} ${status === 'active' ? styles.statusActive : styles.statusNotActive}`}
-                          onClick={() => void toggleCell(row, countryCode, status)}
-                          disabled={busyKey === cellKey}
-                        >
-                          {statusLabel(status)}
-                        </button>
+                        <div className={styles.cellActions}>
+                          <button
+                            type="button"
+                            className={`${styles.statusButton} ${status === 'active' ? styles.statusActive : styles.statusNotActive}`}
+                            onClick={() => void toggleCell(row, countryCode, status)}
+                            disabled={busyKey === cellKey || pushBusyKey === cellKey}
+                          >
+                            {statusLabel(status)}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.pushButton}
+                            onClick={() => void pushCell(row, countryCode)}
+                            disabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
+                          >
+                            {pushBusyKey === cellKey ? 'Pushing…' : 'Push'}
+                          </button>
+                        </div>
                       </td>
                     );
                   })}

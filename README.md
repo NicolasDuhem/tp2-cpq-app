@@ -12,9 +12,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/dashboard` → executive operational dashboard (territory coverage, bike-type health, picture completeness, and gap leaderboards).
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
+  - Includes per-cell **Push** action to upsert bike row-country records into external PostgreSQL `cpq_sampler_result` using business key `(namespace, ipn_code, country_code)`.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
+  - Includes per-cell **Push** action to upsert qpart row-country records into external PostgreSQL `cpq_sampler_result` using business key `(namespace, ipn_code, country_code)`.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
@@ -82,3 +84,18 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - `OPENAI_TRANSLATION_MODEL` (optional): defaults to `gpt-5.4-mini`.
 - QPart field translation is server-side only and never exposes API keys in browser code.
 - Supported translation locales stay dynamic from distinct `CPQ_setup_account_context.language` values (excluding base locale).
+
+
+## External PostgreSQL row push configuration
+The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes to an external PostgreSQL table (`cpq_sampler_result`) server-side only.
+
+Required environment variables:
+- `EXTERNAL_PG_HOST`
+- `EXTERNAL_PG_PORT` (default `5432`)
+- `EXTERNAL_PG_DATABASE`
+- `EXTERNAL_PG_USER`
+- `EXTERNAL_PG_PASSWORD`
+- `EXTERNAL_PG_SSL` (`true` recommended for Azure PostgreSQL)
+- `EXTERNAL_PG_SCHEMA` (default `public`)
+
+Important: external upsert matching relies on unique business key `(namespace, ipn_code, country_code)` in the destination table.
