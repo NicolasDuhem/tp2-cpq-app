@@ -190,11 +190,19 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       });
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
+        errorType?: string;
+        stage?: string;
         result?: { action: 'inserted' | 'updated' };
       };
 
       if (!response.ok || !payload.result) {
-        throw new Error(payload.error ?? 'Failed to push allocation to external PostgreSQL');
+        const detail = [
+          payload.errorType ? `type=${payload.errorType}` : null,
+          payload.stage ? `stage=${payload.stage}` : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
+        throw new Error(payload.error ? (detail ? `${payload.error} (${detail})` : payload.error) : 'Failed to push allocation to external PostgreSQL');
       }
 
       setMessage({ type: 'success', text: `${row.partNumber} ${countryCode} pushed (${payload.result.action}).` });

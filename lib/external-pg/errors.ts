@@ -1,6 +1,10 @@
 export type ExternalPgErrorCode =
   | 'missing_runtime_dependency'
   | 'missing_env'
+  | 'connection_timeout'
+  | 'network_unreachable'
+  | 'auth_failure'
+  | 'ssl_error'
   | 'connection_failure'
   | 'missing_unique_index'
   | 'source_data_mapping'
@@ -43,6 +47,55 @@ export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
   if (message.includes('EXTERNAL_PG_PORT must be a number') || message.includes('Invalid EXTERNAL_PG_SCHEMA')) {
     return new ExternalPgPushError('missing_env', message, 400);
   }
+  if (
+    message.includes('EXTERNAL_PG_CONNECT_TIMEOUT_MS must be a positive number') ||
+    message.includes('EXTERNAL_PG_QUERY_TIMEOUT_MS must be a positive number') ||
+    message.includes('EXTERNAL_PG_STATEMENT_TIMEOUT_MS must be a positive number')
+  ) {
+    return new ExternalPgPushError('missing_env', message, 400);
+  }
+
+  if (
+    code === 'ETIMEDOUT' ||
+    code === 'ESOCKETTIMEDOUT' ||
+    code === '57014' ||
+    message.toLowerCase().includes('timeout expired') ||
+    message.toLowerCase().includes('query read timeout') ||
+    message.toLowerCase().includes('canceling statement due to statement timeout')
+  ) {
+    return new ExternalPgPushError('connection_timeout', `External PostgreSQL timeout: ${message}`, 504);
+  }
+
+  if (
+    code === 'ENETUNREACH' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    message.toLowerCase().includes('could not translate host name') ||
+    message.toLowerCase().includes('no route to host')
+  ) {
+    return new ExternalPgPushError('network_unreachable', `External PostgreSQL network failure: ${message}`, 502);
+  }
+
+  if (
+    code === '28P01' ||
+    code === '28000' ||
+    code === '3D000' ||
+    message.toLowerCase().includes('password authentication failed') ||
+    (message.toLowerCase().includes('database') && message.toLowerCase().includes('does not exist'))
+  ) {
+    return new ExternalPgPushError('auth_failure', `External PostgreSQL authentication/database failure: ${message}`, 401);
+  }
+
+  if (
+    code === '08P01' ||
+    message.toLowerCase().includes('ssl') ||
+    message.toLowerCase().includes('tls') ||
+    message.toLowerCase().includes('self signed certificate') ||
+    message.toLowerCase().includes('certificate')
+  ) {
+    return new ExternalPgPushError('ssl_error', `External PostgreSQL SSL/TLS failure: ${message}`, 502);
+  }
 
   if (code === '42P10' || message.includes('no unique or exclusion constraint matching the ON CONFLICT specification')) {
     return new ExternalPgPushError(
@@ -52,18 +105,8 @@ export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
     );
   }
 
-  if (
-    code === '28P01' ||
-    code === '28000' ||
-    code === '3D000' ||
-    code === 'ENOTFOUND' ||
-    code === 'ECONNREFUSED' ||
-    code === 'ETIMEDOUT' ||
-    code === 'EHOSTUNREACH' ||
-    message.toLowerCase().includes('password authentication failed') ||
-    message.toLowerCase().includes('connect econn')
-  ) {
-    return new ExternalPgPushError('connection_failure', 'Could not connect to external PostgreSQL.', 502);
+  if (message.toLowerCase().includes('connect econn')) {
+    return new ExternalPgPushError('connection_failure', `Could not connect to external PostgreSQL: ${message}`, 502);
   }
 
   if (
