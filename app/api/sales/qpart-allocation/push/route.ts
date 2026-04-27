@@ -3,6 +3,8 @@ import { revalidatePath } from 'next/cache';
 import { buildQpartExternalSamplerPayload, upsertExternalSamplerResult } from '@/lib/external-pg/cpq-sampler-result';
 import { toExternalPgApiError } from '@/lib/external-pg/errors';
 
+export const runtime = 'nodejs';
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
