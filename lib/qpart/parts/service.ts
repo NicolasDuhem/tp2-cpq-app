@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db/client';
 import { getBaseLocale } from '@/lib/qpart/locales/service';
-import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
+import { setQPartActiveCountries } from '@/lib/qpart/allocation/service';
+import { QPART_CHANNEL_SET } from '@/lib/qpart/channels';
 import { QPartCompatibilityRule, QPartMetadataValue, QPartPartDetail, QPartRecord, QPartTranslation } from '@/types/qpart';
 
 type PartInput = {
@@ -11,6 +12,8 @@ type PartInput = {
   hierarchy_node_id?: number | null;
   translations?: QPartTranslation[];
   metadata_values?: QPartMetadataValue[];
+  channels?: string[];
+  country_codes?: string[];
   bike_types?: string[];
   compatibility_rules?: QPartCompatibilityRule[];
 };
@@ -29,6 +32,8 @@ const normalizePartInput = (input: Record<string, unknown>): PartInput => ({
   hierarchy_node_id: input.hierarchy_node_id === null || input.hierarchy_node_id === '' ? null : Number(input.hierarchy_node_id),
   translations: Array.isArray(input.translations) ? (input.translations as QPartTranslation[]) : [],
   metadata_values: Array.isArray(input.metadata_values) ? (input.metadata_values as QPartMetadataValue[]) : [],
+  channels: Array.isArray(input.channels) ? input.channels.map((x) => String(x).trim()).filter(Boolean) : [],
+  country_codes: Array.isArray(input.country_codes) ? input.country_codes.map((x) => String(x).trim().toUpperCase()).filter(Boolean) : [],
   bike_types: Array.isArray(input.bike_types) ? input.bike_types.map((x) => String(x).trim()).filter(Boolean) : [],
   compatibility_rules: Array.isArray(input.compatibility_rules) ? (input.compatibility_rules as QPartCompatibilityRule[]) : [],
 });
@@ -96,7 +101,7 @@ export async function getPartDetail(id: number): Promise<QPartPartDetail | null>
   const part = await getPartById(id);
   if (!part) return null;
 
-  const [translationsRaw, metadataValuesRaw, compatibilityRulesRaw] = await Promise.all([
+  const [translationsRaw, metadataValuesRaw, compatibilityRulesRaw, channelsRaw, countriesRaw] = await Promise.all([
     sql`
       select locale, name, description
       from qpart_part_translations
@@ -115,15 +120,32 @@ export async function getPartDetail(id: number): Promise<QPartPartDetail | null>
       where part_id = ${id}
       order by bike_type, feature_label, option_value
     `,
+    sql`
+      select channel
+      from qpart_part_channel_assignment
+      where part_id = ${id}
+      order by channel
+    `,
+    sql`
+      select country_code
+      from qpart_country_allocation
+      where part_id = ${id}
+        and active = true
+      order by country_code
+    `,
   ]);
   const translations = translationsRaw as QPartTranslation[];
   const metadataValues = metadataValuesRaw as QPartMetadataValue[];
   const compatibilityRules = compatibilityRulesRaw as QPartCompatibilityRule[];
+  const channels = (channelsRaw as Array<{ channel: string }>).map((row) => asTrimmedText(row.channel));
+  const countryCodes = (countriesRaw as Array<{ country_code: string }>).map((row) => asTrimmedText(row.country_code).toUpperCase());
 
   return {
     part,
     translations,
     metadata_values: metadataValues,
+    channels,
+    country_codes: countryCodes,
     bike_types: part.bike_types,
     compatibility_rules: compatibilityRules,
   };
@@ -134,6 +156,7 @@ async function saveChildCollections(partId: number, input: PartInput) {
 
   await sql`delete from qpart_part_translations where part_id = ${partId}`;
   await sql`delete from qpart_part_metadata_values where part_id = ${partId}`;
+  await sql`delete from qpart_part_channel_assignment where part_id = ${partId}`;
   await sql`delete from qpart_part_bike_type_compatibility where part_id = ${partId}`;
   await sql`delete from qpart_part_compatibility_rules where part_id = ${partId}`;
 
@@ -176,6 +199,20 @@ async function saveChildCollections(partId: number, input: PartInput) {
         )
     `;
   }
+
+  const channels = [...new Set((input.channels ?? []).map((channel) => asTrimmedText(channel)).filter(Boolean))];
+  const invalidChannels = channels.filter((channel) => !QPART_CHANNEL_SET.has(channel));
+  if (invalidChannels.length) {
+    throw new Error(`Invalid channel(s): ${invalidChannels.join(', ')}`);
+  }
+  for (const channel of channels) {
+    await sql`
+      insert into qpart_part_channel_assignment (part_id, channel)
+      values (${partId}, ${channel})
+    `;
+  }
+
+  await setQPartActiveCountries({ partId, countryCodes: input.country_codes ?? [] });
 
   for (const bikeType of input.bike_types ?? []) {
     await sql`
@@ -223,7 +260,6 @@ export async function createPart(rawInput: Record<string, unknown>) {
   if (!partId) throw new Error('Failed to create part');
 
   await saveChildCollections(partId, input);
-  await syncQPartCountryAllocationRows({ partIds: [partId] });
   return getPartDetail(partId);
 }
 

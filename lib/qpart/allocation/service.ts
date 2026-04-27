@@ -56,3 +56,43 @@ export async function syncQPartCountryAllocationRows(input: { partIds?: number[]
     partScopeCount: normalizedPartIds.length,
   };
 }
+
+export async function setQPartActiveCountries(input: { partId: number; countryCodes: string[] }) {
+  const partId = Number(input.partId);
+  if (!Number.isFinite(partId)) throw new Error('partId is required');
+
+  const availableCountries = await listQPartAllocationCountries();
+  const availableSet = new Set(availableCountries);
+  const selectedCountries = [...new Set((input.countryCodes ?? []).map((code) => asTrimmed(code).toUpperCase()).filter(Boolean))];
+
+  const invalidCountries = selectedCountries.filter((code) => !availableSet.has(code));
+  if (invalidCountries.length) {
+    throw new Error(`Invalid country code(s): ${invalidCountries.join(', ')}`);
+  }
+
+  await syncQPartCountryAllocationRows({ partIds: [partId] });
+
+  await sql`
+    update qpart_country_allocation
+    set active = false,
+        updated_at = now()
+    where part_id = ${partId}
+      and country_code in (
+        select value::text
+        from jsonb_array_elements_text(${JSON.stringify(availableCountries)}::jsonb)
+      )
+  `;
+
+  if (selectedCountries.length) {
+    await sql`
+      update qpart_country_allocation
+      set active = true,
+          updated_at = now()
+      where part_id = ${partId}
+        and country_code in (
+          select value::text
+          from jsonb_array_elements_text(${JSON.stringify(selectedCountries)}::jsonb)
+        )
+    `;
+  }
+}
