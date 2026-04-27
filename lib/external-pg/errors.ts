@@ -13,12 +13,14 @@ export type ExternalPgErrorCode =
 export class ExternalPgPushError extends Error {
   code: ExternalPgErrorCode;
   status: number;
+  stage?: string;
 
-  constructor(code: ExternalPgErrorCode, message: string, status = 400) {
+  constructor(code: ExternalPgErrorCode, message: string, status = 400, stage?: string) {
     super(message);
     this.name = 'ExternalPgPushError';
     this.code = code;
     this.status = status;
+    this.stage = stage;
   }
 }
 
@@ -37,10 +39,20 @@ function fromErrorLike(error: unknown): ExternalPgRawError {
   return { message: 'Unknown external PostgreSQL error' };
 }
 
-export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
+type NormalizeExternalPgContext = {
+  stage?: string;
+};
+
+function withStagePrefix(message: string, stage?: string) {
+  if (!stage) return message;
+  return `External PostgreSQL timeout during ${stage}: ${message}`;
+}
+
+export function normalizeExternalPgError(error: unknown, context: NormalizeExternalPgContext = {}): ExternalPgPushError {
   if (error instanceof ExternalPgPushError) return error;
 
   const { code, message } = fromErrorLike(error);
+  const stage = context.stage;
 
   if (message.includes('Missing dependency "pg"')) {
     return new ExternalPgPushError('missing_runtime_dependency', 'External PostgreSQL runtime dependency is not installed (missing "pg").', 500);
@@ -70,7 +82,13 @@ export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
     message.toLowerCase().includes('query read timeout') ||
     message.toLowerCase().includes('canceling statement due to statement timeout')
   ) {
-    return new ExternalPgPushError('connection_timeout', `External PostgreSQL timeout: ${message}`, 504);
+    const timeoutMessage = stage
+      ? withStagePrefix(message, stage)
+      : `External PostgreSQL timeout: ${message}`;
+    const hintSuffix = stage === 'upsert_execute'
+      ? ' Possible blocking/lock contention on target table.'
+      : '';
+    return new ExternalPgPushError('connection_timeout', `${timeoutMessage}${hintSuffix}`, 504, stage);
   }
 
   if (
@@ -130,18 +148,19 @@ export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
     return new ExternalPgPushError('source_data_mapping', message, 400);
   }
 
-  return new ExternalPgPushError('external_pg_error', message || 'Failed to push row to external PostgreSQL', 400);
+  return new ExternalPgPushError('external_pg_error', message || 'Failed to push row to external PostgreSQL', 400, stage);
 }
 
-export function toExternalPgApiError(error: unknown): {
+export function toExternalPgApiError(error: unknown, context: NormalizeExternalPgContext = {}): {
   error: string;
   errorType: ExternalPgErrorCode;
   status: number;
   errorCode?: string;
   errorDetail?: string;
   errorHint?: string;
+  errorStage?: string;
 } {
-  const normalized = normalizeExternalPgError(error);
+  const normalized = normalizeExternalPgError(error, context);
   const raw = fromErrorLike(error);
   return {
     error: normalized.message,
@@ -150,5 +169,6 @@ export function toExternalPgApiError(error: unknown): {
     errorCode: raw.code,
     errorDetail: raw.detail,
     errorHint: raw.hint,
+    errorStage: normalized.stage,
   };
 }

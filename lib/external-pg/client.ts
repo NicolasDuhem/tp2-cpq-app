@@ -140,7 +140,7 @@ export async function withExternalPgClient<T>(
     options.onStage?.('connection_established');
     return await runner(client, config.schema);
   } catch (error) {
-    throw normalizeExternalPgError(error);
+    throw normalizeExternalPgError(error, { stage: 'connect' });
   } finally {
     options.onStage?.('closing_connection');
     await client.end();

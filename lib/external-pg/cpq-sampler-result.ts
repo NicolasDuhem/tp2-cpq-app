@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from '@/lib/db/client';
 import { withExternalPgClient } from '@/lib/external-pg/client';
+import { normalizeExternalPgError } from '@/lib/external-pg/errors';
 
 type ExternalSamplerPayload = {
   ipnCode: string;
@@ -29,6 +30,12 @@ export type ExternalSamplerUpsertResult = {
     ipnCode: string;
     countryCode: string;
   };
+};
+
+export type ExternalSamplerWriteDiagnosticResult = {
+  rolledBack: true;
+  tableName: string;
+  durationMs: number;
 };
 
 type ExternalPushStage =
@@ -76,8 +83,10 @@ export async function upsertExternalSamplerResult(
     const tableName = `${schema}.cpq_sampler_result`;
     options.onStage?.('running_upsert', { tableName });
 
-    const result = await client.query(
-      `
+    let result;
+    try {
+      result = await client.query(
+        `
       insert into ${tableName} (
         ipn_code,
         ruleset,
@@ -129,25 +138,28 @@ export async function upsertExternalSamplerResult(
         updated_at = now()
       returning id, (xmax = 0) as inserted;
     `,
-      [
-        payload.ipnCode,
-        payload.ruleset,
-        payload.accountCode,
-        payload.customerId,
-        payload.currency,
-        payload.language,
-        payload.countryCode,
-        payload.namespace,
-        payload.headerId,
-        payload.detailId,
-        payload.sessionId,
-        payload.active,
-        JSON.stringify(payload.jsonResult ?? {}),
-        payload.processedForImageSync,
-        payload.processedForImageSyncAt,
-        payload.createdAt,
-      ],
-    );
+        [
+          payload.ipnCode,
+          payload.ruleset,
+          payload.accountCode,
+          payload.customerId,
+          payload.currency,
+          payload.language,
+          payload.countryCode,
+          payload.namespace,
+          payload.headerId,
+          payload.detailId,
+          payload.sessionId,
+          payload.active,
+          JSON.stringify(payload.jsonResult ?? {}),
+          payload.processedForImageSync,
+          payload.processedForImageSyncAt,
+          payload.createdAt,
+        ],
+      );
+    } catch (error) {
+      throw normalizeExternalPgError(error, { stage: 'upsert_execute' });
+    }
 
     const row = result.rows[0] as { id: number; inserted: boolean } | undefined;
     if (!row) {
@@ -173,6 +185,103 @@ export async function upsertExternalSamplerResult(
         countryCode: payload.countryCode,
       },
     };
+  }, options);
+}
+
+export async function runExternalSamplerWriteDiagnostic(
+  payload: ExternalSamplerPayload,
+  options: ExternalPushOptions = {},
+): Promise<ExternalSamplerWriteDiagnosticResult> {
+  ensurePayload(payload);
+  const startedAt = Date.now();
+
+  return withExternalPgClient(async (client, schema) => {
+    const tableName = `${schema}.cpq_sampler_result`;
+    options.onStage?.('running_upsert', { tableName, mode: 'write_diagnostic_rollback' });
+    try {
+      await client.query('begin');
+      await client.query(
+        `
+      insert into ${tableName} (
+        ipn_code,
+        ruleset,
+        account_code,
+        customer_id,
+        currency,
+        language,
+        country_code,
+        namespace,
+        header_id,
+        detail_id,
+        session_id,
+        active,
+        json_result,
+        processed_for_image_sync,
+        processed_for_image_sync_at,
+        created_at,
+        updated_at
+      ) values (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $9,
+        $10,
+        $11,
+        $12,
+        $13::jsonb,
+        $14,
+        $15::timestamptz,
+        coalesce($16::timestamptz, now()),
+        now()
+      )
+      on conflict (namespace, ipn_code, country_code)
+      do update set
+        ruleset = excluded.ruleset,
+        account_code = excluded.account_code,
+        customer_id = excluded.customer_id,
+        currency = excluded.currency,
+        language = excluded.language,
+        active = excluded.active,
+        json_result = excluded.json_result,
+        processed_for_image_sync = excluded.processed_for_image_sync,
+        processed_for_image_sync_at = excluded.processed_for_image_sync_at,
+        updated_at = now()
+    `,
+        [
+          payload.ipnCode,
+          payload.ruleset,
+          payload.accountCode,
+          payload.customerId,
+          payload.currency,
+          payload.language,
+          payload.countryCode,
+          payload.namespace,
+          payload.headerId,
+          payload.detailId,
+          payload.sessionId,
+          payload.active,
+          JSON.stringify(payload.jsonResult ?? {}),
+          payload.processedForImageSync,
+          payload.processedForImageSyncAt,
+          payload.createdAt,
+        ],
+      );
+      await client.query('rollback');
+      options.onStage?.('upsert_succeeded', { mode: 'write_diagnostic_rollback' });
+      return {
+        rolledBack: true,
+        tableName,
+        durationMs: Math.max(0, Date.now() - startedAt),
+      };
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw normalizeExternalPgError(error, { stage: 'upsert_execute' });
+    }
   }, options);
 }
 
