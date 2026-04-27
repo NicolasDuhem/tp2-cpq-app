@@ -31,6 +31,16 @@ export type ExternalSamplerUpsertResult = {
   };
 };
 
+type ExternalPushStage =
+  | 'running_upsert'
+  | 'upsert_succeeded'
+  | 'loading_source_data'
+  | 'source_data_loaded';
+
+type ExternalPushOptions = {
+  onStage?: (stage: ExternalPushStage | import('@/lib/external-pg/client').ExternalPgStage, details?: Record<string, unknown>) => void;
+};
+
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
 
 function normalizeBoolean(value: unknown) {
@@ -56,11 +66,15 @@ function ensurePayload(payload: ExternalSamplerPayload) {
   if (!asTrimmed(payload.sessionId)) throw new Error('session_id is required for external push');
 }
 
-export async function upsertExternalSamplerResult(payload: ExternalSamplerPayload): Promise<ExternalSamplerUpsertResult> {
+export async function upsertExternalSamplerResult(
+  payload: ExternalSamplerPayload,
+  options: ExternalPushOptions = {},
+): Promise<ExternalSamplerUpsertResult> {
   ensurePayload(payload);
 
   return withExternalPgClient(async (client, schema) => {
     const tableName = `${schema}.cpq_sampler_result`;
+    options.onStage?.('running_upsert', { tableName });
 
     const result = await client.query(
       `
@@ -140,6 +154,16 @@ export async function upsertExternalSamplerResult(payload: ExternalSamplerPayloa
       throw new Error('No result returned by external upsert');
     }
 
+    options.onStage?.('upsert_succeeded', {
+      id: Number(row.id),
+      action: row.inserted ? 'inserted' : 'updated',
+      businessKey: {
+        namespace: payload.namespace,
+        ipnCode: payload.ipnCode,
+        countryCode: payload.countryCode,
+      },
+    });
+
     return {
       action: row.inserted ? 'inserted' : 'updated',
       id: Number(row.id),
@@ -149,14 +173,14 @@ export async function upsertExternalSamplerResult(payload: ExternalSamplerPayloa
         countryCode: payload.countryCode,
       },
     };
-  });
+  }, options);
 }
 
 export async function buildBikeExternalSamplerPayload(input: {
   ruleset: string;
   ipnCode: string;
   countryCode: string;
-}): Promise<ExternalSamplerPayload> {
+}, options: ExternalPushOptions = {}): Promise<ExternalSamplerPayload> {
   const ruleset = asTrimmed(input.ruleset);
   const ipnCode = asTrimmed(input.ipnCode);
   const countryCode = asTrimmed(input.countryCode).toUpperCase();
@@ -165,6 +189,7 @@ export async function buildBikeExternalSamplerPayload(input: {
   if (!ipnCode) throw new Error('ipnCode is required');
   if (!countryCode) throw new Error('countryCode is required');
 
+  options.onStage?.('loading_source_data', { source: 'bike', ruleset, ipnCode, countryCode });
   const rows = (await sql`
     select
       ipn_code,
@@ -195,6 +220,7 @@ export async function buildBikeExternalSamplerPayload(input: {
   if (!row) {
     throw new Error(`No bike sampler row found for ${ruleset} / ${ipnCode} / ${countryCode}`);
   }
+  options.onStage?.('source_data_loaded', { source: 'bike' });
 
   return {
     ipnCode,
@@ -219,13 +245,14 @@ export async function buildBikeExternalSamplerPayload(input: {
 export async function buildQpartExternalSamplerPayload(input: {
   partId: number;
   countryCode: string;
-}): Promise<ExternalSamplerPayload> {
+}, options: ExternalPushOptions = {}): Promise<ExternalSamplerPayload> {
   const partId = Number(input.partId);
   const countryCode = asTrimmed(input.countryCode).toUpperCase();
 
   if (!Number.isFinite(partId)) throw new Error('partId is required');
   if (!countryCode) throw new Error('countryCode is required');
 
+  options.onStage?.('loading_source_data', { source: 'qpart', partId, countryCode });
   const rows = (await sql`
     select
       p.part_number,
@@ -253,6 +280,7 @@ export async function buildQpartExternalSamplerPayload(input: {
   if (!row) {
     throw new Error(`No QPart country allocation row found for part ${partId} / ${countryCode}`);
   }
+  options.onStage?.('source_data_loaded', { source: 'qpart' });
 
   const partNumber = asTrimmed(row.part_number);
   const accountCode = asTrimmed(row.account_code);

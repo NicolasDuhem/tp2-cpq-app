@@ -3,6 +3,9 @@ import { Client } from 'pg';
 import { normalizeExternalPgError } from '@/lib/external-pg/errors';
 
 const DEFAULT_PORT = 5432;
+const DEFAULT_CONNECT_TIMEOUT_MS = 8000;
+const DEFAULT_QUERY_TIMEOUT_MS = 12000;
+const DEFAULT_STATEMENT_TIMEOUT_MS = 12000;
 
 export type ExternalPgConnectionConfig = {
   host: string;
@@ -11,7 +14,11 @@ export type ExternalPgConnectionConfig = {
   user: string;
   password: string;
   ssl: boolean;
+  sslRejectUnauthorized: boolean;
   schema: string;
+  connectionTimeoutMs: number;
+  queryTimeoutMs: number;
+  statementTimeoutMs: number;
 };
 
 function requireEnv(name: string): string {
@@ -37,6 +44,15 @@ function assertIdentifier(input: string, label: string) {
   }
 }
 
+function parseTimeoutMs(name: string, fallback: number): number {
+  const raw = String(process.env[name] ?? fallback).trim();
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number`);
+  }
+  return Math.trunc(parsed);
+}
+
 export function getExternalPgConfig(): ExternalPgConnectionConfig {
   const host = requireEnv('EXTERNAL_PG_HOST');
   const portRaw = String(process.env.EXTERNAL_PG_PORT ?? DEFAULT_PORT).trim();
@@ -49,7 +65,11 @@ export function getExternalPgConfig(): ExternalPgConnectionConfig {
   const user = requireEnv('EXTERNAL_PG_USER');
   const password = requireEnv('EXTERNAL_PG_PASSWORD');
   const ssl = asBoolean(process.env.EXTERNAL_PG_SSL, true);
+  const sslRejectUnauthorized = asBoolean(process.env.EXTERNAL_PG_SSL_REJECT_UNAUTHORIZED, false);
   const schema = String(process.env.EXTERNAL_PG_SCHEMA ?? 'public').trim() || 'public';
+  const connectionTimeoutMs = parseTimeoutMs('EXTERNAL_PG_CONNECT_TIMEOUT_MS', DEFAULT_CONNECT_TIMEOUT_MS);
+  const queryTimeoutMs = parseTimeoutMs('EXTERNAL_PG_QUERY_TIMEOUT_MS', DEFAULT_QUERY_TIMEOUT_MS);
+  const statementTimeoutMs = parseTimeoutMs('EXTERNAL_PG_STATEMENT_TIMEOUT_MS', DEFAULT_STATEMENT_TIMEOUT_MS);
 
   assertIdentifier(schema, 'EXTERNAL_PG_SCHEMA');
 
@@ -60,7 +80,11 @@ export function getExternalPgConfig(): ExternalPgConnectionConfig {
     user,
     password,
     ssl,
+    sslRejectUnauthorized,
     schema,
+    connectionTimeoutMs,
+    queryTimeoutMs,
+    statementTimeoutMs,
   };
 }
 
@@ -69,23 +93,57 @@ type Queryable = {
   end: () => Promise<void>;
 };
 
-export async function withExternalPgClient<T>(runner: (client: Queryable, schema: string) => Promise<T>): Promise<T> {
+export type ExternalPgStage =
+  | 'env_validation_ok'
+  | 'building_external_pg_client'
+  | 'attempting_connection'
+  | 'connection_established'
+  | 'closing_connection'
+  | 'connection_closed';
+
+type WithExternalPgClientOptions = {
+  onStage?: (stage: ExternalPgStage, details?: Record<string, unknown>) => void;
+};
+
+export async function withExternalPgClient<T>(
+  runner: (client: Queryable, schema: string) => Promise<T>,
+  options: WithExternalPgClientOptions = {},
+): Promise<T> {
   const config = getExternalPgConfig();
+  options.onStage?.('env_validation_ok', {
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    schema: config.schema,
+    ssl: config.ssl,
+    sslRejectUnauthorized: config.sslRejectUnauthorized,
+    connectionTimeoutMs: config.connectionTimeoutMs,
+    queryTimeoutMs: config.queryTimeoutMs,
+    statementTimeoutMs: config.statementTimeoutMs,
+  });
+  options.onStage?.('building_external_pg_client');
   const client = new Client({
     host: config.host,
     port: config.port,
     database: config.database,
     user: config.user,
     password: config.password,
-    ssl: config.ssl ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: config.connectionTimeoutMs,
+    query_timeout: config.queryTimeoutMs,
+    statement_timeout: config.statementTimeoutMs,
+    ssl: config.ssl ? { rejectUnauthorized: config.sslRejectUnauthorized } : false,
   });
 
   try {
+    options.onStage?.('attempting_connection');
     await client.query('select 1');
+    options.onStage?.('connection_established');
     return await runner(client, config.schema);
   } catch (error) {
     throw normalizeExternalPgError(error);
   } finally {
+    options.onStage?.('closing_connection');
     await client.end();
+    options.onStage?.('connection_closed');
   }
 }
