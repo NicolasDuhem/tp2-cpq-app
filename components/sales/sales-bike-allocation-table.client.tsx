@@ -51,6 +51,7 @@ export default function SalesBikeAllocationTableClient({
   const [countryFilters, setCountryFilters] = useState<Record<string, CountryStatusFilter>>({});
   const [message, setMessage] = useState<Message>(null);
   const [cellActionKey, setCellActionKey] = useState<string | null>(null);
+  const [pushActionKey, setPushActionKey] = useState<string | null>(null);
   const [bulkActionRunning, setBulkActionRunning] = useState(false);
   const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
 
@@ -211,6 +212,44 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
+
+
+  const pushRowToExternal = async (row: SalesBikeAllocationRow, countryCode: string) => {
+    const actionKey = `${row.rowRuleset}:${row.ipnCode}:${countryCode}`;
+    setPushActionKey(actionKey);
+    setMessage(null);
+
+    try {
+      const response = await fetch('/api/sales/bike-allocation/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ruleset: row.rowRuleset,
+          ipnCode: row.ipnCode,
+          countryCode,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { action: 'inserted' | 'updated' };
+      };
+
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error ?? 'Failed to push row to external PostgreSQL');
+      }
+
+      setMessage({
+        type: 'success',
+        text: `${row.ipnCode} ${countryCode} pushed (${payload.result.action}).`,
+      });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push row.' });
+    } finally {
+      setPushActionKey(null);
+    }
+  };
+
   const runBulkAction = async (targetStatus: 'active' | 'not_active') => {
     if (!effectiveRuleset) {
       setMessage({ type: 'error', text: 'Select a specific ruleset before running bulk actions.' });
@@ -345,7 +384,7 @@ export default function SalesBikeAllocationTableClient({
       </section>
 
       <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow.
+        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>Push</strong> to upsert a row-country record into external PostgreSQL.
       </div>
 
       {message ? (
@@ -420,15 +459,26 @@ export default function SalesBikeAllocationTableClient({
                     const isBusy = cellActionKey === actionKey;
                     return (
                       <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`}>
-                        <button
-                          type="button"
-                          className={`${styles.statusButton} ${statusClass(status)}`}
-                          onClick={() => void onCountryCellClick(row, country, status)}
-                          disabled={isBusy || bulkActionRunning}
-                          title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
-                        >
-                          {isBusy ? 'Saving…' : statusLabel(status)}
-                        </button>
+                        <div className={styles.cellActions}>
+                          <button
+                            type="button"
+                            className={`${styles.statusButton} ${statusClass(status)}`}
+                            onClick={() => void onCountryCellClick(row, country, status)}
+                            disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
+                            title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
+                          >
+                            {isBusy ? 'Saving…' : statusLabel(status)}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.pushButton}
+                            onClick={() => void pushRowToExternal(row, country)}
+                            disabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
+                            title={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : 'Push this bike + country row to external PostgreSQL'}
+                          >
+                            {pushActionKey === actionKey ? 'Pushing…' : 'Push'}
+                          </button>
+                        </div>
                       </td>
                     );
                   })}
