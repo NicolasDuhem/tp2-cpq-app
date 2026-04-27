@@ -43,6 +43,11 @@ export default async function QPartLandingRoute() {
           <h3>Compatibility reference</h3>
           <p className="subtle">Manage reusable bike-type feature/option pairs and derivation preview.</p>
         </Link>
+
+        <Link className="tile" href="/qpart/admin/sequences">
+          <h3>DB sequence maintenance</h3>
+          <p className="subtle">Inspect and resync sequence-backed primary keys after manual Neon data edits.</p>
+        </Link>
       </div>
     </section>
   );
