@@ -14,6 +14,8 @@ export type ExternalPgDiagnosticStageName =
   | 'table_exists'
   | 'upsert_prerequisite';
 
+const UPSERT_TARGET_COLUMNS = ['namespace', 'ipn_code', 'country_code'] as const;
+
 export type ExternalPgDiagnosticStageResult = {
   stage: ExternalPgDiagnosticStageName;
   ok: boolean;
@@ -52,6 +54,10 @@ function classifyConnectFailureStage(message: string): ExternalPgDiagnosticStage
   if (lowered.includes('ssl') || lowered.includes('tls') || lowered.includes('certificate')) return 'ssl_handshake';
   if (lowered.includes('password authentication failed') || lowered.includes('does not exist')) return 'authentication';
   return 'tcp_connect';
+}
+
+function formatQualifiedTableName(schema: string, table: string) {
+  return `${schema}.${table}`;
 }
 
 export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticResult> {
@@ -199,6 +205,8 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
   }
 
   const tableStart = measureStart();
+  const tableName = 'cpq_sampler_result';
+  const qualifiedTableName = formatQualifiedTableName(config.schema, tableName);
   try {
     const tableResult = await client.query(
       `
@@ -206,10 +214,10 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
         select 1
         from information_schema.tables
         where table_schema = $1
-          and table_name = 'cpq_sampler_result'
+          and table_name = $2
       ) as table_exists
       `,
-      [config.schema],
+      [config.schema, tableName],
     );
     const exists = Boolean(tableResult.rows?.[0]?.table_exists);
     stageResults.push({
@@ -217,8 +225,8 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
       ok: exists,
       duration_ms: durationFrom(tableStart),
       message: exists
-        ? `${config.schema}.cpq_sampler_result exists.`
-        : `${config.schema}.cpq_sampler_result does not exist.`,
+        ? `${qualifiedTableName} exists.`
+        : `${qualifiedTableName} does not exist.`,
     });
   } catch (error) {
     const normalized = normalizeExternalPgError(error);
@@ -228,34 +236,56 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
 
   const upsertStart = measureStart();
   try {
-    const indexCheck = await client.query(
+    const indexCheck = await client.query<{
+      has_required_unique: boolean;
+      support_type: 'constraint' | 'index' | null;
+      support_name: string | null;
+      ordered_columns: string[] | null;
+    }>(
       `
-      select exists (
-        select 1
-        from pg_constraint c
-        join pg_class t on t.oid = c.conrelid
+      with matching_unique_support as (
+        select
+          i.indexrelid,
+          ix.relname as index_name,
+          c.conname as constraint_name,
+          array_agg(a.attname::text order by idx.ord) as ordered_columns
+        from pg_index i
+        join pg_class t on t.oid = i.indrelid
         join pg_namespace n on n.oid = t.relnamespace
-        where c.contype in ('u', 'p')
-          and n.nspname = $1
-          and t.relname = 'cpq_sampler_result'
-          and array(
-            select a.attname::text
-            from unnest(c.conkey) with ordinality as ck(attnum, ord)
-            join pg_attribute a on a.attrelid = c.conrelid and a.attnum = ck.attnum
-            order by ck.ord
-          ) = array['namespace', 'ipn_code', 'country_code']::text[]
-      ) as has_required_unique
+        join pg_class ix on ix.oid = i.indexrelid
+        join unnest(i.indkey) with ordinality as idx(attnum, ord) on true
+        join pg_attribute a on a.attrelid = i.indrelid and a.attnum = idx.attnum
+        left join pg_constraint c on c.conindid = i.indexrelid and c.contype in ('u', 'p')
+        where n.nspname = $1
+          and t.relname = $2
+          and i.indisunique = true
+          and i.indisvalid = true
+          and i.indpred is null
+          and idx.attnum > 0
+        group by i.indexrelid, ix.relname, c.conname
+      )
+      select
+        true as has_required_unique,
+        case when constraint_name is not null then 'constraint' else 'index' end as support_type,
+        coalesce(constraint_name, index_name) as support_name,
+        ordered_columns
+      from matching_unique_support
+      where ordered_columns = $3::text[]
+      limit 1
       `,
-      [config.schema],
+      [config.schema, tableName, [...UPSERT_TARGET_COLUMNS]],
     );
-    const hasRequiredUnique = Boolean(indexCheck.rows?.[0]?.has_required_unique);
+    const supportingObject = indexCheck.rows[0];
+    const hasRequiredUnique = Boolean(supportingObject?.has_required_unique);
+    const supportType = supportingObject?.support_type ?? null;
+    const supportName = supportingObject?.support_name ?? null;
     stageResults.push({
       stage: 'upsert_prerequisite',
       ok: hasRequiredUnique,
       duration_ms: durationFrom(upsertStart),
       message: hasRequiredUnique
-        ? 'Unique constraint for ON CONFLICT (namespace, ipn_code, country_code) exists.'
-        : 'Missing unique/primary constraint for ON CONFLICT (namespace, ipn_code, country_code).',
+        ? `Found matching ${supportType ?? 'unique support'} (${supportName ?? 'unnamed'}) for ON CONFLICT (${UPSERT_TARGET_COLUMNS.join(', ')}).`
+        : `Missing matching unique index/constraint for ON CONFLICT (${UPSERT_TARGET_COLUMNS.join(', ')}).`,
     });
   } catch (error) {
     const normalized = normalizeExternalPgError(error);
