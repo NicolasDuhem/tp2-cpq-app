@@ -30,19 +30,27 @@ export async function POST(req: NextRequest) {
     }, { onStage: (name, details) => stage(name, details) });
     stage('payload_build', { ok: true });
 
-    stage('connect');
+    stage('client_create');
     const result = await upsertExternalSamplerResult(payload, {
       onStage: (name, details) => {
-        if (name === 'attempting_connection' || name === 'connection_established') {
-          stage('connect', details);
+        if (name === 'client_create') {
+          stage('client_create', details);
           return;
         }
-        if (name === 'running_upsert') {
-          stage('upsert_execute', details);
+        if (name === 'client_connect_start') {
+          stage('client_connect_start', details);
           return;
         }
-        if (name === 'upsert_succeeded') {
-          stage('upsert_complete', details);
+        if (name === 'client_connect_success') {
+          stage('client_connect_success', details);
+          return;
+        }
+        if (name === 'upsert_start') {
+          stage('upsert_start', details);
+          return;
+        }
+        if (name === 'upsert_success') {
+          stage('upsert_success', details);
           return;
         }
         stage(name, details);
