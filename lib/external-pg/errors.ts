@@ -22,10 +22,17 @@ export class ExternalPgPushError extends Error {
   }
 }
 
-function fromErrorLike(error: unknown): { code?: string; message: string } {
+type ExternalPgRawError = {
+  code?: string;
+  detail?: string;
+  hint?: string;
+  message: string;
+};
+
+function fromErrorLike(error: unknown): ExternalPgRawError {
   if (error instanceof Error) {
-    const errorWithCode = error as Error & { code?: string };
-    return { code: errorWithCode.code, message: error.message };
+    const errorWithCode = error as Error & { code?: string; detail?: string; hint?: string };
+    return { code: errorWithCode.code, detail: errorWithCode.detail, hint: errorWithCode.hint, message: error.message };
   }
   return { message: 'Unknown external PostgreSQL error' };
 }
@@ -126,11 +133,22 @@ export function normalizeExternalPgError(error: unknown): ExternalPgPushError {
   return new ExternalPgPushError('external_pg_error', message || 'Failed to push row to external PostgreSQL', 400);
 }
 
-export function toExternalPgApiError(error: unknown): { error: string; errorType: ExternalPgErrorCode; status: number } {
+export function toExternalPgApiError(error: unknown): {
+  error: string;
+  errorType: ExternalPgErrorCode;
+  status: number;
+  errorCode?: string;
+  errorDetail?: string;
+  errorHint?: string;
+} {
   const normalized = normalizeExternalPgError(error);
+  const raw = fromErrorLike(error);
   return {
     error: normalized.message,
     errorType: normalized.code,
     status: normalized.status,
+    errorCode: raw.code,
+    errorDetail: raw.detail,
+    errorHint: raw.hint,
   };
 }
