@@ -77,6 +77,7 @@ All QPart tables are prefixed `qpart_` and are isolated from CPQ runtime persist
 7. `qpart_part_compatibility_rules`
 8. `qpart_compatibility_reference_values`
 9. `qpart_country_allocation`
+10. `qpart_part_channel_assignment`
 
 Additional integrity object:
 - trigger function `qpart_validate_hierarchy_parent()` + trigger `qpart_hierarchy_parent_trg` enforces parent level = child level - 1 and level-1-without-parent rule.
@@ -120,3 +121,29 @@ QPart dynamic reference reads (read-only):
 - English/base row (`locale = base locale from locale service`) remains source input for translation requests.
 - Target locale rows are upserted only for locales currently present in distinct `CPQ_setup_account_context.language` values.
 - Default write policy is fill-missing only; non-empty existing locale rows are skipped unless future explicit overwrite mode is introduced.
+
+
+## DB sequence maintenance helpers
+- SQL functions (schema + migration):
+  - `app_list_pk_sequence_health()`
+  - `app_resync_pk_sequence(target_schema text, target_table text)`
+- Scope: discovers all `public` tables with single-column integer PKs backed by a PostgreSQL sequence/identity and reports:
+  - table + PK + sequence name
+  - current sequence next value
+  - table max PK value
+  - expected next value
+  - status (`in_sync` / `out_of_sync`)
+- Resync behavior:
+  - sets sequence using `setval(...)` to `max(id)` when table has rows
+  - sets sequence to start state for empty table so next insert returns `1`
+- App surfaces:
+  - API: `GET /api/admin/db-sequences`, `POST /api/admin/db-sequences/resync`
+  - UI: `/qpart/admin/sequences` (admin mode only in current app model)
+
+## QPart Channel & Country assignment persistence
+- Channel assignment source of truth: `qpart_part_channel_assignment` (`(part_id, channel)` unique).
+- Country assignment source of truth remains `qpart_country_allocation.active` (same semantics as `/sales/qpart-allocation`).
+- Part save flow updates both through `lib/qpart/parts/service.ts` and `lib/qpart/allocation/service.ts`.
+- CSV import/export includes static columns:
+  - `channels` (pipe-separated: `Ecom|Dealer`)
+  - `countries` (pipe-separated ISO2: `GB|DE`)
