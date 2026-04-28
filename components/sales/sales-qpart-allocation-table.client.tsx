@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   QPartAllocationStatus,
@@ -24,6 +24,7 @@ type LevelSelection = Record<number, string[]>;
 type MetadataSelection = Record<string, string[]>;
 type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
 type BCStatusMap = Record<string, { status: BCStatus }>;
+type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
 
 const defaultHierarchySelection: LevelSelection = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
 
@@ -103,6 +104,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
+  const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
 
   const visibleCountries = useMemo(() => {
     if (!countrySelection.length) return countryColumns;
@@ -347,59 +349,71 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
+  const runBCStatusCheck = async () => {
+    const skus = [...new Set(filteredRows.map((row) => row.partNumber.trim()).filter(Boolean))];
+    console.info('[BC status][qpart-allocation]', {
+      loadedRowCount: rows.length,
+      visibleRowCount: filteredRows.length,
+      nonEmptySkuCount: skus.length,
+      firstSkus: skus.slice(0, 5),
+    });
+    if (!skus.length) {
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: 0,
+        ok: 0,
+        nok: 0,
+        err: 0,
+      });
+      return;
+    }
 
-    const run = async () => {
-      const skus = [...new Set(rows.map((row) => row.partNumber.trim()).filter(Boolean))];
-      if (!skus.length) {
-        if (!cancelled) {
-          setBcStatusBySku({});
-          setBcStatusLoading(false);
-        }
-        return;
+    setBcStatusLoading(true);
+    try {
+      const response = await fetch('/api/bigcommerce/variant-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skus }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: Record<string, { status?: BCStatus }>;
+      };
+      if (!response.ok || !payload.items) throw new Error('Failed to load BigCommerce variant status.');
+
+      const nextStatuses: BCStatusMap = {};
+      let ok = 0;
+      let nok = 0;
+      let err = 0;
+      for (const sku of skus) {
+        const status = payload.items?.[sku]?.status;
+        const mapped: BCStatus = status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR';
+        nextStatuses[sku] = { status: mapped };
+        if (mapped === 'OK') ok += 1;
+        else if (mapped === 'NOK') nok += 1;
+        else err += 1;
       }
-
-      setBcStatusLoading(true);
-      try {
-        const response = await fetch('/api/bigcommerce/variant-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ skus }),
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          items?: Record<string, { status?: BCStatus }>;
-        };
-
-        if (!response.ok || !payload.items) {
-          throw new Error('Failed to load BigCommerce variant status.');
-        }
-
-        if (!cancelled) {
-          setBcStatusBySku(
-            Object.fromEntries(
-              skus.map((sku) => {
-                const status = payload.items?.[sku]?.status;
-                return [sku, { status: status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR' }];
-              }),
-            ),
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setBcStatusBySku(Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])));
-        }
-      } finally {
-        if (!cancelled) setBcStatusLoading(false);
-      }
-    };
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [rows]);
+      setBcStatusBySku((prev) => ({ ...prev, ...nextStatuses }));
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: skus.length,
+        ok,
+        nok,
+        err,
+      });
+    } catch {
+      const failedStatuses = Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])) as BCStatusMap;
+      setBcStatusBySku((prev) => ({ ...prev, ...failedStatuses }));
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: skus.length,
+        ok: 0,
+        nok: 0,
+        err: skus.length,
+      });
+    } finally {
+      setBcStatusLoading(false);
+    }
+  };
 
   return (
     <>
@@ -415,6 +429,14 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             <div className={styles.bulkSelection}>
               Countries in scope: <strong>{visibleCountries.length}</strong>
             </div>
+            <button type="button" className={styles.bulkActionButton} onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading || bulkBusy}>
+              {bcStatusLoading ? 'Checking BC Status...' : 'Check BC Status'}
+            </button>
+            {bcCheckSummary ? (
+              <span className={styles.bcCheckMeta}>
+                Last checked: {bcCheckSummary.checkedAt} · Checked {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
+              </span>
+            ) : null}
             <button type="button" className={styles.bulkActionButton} onClick={() => void runBulk('active')} disabled={bulkBusy}>
               {bulkBusy ? 'Working…' : 'Bulk activate'}
             </button>
@@ -553,12 +575,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
               {filteredRows.map((row) => (
                 <tr key={row.partId} className={styles.tableRow}>
                   <td className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>
-                    {bcStatusLoading ? (
+                    {bcStatusLoading && !bcStatusBySku[row.partNumber] ? (
                       <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
+                    ) : bcStatusBySku[row.partNumber]?.status ? (
+                      <span className={getBCBadgeClass(bcStatusBySku[row.partNumber].status)}>{bcStatusBySku[row.partNumber].status}</span>
                     ) : (
-                      <span className={getBCBadgeClass(bcStatusBySku[row.partNumber]?.status ?? 'NOK')}>
-                        {bcStatusBySku[row.partNumber]?.status ?? 'NOK'}
-                      </span>
+                      <span className={styles.bcNotChecked}>Not checked</span>
                     )}
                   </td>
                   <td className={`${styles.stickyColumn} ${styles.stickyPart}`}>

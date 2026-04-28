@@ -88,6 +88,13 @@
   flex-wrap: wrap;
 }
 
+.bcCheckActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .bulkButtons button {
   border: 1px solid #b8c8eb;
   border-radius: 8px;
@@ -96,6 +103,11 @@
   font-size: 12px;
   font-weight: 700;
   padding: 6px 9px;
+}
+
+.bcCheckMeta {
+  font-size: 11px;
+  color: #53617b;
 }
 
 .helperText {
@@ -296,6 +308,11 @@
   background: #eef1f7;
   color: #5f6981;
   border-color: #d5dbea;
+}
+
+.bcNotChecked {
+  font-size: 11px;
+  color: #5f6981;
 }
 
 .empty {

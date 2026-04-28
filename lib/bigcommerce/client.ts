@@ -1,6 +1,6 @@
 const DEFAULT_API_BASE_URL = 'https://api.bigcommerce.com';
 const DEFAULT_TIMEOUT_MS = 10_000;
-const DEFAULT_BATCH_SIZE = 50;
+const DEFAULT_BATCH_SIZE = 25;
 
 export type BigCommerceConfig = {
   enabled: boolean;
@@ -17,13 +17,22 @@ function asPositiveInteger(value: string | undefined, fallback: number): number 
   return Math.floor(parsed);
 }
 
+function asBatchSize(value: string | undefined): number {
+  const parsed = Number(value ?? '');
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_BATCH_SIZE;
+  const floored = Math.floor(parsed);
+  if (floored > 50) return 50;
+  if (floored < 1) return DEFAULT_BATCH_SIZE;
+  return floored;
+}
+
 export function getBigCommerceConfig(): BigCommerceConfig {
   const enabled = String(process.env.BIGCOMMERCE_BC_STATUS_ENABLED ?? '').trim().toLowerCase() === 'true';
   const apiBaseUrl = String(process.env.BIGCOMMERCE_API_BASE_URL ?? DEFAULT_API_BASE_URL).trim() || DEFAULT_API_BASE_URL;
   const storeHash = String(process.env.BIGCOMMERCE_STORE_HASH ?? '').trim();
   const accessToken = String(process.env.BIGCOMMERCE_ACCESS_TOKEN ?? '').trim();
   const timeoutMs = asPositiveInteger(process.env.BIGCOMMERCE_API_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
-  const batchSize = asPositiveInteger(process.env.BIGCOMMERCE_VARIANT_CHECK_BATCH_SIZE, DEFAULT_BATCH_SIZE);
+  const batchSize = asBatchSize(process.env.BIGCOMMERCE_VARIANT_CHECK_BATCH_SIZE);
 
   return {
     enabled,
@@ -67,8 +76,11 @@ export async function fetchBigCommerceVariantsBySkus(skus: string[]): Promise<Bi
   try {
     const params = new URLSearchParams();
     params.set('sku:in', querySkus.join(','));
+    params.set('page', '1');
+    params.set('limit', '50');
+    const requestPath = `/stores/${config.storeHash}/v3/catalog/variants?${params.toString()}`;
 
-    const response = await fetch(`${config.apiBaseUrl}/stores/${config.storeHash}/v3/catalog/variants?${params.toString()}`, {
+    const response = await fetch(`${config.apiBaseUrl}${requestPath}`, {
       method: 'GET',
       headers: {
         'X-Auth-Token': config.accessToken,
@@ -81,7 +93,15 @@ export async function fetchBigCommerceVariantsBySkus(skus: string[]): Promise<Bi
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      const preview = body.slice(0, 300);
+      const preview = body.slice(0, 1000);
+      console.error('BigCommerce variants request failed', {
+        status: response.status,
+        statusText: response.statusText,
+        path: requestPath,
+        skuCount: querySkus.length,
+        skus: querySkus.slice(0, 3),
+        bodyPreview: preview,
+      });
       throw new Error(`BigCommerce variants request failed (${response.status}): ${preview || 'No response body'}`);
     }
 
@@ -89,7 +109,20 @@ export async function fetchBigCommerceVariantsBySkus(skus: string[]): Promise<Bi
     return Array.isArray(payload.data) ? payload.data : [];
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
+      console.error('BigCommerce variants request timed out', {
+        timeoutMs: config.timeoutMs,
+        skuCount: querySkus.length,
+        skus: querySkus.slice(0, 3),
+      });
       throw new Error(`BigCommerce variants request timed out after ${config.timeoutMs}ms`);
+    }
+    if (error instanceof Error) {
+      console.error('BigCommerce variants request error', {
+        errorName: error.name,
+        errorMessage: error.message,
+        skuCount: querySkus.length,
+        skus: querySkus.slice(0, 3),
+      });
     }
     throw error;
   } finally {

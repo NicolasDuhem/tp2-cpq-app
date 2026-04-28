@@ -251,6 +251,11 @@
   cursor: not-allowed;
 }
 
+.bcCheckMeta {
+  font-size: 11px;
+  color: #5a6787;
+}
+
 .message {
   border-radius: 12px;
   padding: 10px 12px;
@@ -462,6 +467,11 @@
   background: #eef1f7;
   color: #5f6981;
   border-color: #d5dbea;
+}
+
+.bcNotChecked {
+  font-size: 11px;
+  color: #5f6981;
 }
 
 .empty {

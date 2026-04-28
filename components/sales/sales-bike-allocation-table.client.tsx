@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AllocationStatus,
@@ -22,6 +22,7 @@ type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
 type Message = { type: 'success' | 'error'; text: string } | null;
 type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
 type BCStatusMap = Record<string, { status: BCStatus }>;
+type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
 const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 function statusLabel(status: AllocationStatus): string {
@@ -65,6 +66,7 @@ export default function SalesBikeAllocationTableClient({
   const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
+  const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
 
   const selectedFeatureSet = useMemo(() => new Set(selectedFeatures), [selectedFeatures]);
   const selectedCountryTargets = useMemo(
@@ -330,59 +332,71 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
+  const runBCStatusCheck = async () => {
+    const skus = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter(Boolean))];
+    console.info('[BC status][bike-allocation]', {
+      loadedRowCount: rows.length,
+      visibleRowCount: filteredRows.length,
+      nonEmptySkuCount: skus.length,
+      firstSkus: skus.slice(0, 5),
+    });
+    if (!skus.length) {
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: 0,
+        ok: 0,
+        nok: 0,
+        err: 0,
+      });
+      return;
+    }
 
-    const run = async () => {
-      const skus = [...new Set(rows.map((row) => row.ipnCode.trim()).filter(Boolean))];
-      if (!skus.length) {
-        if (!cancelled) {
-          setBcStatusBySku({});
-          setBcStatusLoading(false);
-        }
-        return;
+    setBcStatusLoading(true);
+    try {
+      const response = await fetch('/api/bigcommerce/variant-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skus }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: Record<string, { status?: BCStatus }>;
+      };
+      if (!response.ok || !payload.items) throw new Error('Failed to load BigCommerce variant status.');
+
+      const nextStatuses: BCStatusMap = {};
+      let ok = 0;
+      let nok = 0;
+      let err = 0;
+      for (const sku of skus) {
+        const status = payload.items?.[sku]?.status;
+        const mapped: BCStatus = status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR';
+        nextStatuses[sku] = { status: mapped };
+        if (mapped === 'OK') ok += 1;
+        else if (mapped === 'NOK') nok += 1;
+        else err += 1;
       }
-
-      setBcStatusLoading(true);
-      try {
-        const response = await fetch('/api/bigcommerce/variant-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ skus }),
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          items?: Record<string, { status?: BCStatus }>;
-        };
-
-        if (!response.ok || !payload.items) {
-          throw new Error('Failed to load BigCommerce variant status.');
-        }
-
-        if (!cancelled) {
-          setBcStatusBySku(
-            Object.fromEntries(
-              skus.map((sku) => {
-                const status = payload.items?.[sku]?.status;
-                return [sku, { status: status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR' }];
-              }),
-            ),
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setBcStatusBySku(Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])));
-        }
-      } finally {
-        if (!cancelled) setBcStatusLoading(false);
-      }
-    };
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [rows]);
+      setBcStatusBySku((prev) => ({ ...prev, ...nextStatuses }));
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: skus.length,
+        ok,
+        nok,
+        err,
+      });
+    } catch {
+      const failedStatuses = Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])) as BCStatusMap;
+      setBcStatusBySku((prev) => ({ ...prev, ...failedStatuses }));
+      setBcCheckSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        checkedCount: skus.length,
+        ok: 0,
+        nok: 0,
+        err: skus.length,
+      });
+    } finally {
+      setBcStatusLoading(false);
+    }
+  };
 
   return (
     <>
@@ -437,6 +451,16 @@ export default function SalesBikeAllocationTableClient({
 
       <section className={styles.bulkActions}>
         <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
+        <div className={styles.bcCheckActions}>
+          <button type="button" onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading}>
+            {bcStatusLoading ? 'Checking BC Status...' : 'Check BC Status'}
+          </button>
+          {bcCheckSummary ? (
+            <span className={styles.bcCheckMeta}>
+              Last checked: {bcCheckSummary.checkedAt} · Checked {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
+            </span>
+          ) : null}
+        </div>
         <div className={styles.bulkCountryList}>
           {countryColumns.map((countryCode) => (
             <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
@@ -530,12 +554,12 @@ export default function SalesBikeAllocationTableClient({
               {filteredRows.map((row) => (
                 <tr key={`${row.rowRuleset}::${row.ipnCode}`}>
                   <td className={styles.stickyBCStatus}>
-                    {bcStatusLoading ? (
+                    {bcStatusLoading && !bcStatusBySku[row.ipnCode] ? (
                       <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
+                    ) : bcStatusBySku[row.ipnCode]?.status ? (
+                      <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
                     ) : (
-                      <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode]?.status ?? 'NOK')}>
-                        {bcStatusBySku[row.ipnCode]?.status ?? 'NOK'}
-                      </span>
+                      <span className={styles.bcNotChecked}>Not checked</span>
                     )}
                   </td>
                   <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
