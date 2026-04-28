@@ -12,7 +12,6 @@ export default async function SalesQPartAllocationPage() {
           <h1>Sales - QPart allocation</h1>
           <p>Review and manage QPart activation by market. Toggle status or push specific country changes without leaving the matrix.</p>
         </div>
-        <div className={styles.statsBadge}>Total rows: {data.rows.length}</div>
       </header>
       <SalesQPartAllocationTableClient rows={data.rows} countryColumns={data.countries} filterOptions={data.filterOptions} />
     </div>

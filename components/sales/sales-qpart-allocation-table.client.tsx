@@ -7,6 +7,7 @@ import {
   QPartAllocationStatus,
   SalesQPartAllocationFilterOptions,
   SalesQPartAllocationRow,
+  SalesQPartTerritoryFilterRegion,
 } from '@/lib/sales/qpart-allocation/service';
 import styles from './sales-qpart-allocation-page.module.css';
 
@@ -32,11 +33,51 @@ function statusLabel(status: QPartAllocationStatus) {
   return status === 'active' ? 'Active' : 'Inactive';
 }
 
+function CheckboxListFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div className={styles.filterItem}>
+      <span>{label}</span>
+      <div className={styles.checkboxList}>
+        {options.length ? (
+          options.map((option) => {
+            const checked = selected.includes(option);
+            return (
+              <label key={`${label}-${option}`} className={styles.checkboxOption}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) =>
+                    onChange(event.target.checked ? [...selected, option] : selected.filter((value) => value !== option))
+                  }
+                />
+                <span>{option}</span>
+              </label>
+            );
+          })
+        ) : (
+          <div className={styles.emptyFilterValues}>No values</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesQPartAllocationTableClient({ rows, countryColumns, filterOptions }: Props) {
   const router = useRouter();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [partNumberSearch, setPartNumberSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
+  const [territorySearch, setTerritorySearch] = useState('');
   const [hierarchySelection, setHierarchySelection] = useState<LevelSelection>(defaultHierarchySelection);
   const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>({});
   const [countrySelection, setCountrySelection] = useState<string[]>([]);
@@ -52,10 +93,28 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     [bulkCountrySelection, countryColumns],
   );
 
-  const visibleCountries = useMemo(
-    () => (countrySelection.length ? countryColumns.filter((countryCode) => countrySelection.includes(countryCode)) : countryColumns),
-    [countryColumns, countrySelection],
-  );
+  const visibleCountries = useMemo(() => {
+    if (!countrySelection.length) return countryColumns;
+    const selected = new Set(countrySelection);
+    return countryColumns.filter((countryCode) => selected.has(countryCode));
+  }, [countryColumns, countrySelection]);
+
+  const territoryGroups = useMemo(() => {
+    const search = territorySearch.trim().toLowerCase();
+    return filterOptions.territoryRegions
+      .map((region) => ({
+        ...region,
+        subRegions: region.subRegions
+          .map((subRegion) => ({
+            ...subRegion,
+            countries: subRegion.countries.filter((countryCode) =>
+              search ? countryCode.toLowerCase().includes(search) : true,
+            ),
+          }))
+          .filter((subRegion) => subRegion.countries.length),
+      }))
+      .filter((region) => region.subRegions.length);
+  }, [filterOptions.territoryRegions, territorySearch]);
 
   const textFilteredRows = useMemo(() => {
     const partFilter = partNumberSearch.trim().toLowerCase();
@@ -105,9 +164,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const metadataOptions = useMemo(() => {
     const options: Record<string, string[]> = {};
     for (const field of filterOptions.metadataFields) {
-      options[field.key] = uniqueSorted(
-        hierarchyFilteredRows.flatMap((row) => row.metadataValues[field.key] ?? []),
-      );
+      options[field.key] = uniqueSorted(hierarchyFilteredRows.flatMap((row) => row.metadataValues[field.key] ?? []));
     }
     return options;
   }, [hierarchyFilteredRows, filterOptions.metadataFields]);
@@ -142,6 +199,18 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     setHierarchySelection(next);
   };
 
+  const toggleTerritoryCountry = (countryCode: string, checked: boolean) => {
+    setCountrySelection((prev) => {
+      if (checked) return prev.includes(countryCode) ? prev : [...prev, countryCode];
+      return prev.filter((value) => value !== countryCode);
+    });
+  };
+
+  const clearTerritorySelection = () => {
+    setCountrySelection([]);
+    setTerritorySearch('');
+  };
+
   const toggleCell = async (row: SalesQPartAllocationRow, countryCode: string, currentStatus: QPartAllocationStatus) => {
     const targetStatus: QPartAllocationStatus = currentStatus === 'active' ? 'inactive' : 'active';
     const key = `${row.partId}:${countryCode}`;
@@ -174,8 +243,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       setBusyKey(null);
     }
   };
-
-
 
   const pushCell = async (row: SalesQPartAllocationRow, countryCode: string) => {
     const key = `${row.partId}:${countryCode}`;
@@ -272,102 +339,106 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   return (
     <>
       <section className={`${styles.panel} ${styles.filterPanel}`}>
-        <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
-          {filtersOpen ? 'Hide filters' : 'Show filters'}
-        </button>
+        <div className={styles.filterHeaderRow}>
+          <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
+            {filtersOpen ? 'Hide filters' : 'Show filters'}
+          </button>
+          <div className={styles.rowCountBadge}>Rows in table: {filteredRows.length}</div>
+        </div>
 
         {filtersOpen ? (
-          <div className={styles.filters}>
-            <label className={styles.filterItem}>
-              <span>Part number</span>
-              <input value={partNumberSearch} onChange={(event) => setPartNumberSearch(event.target.value)} placeholder="Search part number" />
-            </label>
-            <label className={styles.filterItem}>
-              <span>English title</span>
-              <input value={titleSearch} onChange={(event) => setTitleSearch(event.target.value)} placeholder="Search title" />
-            </label>
-
-            {Array.from({ length: 7 }).map((_, index) => {
-              const level = index + 1;
-              return (
-                <label className={styles.filterItem} key={`h${level}`}>
-                  <span>Hierarchy {level}</span>
-                  <select
-                    multiple
-                    value={hierarchySelection[level] ?? []}
-                    onChange={(event) =>
-                      setHierarchyLevel(
-                        level,
-                        Array.from(event.target.selectedOptions).map((option) => option.value),
-                      )
-                    }
-                    className={styles.multiSelect}
-                  >
-                    {hierarchyOptions[level].map((option) => (
-                      <option key={`h${level}-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              );
-            })}
-
-            {filterOptions.metadataFields.map((field) => (
-              <label className={styles.filterItem} key={field.key}>
-                <span>{field.label}</span>
-                <select
-                  multiple
-                  value={metadataSelection[field.key] ?? []}
-                  onChange={(event) =>
-                    setMetadataSelection((prev) => ({
-                      ...prev,
-                      [field.key]: Array.from(event.target.selectedOptions).map((option) => option.value),
-                    }))
-                  }
-                  className={styles.multiSelect}
-                >
-                  {(metadataOptions[field.key] ?? []).map((option) => (
-                    <option key={`${field.key}-${option}`} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+          <div className={styles.filterSections}>
+            <section className={`${styles.filterSection} ${styles.territorySection}`}>
+              <div className={styles.sectionTitleRow}>
+                <h3>Territory filters</h3>
+                <button type="button" className={styles.textButton} onClick={clearTerritorySelection}>
+                  Clear
+                </button>
+              </div>
+              <label className={styles.filterItem}>
+                <span>Country code search</span>
+                <input
+                  value={territorySearch}
+                  onChange={(event) => setTerritorySearch(event.target.value.toUpperCase())}
+                  placeholder="Search country code"
+                />
               </label>
-            ))}
-
-            <label className={styles.filterItem}>
-              <span>Countries</span>
-              <select
-                multiple
-                value={countrySelection}
-                onChange={(event) => setCountrySelection(Array.from(event.target.selectedOptions).map((option) => option.value))}
-                className={styles.multiSelect}
-              >
-                {filterOptions.countries.map((countryCode) => (
-                  <option key={countryCode} value={countryCode}>
-                    {countryCode}
-                  </option>
+              <div className={styles.territoryRegionGrid}>
+                {territoryGroups.map((region: SalesQPartTerritoryFilterRegion) => (
+                  <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
+                    <div className={styles.territoryRegionTitle}>{region.region}</div>
+                    <div className={styles.checkboxList}>
+                      {region.subRegions.map((subRegion) => (
+                        <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
+                          <div className={styles.subRegionTitle}>{subRegion.subRegion}</div>
+                          {subRegion.countries.map((countryCode) => (
+                            <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
+                              <input
+                                type="checkbox"
+                                checked={countrySelection.includes(countryCode)}
+                                onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
+                              />
+                              <span>{countryCode}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </select>
-            </label>
+              </div>
+            </section>
 
-            <label className={styles.filterItem}>
-              <span>Allocation status</span>
-              <select
-                multiple
-                value={statusSelection}
-                onChange={(event) =>
-                  setStatusSelection(
-                    Array.from(event.target.selectedOptions).map((option) => option.value as QPartAllocationStatus),
-                  )
-                }
-                className={styles.multiSelect}
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </label>
+            <section className={`${styles.filterSection} ${styles.partSection}`}>
+              <div className={styles.sectionTitleRow}>
+                <h3>Part filters</h3>
+              </div>
+              <div className={styles.partFilterGrid}>
+                <label className={styles.filterItem}>
+                  <span>Part number</span>
+                  <input value={partNumberSearch} onChange={(event) => setPartNumberSearch(event.target.value)} placeholder="Search part number" />
+                </label>
+                <label className={styles.filterItem}>
+                  <span>English title</span>
+                  <input value={titleSearch} onChange={(event) => setTitleSearch(event.target.value)} placeholder="Search title" />
+                </label>
+
+                {Array.from({ length: 7 }).map((_, index) => {
+                  const level = index + 1;
+                  return (
+                    <CheckboxListFilter
+                      key={`h${level}`}
+                      label={`Hierarchy ${level}`}
+                      options={hierarchyOptions[level]}
+                      selected={hierarchySelection[level] ?? []}
+                      onChange={(values) => setHierarchyLevel(level, values)}
+                    />
+                  );
+                })}
+
+                {filterOptions.metadataFields.map((field) => (
+                  <CheckboxListFilter
+                    key={field.key}
+                    label={field.label}
+                    options={metadataOptions[field.key] ?? []}
+                    selected={metadataSelection[field.key] ?? []}
+                    onChange={(values) =>
+                      setMetadataSelection((prev) => ({
+                        ...prev,
+                        [field.key]: values,
+                      }))
+                    }
+                  />
+                ))}
+
+                <CheckboxListFilter
+                  label="Allocation status"
+                  options={['active', 'inactive']}
+                  selected={statusSelection}
+                  onChange={(values) => setStatusSelection(values as QPartAllocationStatus[])}
+                />
+              </div>
+            </section>
           </div>
         ) : null}
       </section>
@@ -416,9 +487,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
           <table className={styles.matrixTable}>
             <thead>
               <tr>
-                <th className={styles.stickyFirstColumn}>Part</th>
-                <th>English title</th>
-                <th>Hierarchy</th>
+                <th className={`${styles.stickyColumn} ${styles.stickyPart}`}>Part</th>
+                <th className={`${styles.stickyColumn} ${styles.stickyTitle}`}>English title</th>
+                <th className={`${styles.stickyColumn} ${styles.stickyHierarchy}`}>Hierarchy</th>
                 {visibleCountries.map((countryCode) => (
                   <th key={`head-${countryCode}`}>{countryCode}</th>
                 ))}
@@ -427,17 +498,17 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             <tbody>
               {filteredRows.map((row) => (
                 <tr key={row.partId} className={styles.tableRow}>
-                  <td className={styles.stickyFirstColumn}>
+                  <td className={`${styles.stickyColumn} ${styles.stickyPart}`}>
                     <Link className={styles.partLink} href={`/qpart/parts/${row.partId}`}>
                       {row.partNumber}
                     </Link>
                   </td>
-                  <td className={styles.titleCell}>
+                  <td className={`${styles.titleCell} ${styles.stickyColumn} ${styles.stickyTitle}`}>
                     <Link className={styles.titleLink} href={`/qpart/parts/${row.partId}`}>
                       <span className={styles.titleText}>{row.englishTitle}</span>
                     </Link>
                   </td>
-                  <td className={styles.hierarchyCell}>{row.hierarchySummary || '—'}</td>
+                  <td className={`${styles.hierarchyCell} ${styles.stickyColumn} ${styles.stickyHierarchy}`}>{row.hierarchySummary || '—'}</td>
                   {visibleCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
