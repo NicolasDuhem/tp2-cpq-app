@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   QPartAllocationStatus,
@@ -22,6 +22,8 @@ type Message = { type: 'success' | 'error'; text: string } | null;
 type LevelSelection = Record<number, string[]>;
 
 type MetadataSelection = Record<string, string[]>;
+type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
+type BCStatusMap = Record<string, { status: BCStatus }>;
 
 const defaultHierarchySelection: LevelSelection = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
 
@@ -37,6 +39,13 @@ function getCountryFlagUrl(countryCode: string) {
   const normalizedCode = countryCode.toUpperCase();
   const flagCode = normalizedCode === 'EL' ? 'gr' : normalizedCode.toLowerCase();
   return `https://flagcdn.com/${flagCode}.svg`;
+}
+
+function getBCBadgeClass(status: BCStatus) {
+  if (status === 'OK') return `${styles.bcBadge} ${styles.statusActive}`;
+  if (status === 'NOK') return `${styles.bcBadge} ${styles.statusNotActive}`;
+  if (status === 'ERR') return `${styles.bcBadge} ${styles.bcStatusError}`;
+  return `${styles.bcBadge} ${styles.bcStatusDisabled}`;
 }
 
 function CheckboxListFilter({
@@ -92,6 +101,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pushBusyKey, setPushBusyKey] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
+  const [bcStatusLoading, setBcStatusLoading] = useState(false);
 
   const visibleCountries = useMemo(() => {
     if (!countrySelection.length) return countryColumns;
@@ -336,6 +347,60 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const skus = [...new Set(rows.map((row) => row.partNumber.trim()).filter(Boolean))];
+      if (!skus.length) {
+        if (!cancelled) {
+          setBcStatusBySku({});
+          setBcStatusLoading(false);
+        }
+        return;
+      }
+
+      setBcStatusLoading(true);
+      try {
+        const response = await fetch('/api/bigcommerce/variant-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skus }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          items?: Record<string, { status?: BCStatus }>;
+        };
+
+        if (!response.ok || !payload.items) {
+          throw new Error('Failed to load BigCommerce variant status.');
+        }
+
+        if (!cancelled) {
+          setBcStatusBySku(
+            Object.fromEntries(
+              skus.map((sku) => {
+                const status = payload.items?.[sku]?.status;
+                return [sku, { status: status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR' }];
+              }),
+            ),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setBcStatusBySku(Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])));
+        }
+      } finally {
+        if (!cancelled) setBcStatusLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
+
   return (
     <>
       <section className={`${styles.panel} ${styles.filterPanel}`}>
@@ -470,6 +535,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
           <table className={styles.matrixTable}>
             <thead>
               <tr>
+                <th className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>BC Status</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyPart}`}>Part</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyTitle}`}>English title</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyHierarchy}`}>Hierarchy</th>
@@ -486,6 +552,15 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             <tbody>
               {filteredRows.map((row) => (
                 <tr key={row.partId} className={styles.tableRow}>
+                  <td className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>
+                    {bcStatusLoading ? (
+                      <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
+                    ) : (
+                      <span className={getBCBadgeClass(bcStatusBySku[row.partNumber]?.status ?? 'NOK')}>
+                        {bcStatusBySku[row.partNumber]?.status ?? 'NOK'}
+                      </span>
+                    )}
+                  </td>
                   <td className={`${styles.stickyColumn} ${styles.stickyPart}`}>
                     <Link className={styles.partLink} href={`/qpart/parts/${row.partId}`}>
                       {row.partNumber}

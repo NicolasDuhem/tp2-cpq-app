@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AllocationStatus,
@@ -20,6 +20,8 @@ type Props = {
 
 type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
 type Message = { type: 'success' | 'error'; text: string } | null;
+type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
+type BCStatusMap = Record<string, { status: BCStatus }>;
 const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 function statusLabel(status: AllocationStatus): string {
@@ -32,6 +34,13 @@ function statusClass(status: AllocationStatus): string {
   if (status === 'active') return styles.statusActive;
   if (status === 'not_active') return styles.statusNotActive;
   return styles.statusNotConfigured;
+}
+
+function getBCBadgeClass(status: BCStatus): string {
+  if (status === 'OK') return `${styles.bcBadge} ${styles.statusActive}`;
+  if (status === 'NOK') return `${styles.bcBadge} ${styles.statusNotActive}`;
+  if (status === 'ERR') return `${styles.bcBadge} ${styles.bcStatusError}`;
+  return `${styles.bcBadge} ${styles.bcStatusDisabled}`;
 }
 
 export default function SalesBikeAllocationTableClient({
@@ -54,6 +63,8 @@ export default function SalesBikeAllocationTableClient({
   const [pushActionKey, setPushActionKey] = useState<string | null>(null);
   const [bulkActionRunning, setBulkActionRunning] = useState(false);
   const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
+  const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
+  const [bcStatusLoading, setBcStatusLoading] = useState(false);
 
   const selectedFeatureSet = useMemo(() => new Set(selectedFeatures), [selectedFeatures]);
   const selectedCountryTargets = useMemo(
@@ -319,6 +330,60 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const skus = [...new Set(rows.map((row) => row.ipnCode.trim()).filter(Boolean))];
+      if (!skus.length) {
+        if (!cancelled) {
+          setBcStatusBySku({});
+          setBcStatusLoading(false);
+        }
+        return;
+      }
+
+      setBcStatusLoading(true);
+      try {
+        const response = await fetch('/api/bigcommerce/variant-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skus }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          items?: Record<string, { status?: BCStatus }>;
+        };
+
+        if (!response.ok || !payload.items) {
+          throw new Error('Failed to load BigCommerce variant status.');
+        }
+
+        if (!cancelled) {
+          setBcStatusBySku(
+            Object.fromEntries(
+              skus.map((sku) => {
+                const status = payload.items?.[sku]?.status;
+                return [sku, { status: status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' ? status : 'ERR' }];
+              }),
+            ),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setBcStatusBySku(Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])));
+        }
+      } finally {
+        if (!cancelled) setBcStatusLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
+
   return (
     <>
       <section className={styles.filters}>
@@ -414,6 +479,7 @@ export default function SalesBikeAllocationTableClient({
           <table className={styles.matrixTable}>
             <thead>
               <tr>
+                <th className={styles.stickyBCStatus}>BC Status</th>
                 <th className={styles.stickyFirstColumn}>ipn_code</th>
                 {!effectiveRuleset ? <th>ruleset</th> : null}
                 {visibleFeatureColumns.map((feature) => (
@@ -424,6 +490,7 @@ export default function SalesBikeAllocationTableClient({
                 ))}
               </tr>
               <tr className={styles.filterRow}>
+                <th className={styles.stickyBCStatusFilter} />
                 <th className={styles.stickyFirstColumnFilter}>
                   <input
                     value={ipnFilter}
@@ -462,6 +529,15 @@ export default function SalesBikeAllocationTableClient({
             <tbody>
               {filteredRows.map((row) => (
                 <tr key={`${row.rowRuleset}::${row.ipnCode}`}>
+                  <td className={styles.stickyBCStatus}>
+                    {bcStatusLoading ? (
+                      <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
+                    ) : (
+                      <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode]?.status ?? 'NOK')}>
+                        {bcStatusBySku[row.ipnCode]?.status ?? 'NOK'}
+                      </span>
+                    )}
+                  </td>
                   <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
                   {!effectiveRuleset ? <td>{row.rowRuleset}</td> : null}
                   {visibleFeatureColumns.map((feature) => (

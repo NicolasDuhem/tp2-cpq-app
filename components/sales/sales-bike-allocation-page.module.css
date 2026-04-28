@@ -185,7 +185,7 @@
 
 .stickyFirstColumn {
   position: sticky;
-  left: 0;
+  left: 84px;
   z-index: 5;
   background: #fff;
   min-width: 140px;
@@ -199,8 +199,29 @@
 
 .stickyFirstColumnFilter {
   position: sticky;
-  left: 0;
+  left: 84px;
   z-index: 8;
+  background: #f2f6ff !important;
+}
+
+.stickyBCStatus {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  min-width: 84px;
+  background: #fff;
+  text-align: center !important;
+}
+
+.matrixTable thead .stickyBCStatus {
+  background: #f7f7f7;
+  z-index: 9;
+}
+
+.stickyBCStatusFilter {
+  position: sticky;
+  left: 0;
+  z-index: 9;
   background: #f2f6ff !important;
 }
 
@@ -244,6 +265,37 @@
   background: #ececec;
   color: #666;
   border-color: #d3d3d3;
+}
+
+.bcBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 700;
+  border: 1px solid transparent;
+  min-width: 60px;
+  padding: 2px 6px;
+}
+
+.bcStatusChecking {
+  background: #eef1f7;
+  color: #4b5876;
+  border-color: #d2d9e7;
+}
+
+.bcStatusError {
+  background: #ffe5e5;
+  color: #a32626;
+  border-color: #e3b1b1;
+}
+
+.bcStatusDisabled {
+  background: #eef1f7;
+  color: #5f6981;
+  border-color: #d5dbea;
 }
 
 .empty {
