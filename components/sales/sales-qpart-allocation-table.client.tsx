@@ -33,6 +33,12 @@ function statusLabel(status: QPartAllocationStatus) {
   return status === 'active' ? 'Active' : 'Inactive';
 }
 
+function getCountryFlagUrl(countryCode: string) {
+  const normalizedCode = countryCode.toUpperCase();
+  const flagCode = normalizedCode === 'EL' ? 'gr' : normalizedCode.toLowerCase();
+  return `https://flagcdn.com/${flagCode}.svg`;
+}
+
 function CheckboxListFilter({
   label,
   options,
@@ -82,16 +88,10 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>({});
   const [countrySelection, setCountrySelection] = useState<string[]>([]);
   const [statusSelection, setStatusSelection] = useState<QPartAllocationStatus[]>([]);
-  const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<Message>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pushBusyKey, setPushBusyKey] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
-
-  const selectedBulkCountries = useMemo(
-    () => countryColumns.filter((countryCode) => bulkCountrySelection[countryCode]),
-    [bulkCountrySelection, countryColumns],
-  );
 
   const visibleCountries = useMemo(() => {
     if (!countrySelection.length) return countryColumns;
@@ -291,14 +291,14 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       setMessage({ type: 'error', text: 'No visible parts to update.' });
       return;
     }
-    if (!selectedBulkCountries.length) {
+    if (!visibleCountries.length) {
       setMessage({ type: 'error', text: 'Select at least one target country for bulk update.' });
       return;
     }
 
     const label = targetStatus === 'active' ? 'Activate' : 'Deactivate';
     const confirmed = window.confirm(
-      `${label} ${filteredRows.length} visible part(s) for ${selectedBulkCountries.length} country column(s): ${selectedBulkCountries.join(', ')}?`,
+      `${label} ${filteredRows.length} visible part(s) for ${visibleCountries.length} country column(s): ${visibleCountries.join(', ')}?`,
     );
     if (!confirmed) return;
 
@@ -311,7 +311,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           partIds: filteredRows.map((row) => row.partId),
-          countryCodes: selectedBulkCountries,
+          countryCodes: visibleCountries,
           targetStatus,
         }),
       });
@@ -340,10 +340,23 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     <>
       <section className={`${styles.panel} ${styles.filterPanel}`}>
         <div className={styles.filterHeaderRow}>
-          <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
-            {filtersOpen ? 'Hide filters' : 'Show filters'}
-          </button>
-          <div className={styles.rowCountBadge}>Rows in table: {filteredRows.length}</div>
+          <div className={styles.filterHeaderLeft}>
+            <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
+              {filtersOpen ? 'Hide filters' : 'Show filters'}
+            </button>
+            <div className={styles.rowCountBadge}>Rows in table: {filteredRows.length}</div>
+          </div>
+          <div className={styles.filterHeaderActions}>
+            <div className={styles.bulkSelection}>
+              Countries in scope: <strong>{visibleCountries.length}</strong>
+            </div>
+            <button type="button" className={styles.bulkActionButton} onClick={() => void runBulk('active')} disabled={bulkBusy}>
+              {bulkBusy ? 'Working…' : 'Bulk activate'}
+            </button>
+            <button type="button" className={styles.bulkActionButton} onClick={() => void runBulk('inactive')} disabled={bulkBusy}>
+              {bulkBusy ? 'Working…' : 'Bulk deactivate'}
+            </button>
+          </div>
         </div>
 
         {filtersOpen ? (
@@ -378,7 +391,10 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                                 checked={countrySelection.includes(countryCode)}
                                 onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
                               />
-                              <span>{countryCode}</span>
+                              <span className={styles.countryOptionLabel}>
+                                <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
+                                <span>{countryCode}</span>
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -443,39 +459,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         ) : null}
       </section>
 
-      <section className={`${styles.panel} ${styles.bulkActions}`}>
-        <div className={styles.bulkHeader}>
-          <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
-          <div className={styles.bulkSelection}>Selected countries: {selectedBulkCountries.length}</div>
-        </div>
-        <div className={styles.bulkCountryList}>
-          {countryColumns.map((countryCode) => (
-            <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
-              <input
-                type="checkbox"
-                checked={Boolean(bulkCountrySelection[countryCode])}
-                onChange={(event) =>
-                  setBulkCountrySelection((prev) => ({
-                    ...prev,
-                    [countryCode]: event.target.checked,
-                  }))
-                }
-                disabled={bulkBusy}
-              />
-              {countryCode}
-            </label>
-          ))}
-        </div>
-        <div className={styles.bulkButtons}>
-          <button type="button" onClick={() => void runBulk('active')} disabled={bulkBusy}>
-            {bulkBusy ? 'Working…' : 'Bulk activate'}
-          </button>
-          <button type="button" onClick={() => void runBulk('inactive')} disabled={bulkBusy}>
-            {bulkBusy ? 'Working…' : 'Bulk deactivate'}
-          </button>
-        </div>
-      </section>
-
       {message ? (
         <div className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : styles.messageError}`}>
           {message.text}
@@ -491,7 +474,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 <th className={`${styles.stickyColumn} ${styles.stickyTitle}`}>English title</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyHierarchy}`}>Hierarchy</th>
                 {visibleCountries.map((countryCode) => (
-                  <th key={`head-${countryCode}`}>{countryCode}</th>
+                  <th key={`head-${countryCode}`} className={styles.countryHeader}>
+                    <span className={styles.countryHeaderLabel}>
+                      <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
+                      <span>{countryCode}</span>
+                    </span>
+                  </th>
                 ))}
               </tr>
             </thead>

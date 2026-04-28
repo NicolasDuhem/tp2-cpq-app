@@ -51,6 +51,21 @@
   flex-wrap: wrap;
 }
 
+.filterHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filterHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .rowCountBadge {
   display: inline-flex;
   align-items: center;
@@ -137,6 +152,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  align-items: start;
 }
 
 .territoryRegionCard {
@@ -184,19 +202,20 @@
   background: #fff;
   padding: 6px 8px;
   min-height: 124px;
-  max-height: 124px;
+  max-height: 240px;
   overflow: auto;
   display: grid;
   gap: 4px;
 }
 
 .checkboxOption {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
   color: #33415f;
   font-weight: 500;
+  min-height: 22px;
 }
 
 .checkboxOption input {
@@ -209,59 +228,14 @@
   padding: 2px 0;
 }
 
-.bulkActions {
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-}
-
-.bulkHeader {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.bulkSummary,
 .bulkSelection {
   font-size: 12px;
   color: #46526e;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.bulkCountryList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 104px;
-  overflow: auto;
-  border: 1px solid #dce5f8;
-  border-radius: 12px;
-  padding: 10px;
-  background: #fbfcff;
-}
-
-.bulkCountryItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #d7e0f4;
-  background: #f4f7ff;
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: #33415f;
-  font-weight: 600;
-}
-
-.bulkButtons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.bulkButtons button {
+.bulkActionButton {
   border: 1px solid #b9c8eb;
   border-radius: 10px;
   background: #fff;
@@ -272,7 +246,7 @@
   cursor: pointer;
 }
 
-.bulkButtons button:disabled {
+.bulkActionButton:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -463,8 +437,11 @@
 .cellActions {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
+  width: 96px;
+  margin: 0 auto;
 }
 
 .pushButton {
@@ -477,6 +454,7 @@
   font-weight: 600;
   padding: 3px 9px;
   cursor: pointer;
+  min-width: 84px;
 }
 
 .pushButton:disabled {
@@ -485,7 +463,33 @@
 }
 
 .countryCell {
-  min-width: 122px;
+  min-width: 132px;
+  text-align: center !important;
+}
+
+.countryHeader {
+  min-width: 132px;
+  text-align: center !important;
+}
+
+.countryHeaderLabel,
+.countryOptionLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.countryHeaderLabel {
+  justify-content: center;
+}
+
+.countryFlag {
+  width: 14px;
+  height: 11px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid #d9e2f4;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
 }
 
 @media (max-width: 1180px) {
