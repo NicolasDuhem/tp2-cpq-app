@@ -20,6 +20,14 @@ export type VariantStatusValue = {
   status: 'OK' | 'NOK' | 'ERR' | 'DISABLED';
   productId?: number;
   variantId?: number;
+  skuId?: number;
+  imageUrl?: string;
+  calculatedPrice?: number;
+  inventoryLevel?: number;
+  purchasingDisabled?: boolean;
+  isVisible?: boolean;
+  productName?: string;
+  variantJson?: Record<string, unknown>;
   error?: string;
   errorCode?: VariantStatusCode;
 };
@@ -191,13 +199,43 @@ export async function resolveVariantStatusBySku(inputSkus: string[]): Promise<Va
             if (!sku) return null;
             return [sku, variant] as const;
           })
-          .filter((entry): entry is readonly [string, { id: number; product_id: number; sku: string | null }] => Boolean(entry)),
+          .filter((entry): entry is readonly [string, (typeof variants)[number]] => Boolean(entry)),
       );
 
       for (const sku of skuBatch) {
         const variant = foundSkuMap.get(sku);
         const value: VariantStatusValue = variant
-          ? { sku, exists: true, status: 'OK', productId: variant.product_id, variantId: variant.id }
+          ? {
+              sku,
+              exists: true,
+              status: 'OK',
+              productId: variant.product_id,
+              variantId: variant.id,
+              skuId: typeof variant.sku_id === 'number' ? variant.sku_id : undefined,
+              imageUrl: variant.image_url ? String(variant.image_url) : undefined,
+              calculatedPrice:
+                variant.calculated_price == null
+                  ? undefined
+                  : Number.isFinite(Number(variant.calculated_price))
+                    ? Number(variant.calculated_price)
+                    : undefined,
+              inventoryLevel: typeof variant.inventory_level === 'number' ? variant.inventory_level : undefined,
+              purchasingDisabled: typeof variant.purchasing_disabled === 'boolean' ? variant.purchasing_disabled : undefined,
+              isVisible: typeof variant.is_visible === 'boolean' ? variant.is_visible : undefined,
+              productName: variant.product_name ? String(variant.product_name) : undefined,
+              variantJson: {
+                id: variant.id,
+                product_id: variant.product_id,
+                sku: variant.sku ?? null,
+                sku_id: variant.sku_id ?? null,
+                image_url: variant.image_url ?? null,
+                calculated_price: variant.calculated_price ?? null,
+                inventory_level: variant.inventory_level ?? null,
+                purchasing_disabled: variant.purchasing_disabled ?? null,
+                is_visible: variant.is_visible ?? null,
+                product_name: variant.product_name ?? null,
+              },
+            }
           : { sku, exists: false, status: 'NOK' };
         result[sku] = value;
         setCachedValue(sku, value);

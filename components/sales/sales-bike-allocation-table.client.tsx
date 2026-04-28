@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AllocationStatus,
@@ -22,6 +22,23 @@ type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
 type Message = { type: 'success' | 'error'; text: string } | null;
 type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
 type BCStatusMap = Record<string, { status: BCStatus }>;
+type BCVariantStatusItem = {
+  status?: BCStatus;
+  exists?: boolean;
+  sku?: string;
+  variantId?: number;
+  productId?: number;
+  skuId?: number;
+  productName?: string;
+  imageUrl?: string;
+  calculatedPrice?: number;
+  inventoryLevel?: number;
+  purchasingDisabled?: boolean;
+  isVisible?: boolean;
+  variantJson?: Record<string, unknown>;
+  error?: string;
+  errorCode?: string;
+};
 type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
 const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
@@ -332,8 +349,48 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
+
+  useEffect(() => {
+    const skus: string[] = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku)))];
+    if (!skus.length) return;
+
+    let cancelled = false;
+    const loadCachedStatuses = async () => {
+      try {
+        const response = await fetch('/api/bigcommerce/item-map/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skus }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          items?: Record<string, { bcStatus?: BCStatus }>;
+        };
+        if (!response.ok || !payload.items || cancelled) return;
+
+        const nextStatuses: BCStatusMap = {};
+        for (const sku of skus) {
+          const status = payload.items?.[sku]?.bcStatus;
+          if (status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED') {
+            nextStatuses[sku] = { status };
+          }
+        }
+
+        if (Object.keys(nextStatuses).length > 0) {
+          setBcStatusBySku((prev) => ({ ...prev, ...nextStatuses }));
+        }
+      } catch (error) {
+        console.warn('[BC status][bike-allocation] cached lookup failed', error);
+      }
+    };
+
+    void loadCachedStatuses();
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredRows]);
+
   const runBCStatusCheck = async () => {
-    const skus = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter(Boolean))];
+    const skus: string[] = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku)))];
     console.info('[BC status][bike-allocation]', {
       loadedRowCount: rows.length,
       visibleRowCount: filteredRows.length,
@@ -359,7 +416,7 @@ export default function SalesBikeAllocationTableClient({
         body: JSON.stringify({ skus }),
       });
       const payload = (await response.json().catch(() => ({}))) as {
-        items?: Record<string, { status?: BCStatus }>;
+        items?: Record<string, BCVariantStatusItem>;
       };
       if (!response.ok || !payload.items) throw new Error('Failed to load BigCommerce variant status.');
 
@@ -382,6 +439,18 @@ export default function SalesBikeAllocationTableClient({
         ok,
         nok,
         err,
+      });
+
+      void fetch('/api/bigcommerce/item-map/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: 'BIKE',
+          sourcePage: 'bike-allocation',
+          items: Object.fromEntries(skus.map((sku) => [sku, payload.items?.[sku] ?? { status: 'ERR', sku }])),
+        }),
+      }).catch((error) => {
+        console.warn('[BC status][bike-allocation] failed to upsert cache', error);
       });
     } catch {
       const failedStatuses = Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])) as BCStatusMap;

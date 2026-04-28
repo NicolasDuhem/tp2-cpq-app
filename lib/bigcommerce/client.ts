@@ -58,6 +58,13 @@ export type BigCommerceVariant = {
   id: number;
   product_id: number;
   sku: string | null;
+  sku_id?: number | null;
+  image_url?: string | null;
+  calculated_price?: number | string | null;
+  inventory_level?: number | null;
+  purchasing_disabled?: boolean | null;
+  is_visible?: boolean | null;
+  product_name?: string | null;
 };
 
 export async function fetchBigCommerceVariantsBySkus(skus: string[]): Promise<BigCommerceVariant[]> {
@@ -78,6 +85,7 @@ export async function fetchBigCommerceVariantsBySkus(skus: string[]): Promise<Bi
     params.set('sku:in', querySkus.join(','));
     params.set('page', '1');
     params.set('limit', '50');
+    params.set('include_fields', 'id,product_id,sku,sku_id,image_url,calculated_price,inventory_level,purchasing_disabled,is_visible,product_name');
     const requestPath = `/stores/${config.storeHash}/v3/catalog/variants?${params.toString()}`;
 
     const response = await fetch(`${config.apiBaseUrl}${requestPath}`, {
