@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db/client';
 import { listMetadataDefinitions } from '@/lib/qpart/metadata/service';
 import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
+import { listCountryMappings } from '@/lib/cpq/setup/service';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
 
@@ -14,8 +15,17 @@ export type SalesQPartAllocationRow = {
   countryStatuses: Record<string, QPartAllocationStatus>;
 };
 
+export type SalesQPartTerritoryFilterRegion = {
+  region: string;
+  subRegions: Array<{
+    subRegion: string;
+    countries: string[];
+  }>;
+};
+
 export type SalesQPartAllocationFilterOptions = {
   countries: string[];
+  territoryRegions: SalesQPartTerritoryFilterRegion[];
   metadataFields: Array<{ key: string; label: string }>;
 };
 
@@ -108,10 +118,11 @@ async function listPartMetadataMap() {
 export async function getSalesQPartAllocationPageData(): Promise<SalesQPartAllocationPageData> {
   await syncQPartCountryAllocationRows();
 
-  const [allocations, metadataMap, metadataDefinitions] = await Promise.all([
+  const [allocations, metadataMap, metadataDefinitions, countryMappings] = await Promise.all([
     listPartAllocationRows(),
     listPartMetadataMap(),
     listMetadataDefinitions(true),
+    listCountryMappings(true),
   ]);
 
   const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code)).filter(Boolean))].sort((a, b) =>
@@ -158,11 +169,60 @@ export async function getSalesQPartAllocationPageData(): Promise<SalesQPartAlloc
     })
     .sort((a, b) => a.partNumber.localeCompare(b.partNumber));
 
+  const usedCountries = new Set(countries);
+  const regionMap = new Map<string, Map<string, string[]>>();
+
+  for (const mapping of countryMappings) {
+    const countryCode = asTrimmed(mapping.country_code).toUpperCase();
+    if (!usedCountries.has(countryCode)) continue;
+
+    const region = asTrimmed(mapping.region) || 'Other';
+    const subRegion = asTrimmed(mapping.sub_region) || 'Other';
+    const subRegionMap = regionMap.get(region) ?? new Map<string, string[]>();
+    const subRegionCountries = subRegionMap.get(subRegion) ?? [];
+    if (!subRegionCountries.includes(countryCode)) {
+      subRegionCountries.push(countryCode);
+      subRegionCountries.sort((a, b) => a.localeCompare(b));
+    }
+    subRegionMap.set(subRegion, subRegionCountries);
+    regionMap.set(region, subRegionMap);
+  }
+
+  const mappedCountries = new Set<string>();
+  const territoryRegions: SalesQPartTerritoryFilterRegion[] = [...regionMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([region, subRegionMap]) => ({
+      region,
+      subRegions: [...subRegionMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([subRegion, values]) => {
+          values.forEach((countryCode) => mappedCountries.add(countryCode));
+          return {
+            subRegion,
+            countries: values,
+          };
+        }),
+    }));
+
+  const unmappedCountries = countries.filter((countryCode) => !mappedCountries.has(countryCode));
+  if (unmappedCountries.length) {
+    territoryRegions.push({
+      region: 'Other',
+      subRegions: [
+        {
+          subRegion: 'Unmapped',
+          countries: unmappedCountries,
+        },
+      ],
+    });
+  }
+
   return {
     rows,
     countries,
     filterOptions: {
       countries,
+      territoryRegions,
       metadataFields: metadataDefinitions.map((definition) => ({ key: definition.key, label: definition.label_en })),
     },
   };

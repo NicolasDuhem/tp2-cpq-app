@@ -1,8 +1,8 @@
 .page {
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   max-width: 100%;
   margin: 0;
   min-width: 0;
@@ -12,7 +12,7 @@
 .header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   align-items: flex-end;
 }
 
@@ -30,20 +30,6 @@
   max-width: 760px;
 }
 
-.statsBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: #eaf0ff;
-  border: 1px solid #cfdbff;
-  color: #1f3f7e;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
 .panel {
   background: #fff;
   border: 1px solid #dde5f6;
@@ -52,9 +38,30 @@
 }
 
 .filterPanel {
-  padding: 12px;
+  padding: 10px;
   display: grid;
   gap: 10px;
+}
+
+.filterHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rowCountBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #eaf0ff;
+  border: 1px solid #cfdbff;
+  color: #1f3f7e;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .collapseToggle {
@@ -65,14 +72,47 @@
   font-size: 12px;
   font-weight: 700;
   padding: 7px 12px;
-  justify-self: start;
   cursor: pointer;
 }
 
-.filters {
+.filterSections {
   display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 2fr);
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.filterSection {
+  border: 1px solid #dce5f8;
+  border-radius: 12px;
+  background: #fbfcff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sectionTitleRow h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #20335e;
+}
+
+.textButton {
+  border: 1px solid #d2dcf3;
+  background: #fff;
+  color: #36538e;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .filterItem {
@@ -84,18 +124,89 @@
   font-weight: 600;
 }
 
-.filterItem select,
 .filterItem input {
   border: 1px solid #ccd5ea;
   border-radius: 10px;
   padding: 7px 10px;
   font-size: 12px;
   color: #1e2a45;
-  background: #fcfdff;
+  background: #fff;
 }
 
-.multiSelect {
-  min-height: 84px;
+.territoryRegionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.territoryRegionCard {
+  border: 1px solid #e0e7f7;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.territoryRegionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #294682;
+}
+
+.subRegionBlock {
+  padding-top: 4px;
+  border-top: 1px dashed #ebf0fb;
+}
+
+.subRegionBlock:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.subRegionTitle {
+  font-size: 11px;
+  color: #657493;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.partFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.checkboxList {
+  border: 1px solid #d7e0f4;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 8px;
+  min-height: 124px;
+  max-height: 124px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+}
+
+.checkboxOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #33415f;
+  font-weight: 500;
+}
+
+.checkboxOption input {
+  margin: 0;
+}
+
+.emptyFilterValues {
+  color: #7a88a6;
+  font-size: 11px;
+  padding: 2px 0;
 }
 
 .bulkActions {
@@ -225,16 +336,6 @@
   letter-spacing: 0.01em;
 }
 
-.matrixTable thead th:first-child {
-  border-top-left-radius: 12px;
-  border-bottom-left-radius: 12px;
-}
-
-.matrixTable thead th:last-child {
-  border-top-right-radius: 12px;
-  border-bottom-right-radius: 12px;
-}
-
 .tableRow td {
   background: #fff;
   border-top: 1px solid #e9eef9;
@@ -257,15 +358,33 @@
   background: #fafcff;
 }
 
-.stickyFirstColumn {
+.stickyColumn {
   position: sticky;
-  left: 0;
   z-index: 5;
-  background: #fff;
-  min-width: 170px;
 }
 
-.matrixTable thead .stickyFirstColumn {
+.stickyPart {
+  left: 0;
+  min-width: 170px;
+  max-width: 170px;
+  background: #fff;
+}
+
+.stickyTitle {
+  left: 170px;
+  min-width: 250px;
+  max-width: 250px;
+  background: #fff;
+}
+
+.stickyHierarchy {
+  left: 420px;
+  min-width: 280px;
+  max-width: 280px;
+  background: #fff;
+}
+
+.matrixTable thead .stickyColumn {
   background: #f5f8ff;
   z-index: 6;
 }
@@ -290,18 +409,19 @@
 }
 
 .titleCell {
-  min-width: 240px;
-  max-width: 320px;
+  min-width: 250px;
+  max-width: 250px;
 }
 
 .titleText {
   overflow: hidden;
   text-overflow: ellipsis;
+  display: inline-block;
+  max-width: 100%;
 }
 
 .hierarchyCell {
   color: #687792;
-  max-width: 280px;
 }
 
 .statusButton {
@@ -340,7 +460,6 @@
   background: #fbfcff;
 }
 
-
 .cellActions {
   display: flex;
   flex-direction: column;
@@ -367,6 +486,12 @@
 
 .countryCell {
   min-width: 122px;
+}
+
+@media (max-width: 1180px) {
+  .filterSections {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1024px) {
