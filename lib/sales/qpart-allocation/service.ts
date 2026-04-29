@@ -76,7 +76,6 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
       coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7
     from qpart_parts p
     join qpart_country_allocation allocation on allocation.part_id = p.id
-    where (${hasPartIds}::boolean = false or p.id = any(${normalizedPartIds}::bigint[]))
     left join qpart_hierarchy_nodes n0 on n0.id = p.hierarchy_node_id
     left join qpart_hierarchy_nodes n1 on n1.id = n0.parent_id
     left join qpart_hierarchy_nodes n2 on n2.id = n1.parent_id
@@ -84,6 +83,7 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
     left join qpart_hierarchy_nodes n4 on n4.id = n3.parent_id
     left join qpart_hierarchy_nodes n5 on n5.id = n4.parent_id
     left join qpart_hierarchy_nodes n6 on n6.id = n5.parent_id
+    where (${hasPartIds}::boolean = false or p.id = any(${normalizedPartIds}::bigint[]))
     order by p.part_number, allocation.country_code
   `) as PartAllocationRow[];
 }
