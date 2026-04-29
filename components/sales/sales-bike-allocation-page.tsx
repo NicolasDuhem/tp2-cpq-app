@@ -6,6 +6,8 @@ type SearchParams = {
   ruleset?: string;
   country_code?: string;
   bike_type?: string;
+  page?: string;
+  page_size?: string;
 };
 
 export default async function SalesBikeAllocationPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
@@ -14,6 +16,8 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
     ruleset: String(resolvedSearch.ruleset ?? '').trim(),
     country_code: String(resolvedSearch.country_code ?? '').trim(),
     bike_type: String(resolvedSearch.bike_type ?? '').trim(),
+    page: Number(resolvedSearch.page ?? 1),
+    pageSize: Number(resolvedSearch.page_size ?? 100),
   };
 
   const data = await getSalesBikeAllocationPageData(filters);
@@ -33,6 +37,7 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
         countryColumns={data.countryColumns}
         filterOptions={data.filterOptions}
         filters={data.filters}
+        pagination={data.pagination}
       />
     </div>
   );

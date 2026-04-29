@@ -135,3 +135,8 @@ QPart sales allocation behavior:
 - New internal route: `/admin/data-point` (admin mode nav only).
 - Purpose: browse page-by-page UI data points with source/read/write/process annotations.
 - Backed by structured registry in `lib/admin/data-point-registry.ts` and rendered by `components/admin/data-point-page.tsx`.
+
+## 2026-04-29 Performance pass
+- Added server-side pagination for `/sales/bike-allocation` and `/cpq/results`.
+- Added low-churn filter-option caching (5-minute in-process TTL) for those pages.
+- Added debounced/min-length `sku_code` search gating on `/cpq/results`.
