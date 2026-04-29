@@ -1,0 +1,18 @@
+"table_schema","table_name","estimated_live_rows","estimated_dead_rows","seq_scan","seq_tup_read","idx_scan","idx_tup_fetch","rows_inserted","rows_updated","rows_deleted","rows_hot_updated","last_vacuum","last_autovacuum","last_analyze","last_autoanalyze","table_size_pretty","table_size_bytes","indexes_size_pretty","indexes_size_bytes","total_size_pretty","total_size_bytes"
+"public","qpart_country_allocation",49028,1947,2076,54705168,178981,4919644,49028,100492,0,241,,"2026-04-28 08:44:50.727954+00",,"2026-04-28 08:44:50.788456+00","9792 kB",10027008,"7984 kB",8175616,"17 MB",18235392
+"public","cpq_configuration_references",132,0,56,557,279,369,230,2,30,2,,,,"2026-04-21 10:32:16.02928+00","72 kB",73728,"80 kB",81920,"16 MB",16973824
+"public","qpart_part_metadata_values",7022,37,357,635048,3507,7404,7138,0,128,0,,"2026-04-24 15:00:15.20259+00",,"2026-04-24 15:01:15.238027+00","704 kB",720896,"472 kB",483328,"1216 kB",1245184
+"public","qpart_part_translations",5266,41,359,72815,3462,5474,5331,37,73,32,,"2026-04-24 15:00:15.223692+00",,"2026-04-24 15:01:15.250569+00","368 kB",376832,"320 kB",327680,"728 kB",745472
+"public","qpart_parts",1753,9,7725,3910451,77643,250145,1751,28,0,21,,"2026-04-24 15:00:15.241599+00",,"2026-04-24 15:01:15.26276+00","296 kB",303104,"240 kB",245760,"576 kB",589824
+"public","cpq_sampler_result",111,34,404,26407,391,1534,366,202,151,39,,"2026-04-22 15:54:50.139548+00",,"2026-04-22 15:54:50.169978+00","56 kB",57344,"80 kB",81920,"552 kB",565248
+"public","bc_item_variant_map",102,0,92,8262,102,0,102,0,0,0,,,,"2026-04-28 14:58:36.253984+00","24 kB",24576,"160 kB",163840,"216 kB",221184
+"public","cpq_image_management",134,55,1401,127930,367,1132,157,137,23,105,,,,"2026-04-16 10:31:39.662353+00","32 kB",32768,"96 kB",98304,"160 kB",163840
+"public","qpart_hierarchy_nodes",276,1,54712,14406186,6968,7037,340,0,0,0,,"2026-04-24 14:35:14.892766+00",,"2026-04-24 14:36:14.9159+00","32 kB",32768,"80 kB",81920,"152 kB",155648
+"public","cpq_setup_account_context",6,15,2749,13292,52,189,11,10,0,2,,,,,"8192 bytes",8192,"48 kB",49152,"64 kB",65536
+"public","qpart_part_channel_assignment",6,6,3,0,161,48,12,0,6,0,,,,,"8192 bytes",8192,"48 kB",49152,"64 kB",65536
+"public","cpq_country_mappings",28,0,2090,58464,50,211,28,0,0,0,,,,,"8192 bytes",8192,"32 kB",32768,"48 kB",49152
+"public","cpq_setup_ruleset",9,0,810,7218,57,270,9,0,0,0,,,,,"8192 bytes",8192,"32 kB",32768,"48 kB",49152
+"public","qpart_metadata_definitions",13,14,304,2312,7168,7173,13,14,0,14,,,,,"8192 bytes",8192,"32 kB",32768,"48 kB",49152
+"public","qpart_part_bike_type_compatibility",3,22,235,641,7691,121,25,0,22,0,,,,,"8192 bytes",8192,"32 kB",32768,"48 kB",49152
+"public","qpart_part_compatibility_rules",4,41,9830,39275,58,168,45,0,41,0,,,,"2026-04-24 12:39:28.051808+00","8192 bytes",8192,"32 kB",32768,"48 kB",49152
+"public","qpart_compatibility_reference_values",0,0,8,0,20,0,0,0,0,0,,,,,"0 bytes",0,"16 kB",16384,"24 kB",24576
