@@ -30,13 +30,16 @@ button { cursor:pointer; color:var(--accent); background:#fff; font-weight:700; 
 button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
 .tableWrap { overflow:auto; border:1px solid var(--line); border-radius:12px; background:#fff; max-height:none; min-height:0; min-width:0; width:100%; max-width:100%; }
 
-.qpartPartsTableWrap { max-height: calc(100vh - 355px); overflow: auto; }
-.qpartPartsTableWrap th, .qpartPartsTableWrap td { padding: 6px 8px; font-size: 12px; }
+.qpartPartsTableWrap { max-height: calc(100vh - 362px); overflow: auto; }
+.qpartPartsTableWrap table { border-collapse: separate; border-spacing: 0 6px; width: max-content; min-width: 100%; padding: 0 6px 6px; }
+.qpartPartsTableWrap th, .qpartPartsTableWrap td { padding: 5px 8px; font-size: 12px; border: 0; }
+.qpartPartsTableWrap thead th { background: #f5f8ff; border-top: 1px solid #e0e8fa; border-bottom: 1px solid #e0e8fa; color: #33415f; }
+.qpartPartsTableWrap tbody tr { background: #fff; box-shadow: 0 1px 0 #e5ebf8; }
 .qpartPartsHeader { margin-bottom: 0; }
-.qpartImportCard { padding: 8px 10px; display: grid; gap: 6px; }
-.qpartImportHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.qpartImportToolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.qpartImportFileInput { max-width: 280px; padding: 6px 8px; font-size: 12px; }
+.qpartPartsHeaderActions { justify-content: flex-end; align-items: center; }
+.qpartImportToolbarInline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-left: 6px; border-left: 1px solid #dce5f8; }
+.qpartImportFileInput { max-width: 250px; padding: 5px 8px; font-size: 12px; }
+.qpartImportMessage { margin: 0 0 2px; }
 .qpartPaginationRow { margin-top: -2px; }
 
 table { border-collapse: collapse; width:max-content; min-width:100%; }

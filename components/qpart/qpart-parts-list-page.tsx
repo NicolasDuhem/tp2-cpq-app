@@ -124,35 +124,29 @@ export default function QPartPartsListPage() {
           <h1>QPart Parts</h1>
           <p className="subtle">Search and manage spare parts under isolated /qpart APIs.</p>
         </div>
-        <div className="rowButtons">
+        <div className="rowButtons qpartPartsHeaderActions">
           <Link className="tab" href="/qpart">Back to QPart home</Link>
           <Link className="tab tabActive" href="/qpart/parts/new">Create part</Link>
           <a className="tab" href="/api/qpart/parts/export">Export CSV</a>
+          <div className="qpartImportToolbarInline">
+            <input className="qpartImportFileInput" type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
+            <button className="tab" onClick={() => void runImport(true)} disabled={importing}>{importing ? 'Running…' : 'Preview import'}</button>
+            <button className="primary" onClick={() => void runImport(false)} disabled={importing}>{importing ? 'Applying…' : 'Apply import'}</button>
+          </div>
         </div>
       </div>
 
-      <div className="card qpartImportCard">
-        <div className="qpartImportHeader">
-          <strong>CSV import</strong>
-          <span className="subtle">Preview first, then apply.</span>
+      {importError ? <p className="errorText qpartImportMessage">{importError}</p> : null}
+      {importSummary ? (
+        <div className="note qpartImportMessage">
+          <strong>Summary:</strong>{' '}
+          created {String(importSummary.created ?? 0)}, updated {String(importSummary.updated ?? 0)}, skipped {String(importSummary.skipped ?? 0)}, errors {String(importSummary.errors ?? 0)}
+          <details style={{ marginTop: 8 }}>
+            <summary>Row details</summary>
+            <pre>{JSON.stringify(importSummary.rowResults ?? [], null, 2)}</pre>
+          </details>
         </div>
-        <div className="qpartImportToolbar">
-          <input className="qpartImportFileInput" type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
-          <button className="tab" onClick={() => void runImport(true)} disabled={importing}>{importing ? 'Running…' : 'Preview import'}</button>
-          <button className="primary" onClick={() => void runImport(false)} disabled={importing}>{importing ? 'Applying…' : 'Apply import'}</button>
-        </div>
-        {importError ? <p className="errorText">{importError}</p> : null}
-        {importSummary ? (
-          <div className="note" style={{ marginTop: 12 }}>
-            <strong>Summary:</strong>{' '}
-            created {String(importSummary.created ?? 0)}, updated {String(importSummary.updated ?? 0)}, skipped {String(importSummary.skipped ?? 0)}, errors {String(importSummary.errors ?? 0)}
-            <details style={{ marginTop: 8 }}>
-              <summary>Row details</summary>
-              <pre>{JSON.stringify(importSummary.rowResults ?? [], null, 2)}</pre>
-            </details>
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       <div className="denseGrid4">
         <label>
