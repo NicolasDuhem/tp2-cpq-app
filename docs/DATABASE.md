@@ -151,3 +151,9 @@ QPart dynamic reference reads (read-only):
 
 ## Data-point audit support tables (operational mapping)
 The admin data-point viewer (`/admin/data-point`) maps page controls to the same table/service ownership documented above. It does not write data itself; it is an internal registry view sourced from `lib/admin/data-point-registry.ts`.
+
+## Live Neon intelligence reference (April 2026)
+- Source of truth for live database metadata is `database-intelligence/*` (current files are capitalized in-repo, e.g., `Schema.csv`, `Constraints.csv`, `Indexes.csv`, `Table_sizes.csv`).
+- Note: `database-intelligence/Schema.csv` currently lacks a `table_name` column and appears to include only one table column list; use `columns_by_table_summary.csv` + constraints/index exports to validate table-wide shape until export format is corrected.
+- Performance-sensitive tables from live stats include `qpart_country_allocation`, `qpart_hierarchy_nodes`, `qpart_parts`, and `CPQ_sampler_result`-backed matrix routes.
+- See `docs/neon-compute-hotspot-analysis.md` for current hotspot prioritization and `docs/neon-compute-proposed-indexes.sql` for review-first SQL recommendations.

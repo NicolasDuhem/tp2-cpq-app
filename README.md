@@ -108,3 +108,8 @@ Important: external upsert matching relies on unique business key `(namespace, i
 create unique index if not exists cpq_sampler_result_namespace_ipn_country_uniq
   on public.cpq_sampler_result(namespace, ipn_code, country_code);
 ```
+
+## Live Neon metadata source of truth
+- Live schema intelligence exports are in `database-intelligence/` and should be treated as the primary runtime DB reference for performance/schema validation.
+- Important: files in this repo currently use capitalized names (for example `Schema.csv`, `Constraints.csv`, `Indexes.csv`, `Table_sizes.csv`), and there is currently no `database-intelligence/README.md`.
+- For Neon load analysis and optimization planning, use those CSV exports first, then reconcile with code.
