@@ -6,12 +6,17 @@ export async function GET(req: NextRequest) {
   const hierarchyNodeIdRaw = req.nextUrl.searchParams.get('hierarchy_node_id');
   const hierarchyNodeId = hierarchyNodeIdRaw ? Number(hierarchyNodeIdRaw) : null;
 
-  const rows = await listParts({
+  const page = Number(req.nextUrl.searchParams.get('page') ?? 1);
+  const pageSize = Number(req.nextUrl.searchParams.get('page_size') ?? 200);
+
+  const result = await listParts({
     search,
     hierarchy_node_id: Number.isFinite(hierarchyNodeId) ? hierarchyNodeId : null,
+    page,
+    pageSize,
   });
 
-  return NextResponse.json({ rows });
+  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {

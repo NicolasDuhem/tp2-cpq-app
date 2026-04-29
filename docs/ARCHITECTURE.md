@@ -140,3 +140,9 @@ QPart sales allocation behavior:
 - Added server-side pagination for `/sales/bike-allocation` and `/cpq/results`.
 - Added low-churn filter-option caching (5-minute in-process TTL) for those pages.
 - Added debounced/min-length `sku_code` search gating on `/cpq/results`.
+
+
+## Pagination updates (2026-04-29)
+- Sales Bike Allocation uses server page size 100 and now renders page-number pagination below the table.
+- Sales QPart Allocation now uses server-side pagination on part rows with default page size 200 and below-table page-number pagination.
+- QPart Parts list now uses server-side pagination with default page size 200 and below-table pagination controls.

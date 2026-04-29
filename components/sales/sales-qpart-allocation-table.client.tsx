@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   QPartAllocationStatus,
   SalesQPartAllocationFilterOptions,
@@ -15,6 +15,7 @@ type Props = {
   rows: SalesQPartAllocationRow[];
   countryColumns: string[];
   filterOptions: SalesQPartAllocationFilterOptions;
+  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
 };
 
 type Message = { type: 'success' | 'error'; text: string } | null;
@@ -105,8 +106,10 @@ function CheckboxListFilter({
   );
 }
 
-export default function SalesQPartAllocationTableClient({ rows, countryColumns, filterOptions }: Props) {
+export default function SalesQPartAllocationTableClient({ rows, countryColumns, filterOptions, pagination }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [partNumberSearch, setPartNumberSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
@@ -315,6 +318,21 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       setPushBusyKey(null);
     }
   };
+
+
+
+  const goToPage = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('page', String(Math.min(Math.max(1, nextPage), pagination.totalPages)));
+    params.set('page_size', String(pagination.pageSize));
+    router.replace(`${pathname}?${params.toString()}`);
+  };
+
+  const pageItems = useMemo(() => {
+    const p = pagination.page; const t = pagination.totalPages; const w = [p-1,p,p+1,p+2].filter((n)=>n>=1&&n<=t);
+    const items:number[] = [1, ...w, t].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>a-b);
+    return items;
+  }, [pagination.page, pagination.totalPages]);
 
   const runBulk = async (targetStatus: QPartAllocationStatus) => {
     if (!filteredRows.length) {
