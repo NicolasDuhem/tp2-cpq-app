@@ -582,8 +582,8 @@ async function normalizeImportRows(rawRows: ParsedCell[], context: CsvContext) {
 }
 
 async function findPartByNumber(partNumber: string) {
-  const rows = await listParts({ search: partNumber });
-  return rows.find((row) => row.part_number === partNumber) ?? null;
+  const result = await listParts({ search: partNumber, page: 1, pageSize: 500 });
+  return result.rows.find((row) => row.part_number === partNumber) ?? null;
 }
 
 export async function importPartsCsv(rawCsv: string, dryRun = true): Promise<ImportSummary> {
