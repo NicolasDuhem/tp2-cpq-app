@@ -136,3 +136,9 @@ Canonical `json_snapshot` and sampler payload source are:
 6. UI refreshes field-level locale values/status (`x/y translated`) without expanding all locale inputs by default.
 
 Future compatibility note: this design allows adding a bulk "new locale backfill" workflow later without changing table design.
+
+
+## Admin process-audit page
+- Route: `/admin/data-point` (admin-mode visibility).
+- Process role: static+curated contract index connecting page UI controls to source table/service and write APIs.
+- Primary maintenance rule: update registry entries when page controls, APIs, or data ownership changes.

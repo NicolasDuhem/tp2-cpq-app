@@ -147,3 +147,7 @@ QPart dynamic reference reads (read-only):
 - CSV import/export includes static columns:
   - `channels` (pipe-separated: `Ecom|Dealer`)
   - `countries` (pipe-separated ISO2: `GB|DE`)
+
+
+## Data-point audit support tables (operational mapping)
+The admin data-point viewer (`/admin/data-point`) maps page controls to the same table/service ownership documented above. It does not write data itself; it is an internal registry view sourced from `lib/admin/data-point-registry.ts`.

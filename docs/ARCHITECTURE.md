@@ -129,3 +129,9 @@ QPart sales allocation behavior:
 - Base locale value is source-of-truth and is never replaced by AI output.
 - Save policy currently uses fill-missing behavior (existing non-empty locale translations are skipped by default).
 - Model default: `gpt-5.4-mini`, override with `OPENAI_TRANSLATION_MODEL`.
+
+
+## 11) Admin data-contract observability
+- New internal route: `/admin/data-point` (admin mode nav only).
+- Purpose: browse page-by-page UI data points with source/read/write/process annotations.
+- Backed by structured registry in `lib/admin/data-point-registry.ts` and rendered by `components/admin/data-point-page.tsx`.
