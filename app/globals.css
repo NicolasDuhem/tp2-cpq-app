@@ -30,8 +30,14 @@ button { cursor:pointer; color:var(--accent); background:#fff; font-weight:700; 
 button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
 .tableWrap { overflow:auto; border:1px solid var(--line); border-radius:12px; background:#fff; max-height:none; min-height:0; min-width:0; width:100%; max-width:100%; }
 
-.qpartPartsTableWrap { max-height: calc(100vh - 420px); overflow: auto; }
+.qpartPartsTableWrap { max-height: calc(100vh - 355px); overflow: auto; }
 .qpartPartsTableWrap th, .qpartPartsTableWrap td { padding: 6px 8px; font-size: 12px; }
+.qpartPartsHeader { margin-bottom: 0; }
+.qpartImportCard { padding: 8px 10px; display: grid; gap: 6px; }
+.qpartImportHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qpartImportToolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.qpartImportFileInput { max-width: 280px; padding: 6px 8px; font-size: 12px; }
+.qpartPaginationRow { margin-top: -2px; }
 
 table { border-collapse: collapse; width:max-content; min-width:100%; }
 th, td { border:1px solid var(--line); padding:8px 10px; font-size:13px; }

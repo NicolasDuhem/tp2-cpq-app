@@ -640,8 +640,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       ) : null}
 
       {filteredRows.length ? (
-        <div className={styles.tableWrap}>
-          <table className={styles.matrixTable}>
+        <section className={styles.tableSection}>
+          <div className={styles.tableWrap}>
+            <table className={styles.matrixTable}>
             <thead>
               <tr>
                 <th className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>BC Status</th>
@@ -710,8 +711,39 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+          <div className={styles.paginationBar}>
+            <span className={styles.paginationSummary}>
+              Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)
+            </span>
+            <div className={styles.paginationControls}>
+              <button type="button" onClick={() => goToPage(Math.max(1, pagination.page - 1))} disabled={pagination.page <= 1}>
+                Prev
+              </button>
+              {pageItems.map((item, index) => (
+                <span key={`p-${item}`}>
+                  {index > 0 && item - pageItems[index - 1] > 1 ? <span className={styles.paginationEllipsis}>…</span> : null}
+                  <button
+                    type="button"
+                    className={item === pagination.page ? styles.paginationCurrent : undefined}
+                    onClick={() => goToPage(item)}
+                    disabled={item === pagination.page}
+                  >
+                    {item}
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => goToPage(Math.min(pagination.totalPages, pagination.page + 1))}
+                disabled={pagination.page >= pagination.totalPages}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </section>
       ) : (
         <div className={styles.empty}>No QPart allocation rows match the current filters.</div>
       )}
