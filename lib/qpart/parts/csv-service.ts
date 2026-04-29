@@ -303,6 +303,21 @@ function buildColumns(context: CsvContext) {
   ];
 }
 
+async function listAllPartRecords() {
+  const allRows: Awaited<ReturnType<typeof listParts>>['rows'] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const result = await listParts({ page, pageSize: 500 });
+    allRows.push(...result.rows);
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+
+  return allRows;
+}
+
 export async function exportPartsCsv(partId?: number) {
   const context = await getCsvContext();
   const columns = buildColumns(context);
@@ -310,7 +325,7 @@ export async function exportPartsCsv(partId?: number) {
 
   const parts = partId
     ? [await getPartDetail(partId)].filter((row): row is QPartPartDetail => Boolean(row))
-    : await Promise.all((await listParts()).map((row) => getPartDetail(row.id))).then((rows) => rows.filter((row): row is QPartPartDetail => Boolean(row)));
+    : await Promise.all((await listAllPartRecords()).map((row) => getPartDetail(row.id))).then((rows) => rows.filter((row): row is QPartPartDetail => Boolean(row)));
   if (partId && !parts.length) throw new Error('Part not found');
 
   const lines = [columns.join(',')];
