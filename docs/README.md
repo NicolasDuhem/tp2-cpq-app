@@ -19,6 +19,7 @@ The docs are intentionally code-derived and must be updated with behavior change
 - `REPO_STRUCTURE.md` — ownership map by folder/route/service.
 - `MAIN_APP_DEEP_DIVE.md` — cross-cutting deep dive for current production behavior.
 - `PAGES_AND_COMPONENTS.md` — detailed page-by-page and component-by-component documentation.
+- `PAGE_DATA_POINTS.md` — page-level UI data-point/source-target audit + Admin Data point viewer scope.
 - `EXTERNAL_POSTGRES_ROW_PUSH.md` — external Azure PostgreSQL row-push behavior, env vars, and upsert-key SQL prep.
 
 ## Audit artifacts

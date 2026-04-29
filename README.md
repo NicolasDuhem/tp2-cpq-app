@@ -11,6 +11,7 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/process` → SOP/process instruction page.
 - `/dashboard` → executive operational dashboard (territory coverage, bike-type health, picture completeness, and gap leaderboards).
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
+- `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
   - Includes per-cell **Push** action to upsert bike row-country records into external PostgreSQL `cpq_sampler_result` using business key `(namespace, ipn_code, country_code)`.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.

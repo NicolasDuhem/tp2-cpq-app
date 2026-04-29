@@ -19,6 +19,7 @@ const links: NavLink[] = [
   { href: '/qpart', label: 'QPart - Spare Parts PIM' },
   { href: '/cpq/results', label: 'CPQ - Sampler Results', adminOnly: true },
   { href: '/cpq/ui-docs', label: 'CPQ - UI Docs', adminOnly: true },
+  { href: '/admin/data-point', label: 'Admin - Data point', adminOnly: true },
 ];
 
 export default function AppNavigation() {
