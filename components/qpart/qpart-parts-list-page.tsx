@@ -10,6 +10,7 @@ const defaultSelections: LevelSelections = { 1: '', 2: '', 3: '', 4: '', 5: '', 
 
 export default function QPartPartsListPage() {
   const [rows, setRows] = useState<QPartRecord[]>([]);
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 200, totalRows: 0, totalPages: 1 });
   const [hierarchyNodes, setHierarchyNodes] = useState<QPartHierarchyNode[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,11 +27,13 @@ export default function QPartPartsListPage() {
     return null;
   }, [selections]);
 
-  const load = async () => {
+  const load = async (nextPage = 1) => {
     setLoading(true);
     const params = new URLSearchParams();
     if (search.trim()) params.set('search', search.trim());
     if (selectedHierarchyNodeId) params.set('hierarchy_node_id', String(selectedHierarchyNodeId));
+    params.set('page', String(nextPage));
+    params.set('page_size', String(pagination.pageSize));
 
     const [partRes, hierarchyRes] = await Promise.all([
       fetch(`/api/qpart/parts?${params.toString()}`),
@@ -41,6 +44,7 @@ export default function QPartPartsListPage() {
     const hierarchyPayload = await hierarchyRes.json().catch(() => ({ rows: [] }));
 
     setRows(partPayload.rows || []);
+    setPagination(partPayload.pagination || { page: 1, pageSize: pagination.pageSize, totalRows: 0, totalPages: 1 });
     setHierarchyNodes(hierarchyPayload.rows || []);
     setLoading(false);
   };
@@ -94,8 +98,15 @@ export default function QPartPartsListPage() {
 
     setImportSummary(payload.summary || null);
     setImporting(false);
-    if (!dryRun && res.ok) await load();
+    if (!dryRun && res.ok) await load(pagination.page);
   };
+
+  const pageItems = useMemo(() => {
+    const page = pagination.page;
+    const total = pagination.totalPages;
+    const around = [page - 1, page, page + 1, page + 2].filter((value) => value >= 1 && value <= total);
+    return [1, ...around, total].filter((value, index, array) => array.indexOf(value) === index).sort((a, b) => a - b);
+  }, [pagination.page, pagination.totalPages]);
 
   return (
     <section className="pageRoot">
@@ -186,6 +197,20 @@ export default function QPartPartsListPage() {
             ) : null}
           </tbody>
         </table>
+      </div>
+
+      <div className="rowButtons" style={{ justifyContent: 'space-between' }}>
+        <span className="subtle">Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)</span>
+        <div className="rowButtons">
+          <button className="tab" onClick={() => void load(Math.max(1, pagination.page - 1))} disabled={pagination.page <= 1}>Prev</button>
+          {pageItems.map((item, index) => (
+            <span key={item}>
+              {index > 0 && item - pageItems[index - 1] > 1 ? <span className="subtle">… </span> : null}
+              <button className={`tab ${item === pagination.page ? 'tabActive' : ''}`} onClick={() => void load(item)}>{item}</button>
+            </span>
+          ))}
+          <button className="tab" onClick={() => void load(Math.min(pagination.totalPages, pagination.page + 1))} disabled={pagination.page >= pagination.totalPages}>Next</button>
+        </div>
       </div>
     </section>
   );

@@ -33,6 +33,7 @@ export type SalesQPartAllocationPageData = {
   rows: SalesQPartAllocationRow[];
   countries: string[];
   filterOptions: SalesQPartAllocationFilterOptions;
+  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
 };
 
 type PartAllocationRow = {
@@ -56,7 +57,9 @@ function normalizeStatus(value: unknown): QPartAllocationStatus {
   return value === true || value === 'true' || value === 't' || value === 1 || value === '1' ? 'active' : 'inactive';
 }
 
-async function listPartAllocationRows(): Promise<PartAllocationRow[]> {
+async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocationRow[]> {
+  const normalizedPartIds = (partIds ?? []).filter((value) => Number.isFinite(value));
+  const hasPartIds = normalizedPartIds.length > 0;
   return (await sql`
     select
       p.id as part_id,
@@ -73,6 +76,7 @@ async function listPartAllocationRows(): Promise<PartAllocationRow[]> {
       coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7
     from qpart_parts p
     join qpart_country_allocation allocation on allocation.part_id = p.id
+    where (${hasPartIds}::boolean = false or p.id = any(${normalizedPartIds}::bigint[]))
     left join qpart_hierarchy_nodes n0 on n0.id = p.hierarchy_node_id
     left join qpart_hierarchy_nodes n1 on n1.id = n0.parent_id
     left join qpart_hierarchy_nodes n2 on n2.id = n1.parent_id
@@ -115,11 +119,28 @@ async function listPartMetadataMap() {
   return map;
 }
 
-export async function getSalesQPartAllocationPageData(): Promise<SalesQPartAllocationPageData> {
+export async function getSalesQPartAllocationPageData(input: { page?: number; pageSize?: number } = {}): Promise<SalesQPartAllocationPageData> {
   await syncQPartCountryAllocationRows();
 
+  const pageSize = Math.min(500, Math.max(1, Number(input.pageSize ?? 200)));
+
+  const countRows = (await sql`select count(*)::int as count from qpart_parts`) as Array<{ count: number }>;
+  const totalRows = Number(countRows[0]?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const page = Math.min(totalPages, Math.max(1, Number(input.page ?? 1)));
+  const offset = (page - 1) * pageSize;
+
+  const pagePartRows = (await sql`
+    select p.id
+    from qpart_parts p
+    order by p.part_number, p.id
+    limit ${pageSize}
+    offset ${offset}
+  `) as Array<{ id: number }> ;
+  const pagePartIds = pagePartRows.map((row) => Number(row.id));
+
   const [allocations, metadataMap, metadataDefinitions, countryMappings] = await Promise.all([
-    listPartAllocationRows(),
+    listPartAllocationRows(pagePartIds),
     listPartMetadataMap(),
     listMetadataDefinitions(true),
     listCountryMappings(true),
@@ -220,6 +241,7 @@ export async function getSalesQPartAllocationPageData(): Promise<SalesQPartAlloc
   return {
     rows,
     countries,
+    pagination: { page, pageSize, totalRows, totalPages },
     filterOptions: {
       countries,
       territoryRegions,

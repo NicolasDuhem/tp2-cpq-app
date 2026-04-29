@@ -398,6 +398,13 @@ export default function SalesBikeAllocationTableClient({
     };
   }, [filteredRows]);
 
+
+  const paginationItems = useMemo(() => {
+    const p = pagination.page; const t = pagination.totalPages;
+    const around = [p-1,p,p+1,p+2].filter((n)=>n>=1&&n<=t);
+    return [1,...around,t].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>a-b);
+  }, [pagination.page, pagination.totalPages]);
+
   const runBCStatusCheck = async () => {
     const skus: string[] = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku)))];
     console.info('[BC status][bike-allocation]', {
@@ -525,21 +532,6 @@ export default function SalesBikeAllocationTableClient({
             ))}
           </select>
         </label>
-      </section>
-      <section className={styles.filters}>
-        <div>
-          Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)
-        </div>
-        <button type="button" onClick={() => setPage(pagination.page - 1)} disabled={pagination.page <= 1}>
-          Prev
-        </button>
-        <button
-          type="button"
-          onClick={() => setPage(pagination.page + 1)}
-          disabled={pagination.page >= pagination.totalPages}
-        >
-          Next
-        </button>
       </section>
 
       <section className={styles.bulkActions}>
