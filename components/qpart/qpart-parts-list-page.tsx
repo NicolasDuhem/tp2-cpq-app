@@ -119,7 +119,7 @@ export default function QPartPartsListPage() {
 
   return (
     <section className="pageRoot">
-      <div className="compactPageHeader">
+      <div className="compactPageHeader qpartPartsHeader">
         <div>
           <h1>QPart Parts</h1>
           <p className="subtle">Search and manage spare parts under isolated /qpart APIs.</p>
@@ -131,11 +131,13 @@ export default function QPartPartsListPage() {
         </div>
       </div>
 
-      <div className="card">
-        <h3>CSV import</h3>
-        <p className="subtle">CSV uses business columns with dynamic metadata and locale translation fields. Preview (dry-run) before apply.</p>
-        <div className="rowButtons">
-          <input type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
+      <div className="card qpartImportCard">
+        <div className="qpartImportHeader">
+          <strong>CSV import</strong>
+          <span className="subtle">Preview first, then apply.</span>
+        </div>
+        <div className="qpartImportToolbar">
+          <input className="qpartImportFileInput" type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
           <button className="tab" onClick={() => void runImport(true)} disabled={importing}>{importing ? 'Running…' : 'Preview import'}</button>
           <button className="primary" onClick={() => void runImport(false)} disabled={importing}>{importing ? 'Applying…' : 'Apply import'}</button>
         </div>
@@ -208,7 +210,7 @@ export default function QPartPartsListPage() {
         </table>
       </div>
 
-      <div className="rowButtons" style={{ justifyContent: 'space-between' }}>
+      <div className="rowButtons qpartPaginationRow" style={{ justifyContent: 'space-between' }}>
         <span className="subtle">Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)</span>
         <div className="rowButtons">
           <button className="tab" onClick={() => void load(Math.max(1, pagination.page - 1))} disabled={pagination.page <= 1}>Prev</button>
