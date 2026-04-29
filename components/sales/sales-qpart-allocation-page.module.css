@@ -282,7 +282,7 @@
   background: #fff;
   max-width: 100%;
   width: 100%;
-  max-height: calc(100vh - 300px);
+  max-height: calc(100vh - 360px);
   min-height: 340px;
   box-shadow: 0 10px 24px rgba(21, 37, 72, 0.08);
 }
