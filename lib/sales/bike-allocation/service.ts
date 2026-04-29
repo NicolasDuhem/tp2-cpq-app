@@ -56,7 +56,17 @@ export type SalesBikeAllocationPageData = {
   availableFeatures: string[];
   countryColumns: string[];
   rows: SalesBikeAllocationRow[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
 };
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 300;
+const FILTER_OPTIONS_TTL_MS = 5 * 60 * 1000;
+let filterOptionsCache: { expiresAt: number; value: SalesBikeAllocationFilterOptions } | null = null;
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
 const asBoolean = (value: unknown) => value === true || value === 'true' || value === 't' || value === 1 || value === '1';
@@ -122,6 +132,7 @@ function parseReplaySelectedOptions(jsonResult: unknown): ReplaySelectedOption[]
 }
 
 async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
+  if (filterOptionsCache && filterOptionsCache.expiresAt > Date.now()) return filterOptionsCache.value;
   const [rulesetRows, countryRows, bikeTypeRows] = await Promise.all([
     sql`select distinct ruleset from CPQ_sampler_result where coalesce(trim(ruleset), '') <> '' order by ruleset`,
     sql`select distinct country_code from CPQ_sampler_result where coalesce(trim(country_code), '') <> '' order by country_code`,
@@ -133,11 +144,13 @@ async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
     `,
   ]);
 
-  return {
+  const value = {
     rulesets: (rulesetRows as Array<{ ruleset: string }>).map((row) => row.ruleset),
     countryCodes: (countryRows as Array<{ country_code: string }>).map((row) => row.country_code),
     bikeTypes: (bikeTypeRows as Array<{ bike_type: string }>).map((row) => row.bike_type),
   };
+  filterOptionsCache = { value, expiresAt: Date.now() + FILTER_OPTIONS_TTL_MS };
+  return value;
 }
 
 async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<SamplerRow[]> {
@@ -333,7 +346,7 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
 }
 
 export async function getSalesBikeAllocationPageData(
-  filters: SalesBikeAllocationFilters,
+  filters: SalesBikeAllocationFilters & { page?: number; pageSize?: number },
 ): Promise<SalesBikeAllocationPageData> {
   const normalizedFilters = {
     ruleset: asTrimmed(filters.ruleset),
@@ -418,12 +431,18 @@ export async function getSalesBikeAllocationPageData(
       ) as Record<string, AllocationStatus>,
     }))
     .sort((a, b) => (a.ipnCode === b.ipnCode ? a.rowRuleset.localeCompare(b.rowRuleset) : a.ipnCode.localeCompare(b.ipnCode)));
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize ?? DEFAULT_PAGE_SIZE)));
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const page = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1)));
+  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   return {
     filters: normalizedFilters,
     filterOptions,
     availableFeatures: orderedFeatures,
     countryColumns,
-    rows,
+    rows: pagedRows,
+    pagination: { page, pageSize, totalRows, totalPages },
   };
 }

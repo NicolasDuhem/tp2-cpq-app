@@ -16,6 +16,7 @@ type Props = {
   countryColumns: string[];
   filterOptions: SalesBikeAllocationFilterOptions;
   filters: SalesBikeAllocationFilters;
+  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
 };
 
 type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
@@ -67,6 +68,7 @@ export default function SalesBikeAllocationTableClient({
   countryColumns,
   filterOptions,
   filters,
+  pagination,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -123,6 +125,13 @@ export default function SalesBikeAllocationTableClient({
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
+  const setPage = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('page', String(page));
+    params.set('page_size', String(pagination.pageSize));
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   };
@@ -516,6 +525,21 @@ export default function SalesBikeAllocationTableClient({
             ))}
           </select>
         </label>
+      </section>
+      <section className={styles.filters}>
+        <div>
+          Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)
+        </div>
+        <button type="button" onClick={() => setPage(pagination.page - 1)} disabled={pagination.page <= 1}>
+          Prev
+        </button>
+        <button
+          type="button"
+          onClick={() => setPage(pagination.page + 1)}
+          disabled={pagination.page >= pagination.totalPages}
+        >
+          Next
+        </button>
       </section>
 
       <section className={styles.bulkActions}>

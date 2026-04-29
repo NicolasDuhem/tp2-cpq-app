@@ -15,6 +15,8 @@ export type CpqResultsFilters = {
   ruleset?: string;
   bike_type?: string;
   sku_code?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 export type CpqResultsFilterOptions = {
@@ -38,7 +40,12 @@ export type CpqResultsMatrixPageData = {
   countryColumns: string[];
   filterOptions: CpqResultsFilterOptions;
   rowIdentityDescription: string;
+  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
 };
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 250;
+const FILTER_OPTIONS_TTL_MS = 5 * 60 * 1000;
+let filterOptionsCache: { expiresAt: number; value: CpqResultsFilterOptions } | null = null;
 
 type ParsedOption = {
   featureLabel: string;
@@ -82,6 +89,7 @@ function buildRowKey(source: { skuCode: string; ruleset: string; featureSignatur
 }
 
 async function listFilterOptions(): Promise<CpqResultsFilterOptions> {
+  if (filterOptionsCache && filterOptionsCache.expiresAt > Date.now()) return filterOptionsCache.value;
   const [rulesets, bikeTypes, samplerCountries, accountCountries] = await Promise.all([
     sql`select distinct ruleset from CPQ_sampler_result where coalesce(trim(ruleset), '') <> '' order by ruleset`,
     sql`
@@ -103,17 +111,23 @@ async function listFilterOptions(): Promise<CpqResultsFilterOptions> {
   for (const row of samplerCountries as Array<{ country_code: string }>) countryCodes.add(row.country_code);
   for (const row of accountCountries as Array<{ country_code: string }>) countryCodes.add(row.country_code);
 
-  return {
+  const value = {
     rulesets: (rulesets as Array<{ ruleset: string }>).map((row) => row.ruleset),
     bikeTypes: (bikeTypes as Array<{ bike_type: string }>).map((row) => row.bike_type),
     countryCodes: [...countryCodes].sort((a, b) => a.localeCompare(b)),
   };
+  filterOptionsCache = { value, expiresAt: Date.now() + FILTER_OPTIONS_TTL_MS };
+  return value;
 }
 
 async function listSamplerRows(filters: CpqResultsFilters): Promise<SamplerMatrixSourceRow[]> {
   const ruleset = asTrimmed(filters.ruleset);
   const bikeType = asTrimmed(filters.bike_type);
   const skuCode = asTrimmed(filters.sku_code);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize ?? DEFAULT_PAGE_SIZE)));
+  const page = Math.max(1, Number(filters.page ?? 1));
+  const offset = (page - 1) * pageSize;
+  const effectiveSkuCode = skuCode.length >= 3 ? skuCode : '';
 
   return (await sql`
     select
@@ -130,8 +144,10 @@ async function listSamplerRows(filters: CpqResultsFilters): Promise<SamplerMatri
     where coalesce(trim(sr.ipn_code), '') <> ''
       and (${ruleset} = '' or sr.ruleset = ${ruleset})
       and (${bikeType} = '' or coalesce(rs.bike_type, '') = ${bikeType})
-      and (${skuCode} = '' or sr.ipn_code ilike ${`%${skuCode}%`})
+      and (${effectiveSkuCode} = '' or sr.ipn_code ilike ${`%${effectiveSkuCode}%`})
     order by sr.created_at desc, sr.id desc
+    limit ${pageSize}
+    offset ${offset}
   `) as SamplerMatrixSourceRow[];
 }
 
@@ -195,6 +211,8 @@ export async function getCpqResultsPageData(filters: CpqResultsFilters): Promise
       return a.rowKey.localeCompare(b.rowKey);
     });
 
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize ?? DEFAULT_PAGE_SIZE)));
+  const page = Math.max(1, Number(filters.page ?? 1));
   return {
     rows,
     featureColumns: orderedFeatureColumns,
@@ -202,5 +220,6 @@ export async function getCpqResultsPageData(filters: CpqResultsFilters): Promise
     filterOptions,
     rowIdentityDescription:
       'Rows are grouped by sku_code (from CPQ_sampler_result.ipn_code) + ruleset + full selected feature signature to keep one row per stable bike configuration before pivoting countries.',
+    pagination: { page, pageSize, totalRows: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) },
   };
 }

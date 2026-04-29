@@ -157,3 +157,7 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 - Note: `database-intelligence/Schema.csv` currently lacks a `table_name` column and appears to include only one table column list; use `columns_by_table_summary.csv` + constraints/index exports to validate table-wide shape until export format is corrected.
 - Performance-sensitive tables from live stats include `qpart_country_allocation`, `qpart_hierarchy_nodes`, `qpart_parts`, and `CPQ_sampler_result`-backed matrix routes.
 - See `docs/neon-compute-hotspot-analysis.md` for current hotspot prioritization and `docs/neon-compute-proposed-indexes.sql` for review-first SQL recommendations.
+
+## 2026-04-29 Neon load reduction updates
+- No new indexes were applied in this pass; review-first indexes remain pending in `docs/neon-compute-proposed-indexes.sql`.
+- `sql/schema.sql` was reviewed against `database-intelligence/*` and intentionally not bulk-resynced in this pass for safety.
