@@ -43,8 +43,17 @@ export default function QPartPartsListPage() {
     const partPayload = await partRes.json().catch(() => ({ rows: [] }));
     const hierarchyPayload = await hierarchyRes.json().catch(() => ({ rows: [] }));
 
-    setRows(partPayload.rows || []);
-    setPagination(partPayload.pagination || { page: 1, pageSize: pagination.pageSize, totalRows: 0, totalPages: 1 });
+    const normalizedRows = Array.isArray(partPayload)
+      ? partPayload
+      : Array.isArray(partPayload?.rows)
+        ? partPayload.rows
+        : [];
+    const normalizedPagination = !Array.isArray(partPayload) && partPayload?.pagination
+      ? partPayload.pagination
+      : { page: nextPage, pageSize: pagination.pageSize, totalRows: normalizedRows.length, totalPages: 1 };
+
+    setRows(normalizedRows);
+    setPagination(normalizedPagination);
     setHierarchyNodes(hierarchyPayload.rows || []);
     setLoading(false);
   };
@@ -165,7 +174,7 @@ export default function QPartPartsListPage() {
         })}
       </div>
 
-      <div className="tableWrap">
+      <div className="tableWrap qpartPartsTableWrap">
         <table>
           <thead>
             <tr>
