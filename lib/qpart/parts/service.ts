@@ -86,19 +86,6 @@ export async function listParts(filters: { search?: string; hierarchy_node_id?: 
 }
 
 export async function getPartById(id: number) {
-  const pageSize = Math.min(500, Math.max(1, Number(filters.pageSize ?? 200)));
-
-  const countRows = (await sql`
-    select count(*)::int as count
-    from qpart_parts p
-    where (${search} = '' or p.part_number ilike ${`%${search}%`} or p.default_name ilike ${`%${search}%`})
-      and (${hierarchyNodeId}::bigint is null or p.hierarchy_node_id = ${hierarchyNodeId})
-  `) as Array<{ count: number }>;
-  const totalRows = Number(countRows[0]?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const page = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1)));
-  const offset = (page - 1) * pageSize;
-
   const rows = (await sql`
     with recursive hierarchy_path as (
       select n.id, n.parent_id, n.label_en::text as path
@@ -278,19 +265,6 @@ export async function createPart(rawInput: Record<string, unknown>) {
   if (!input.part_number) throw new Error('part_number is required');
   if (!input.default_name) throw new Error('default_name is required');
 
-  const pageSize = Math.min(500, Math.max(1, Number(filters.pageSize ?? 200)));
-
-  const countRows = (await sql`
-    select count(*)::int as count
-    from qpart_parts p
-    where (${search} = '' or p.part_number ilike ${`%${search}%`} or p.default_name ilike ${`%${search}%`})
-      and (${hierarchyNodeId}::bigint is null or p.hierarchy_node_id = ${hierarchyNodeId})
-  `) as Array<{ count: number }>;
-  const totalRows = Number(countRows[0]?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const page = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1)));
-  const offset = (page - 1) * pageSize;
-
   const rows = (await sql`
     insert into qpart_parts (part_number, status, default_name, default_description, hierarchy_node_id)
     values (${input.part_number}, ${input.status}, ${input.default_name}, ${input.default_description ?? null}, ${input.hierarchy_node_id ?? null})
@@ -309,19 +283,6 @@ export async function updatePart(id: number, rawInput: Record<string, unknown>) 
 
   if (!input.part_number) throw new Error('part_number is required');
   if (!input.default_name) throw new Error('default_name is required');
-
-  const pageSize = Math.min(500, Math.max(1, Number(filters.pageSize ?? 200)));
-
-  const countRows = (await sql`
-    select count(*)::int as count
-    from qpart_parts p
-    where (${search} = '' or p.part_number ilike ${`%${search}%`} or p.default_name ilike ${`%${search}%`})
-      and (${hierarchyNodeId}::bigint is null or p.hierarchy_node_id = ${hierarchyNodeId})
-  `) as Array<{ count: number }>;
-  const totalRows = Number(countRows[0]?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const page = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1)));
-  const offset = (page - 1) * pageSize;
 
   const rows = (await sql`
     update qpart_parts
