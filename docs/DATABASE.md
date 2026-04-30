@@ -164,9 +164,9 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 
 
 ## QPart image upload (v1)
-- QPart detail page now has a compact **Take picture** action beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- QPart detail page has compact **Take picture** (primary slot) and **Manage pictures** actions beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
 - Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
 - Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
-- Metadata is stored in Neon table `qpart_part_images` (one row per part) with blob URL/path, mime type, file size and timestamps.
+- Metadata is stored in Neon table `qpart_part_images` (one-to-many per part) with primary (`image_index=0`) and numbered secondary slots (`1..n`), plus blob URL/path, mime type, file size and timestamps.
 - Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
-- Planned next step: read metadata/blob path and render the current part image on detail page when present.
+- QPart detail header now renders the primary image when present, and **Manage pictures** provides compact add/list/delete for all slots.

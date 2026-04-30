@@ -8,6 +8,7 @@ import { QPartCompatibilityCandidate, QPartCompatibilityRule, QPartHierarchyNode
 
 type Props = { partId?: number };
 type LevelSelections = Record<number, string>;
+type QPartImage = { id: number; image_index: number; is_primary: boolean; blob_url: string; blob_path: string };
 
 const emptyLevelSelections: LevelSelections = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '', 7: '' };
 
@@ -45,7 +46,12 @@ export default function QPartPartFormPage({ partId }: Props) {
   const [message, setMessage] = useState('');
   const [imageUploadMessage, setImageUploadMessage] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingAdditionalImage, setUploadingAdditionalImage] = useState(false);
+  const [deletingImageId, setDeletingImageId] = useState<number | null>(null);
+  const [managePicturesOpen, setManagePicturesOpen] = useState(false);
+  const [images, setImages] = useState<QPartImage[]>([]);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const additionalImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const nonBaseLocales = useMemo(() => locales.filter((locale) => locale !== baseLocale), [locales, baseLocale]);
 
@@ -160,6 +166,18 @@ export default function QPartPartFormPage({ partId }: Props) {
     };
     void loadPart();
   }, [partId, hierarchyNodes.length, baseLocale]);
+
+  const loadImages = async () => {
+    if (!partId) return;
+    const res = await fetch(`/api/qpart/parts/${partId}/image`);
+    const payload = await res.json().catch(() => ({ rows: [] }));
+    if (!res.ok) return;
+    setImages(Array.isArray(payload.rows) ? payload.rows : []);
+  };
+
+  useEffect(() => {
+    void loadImages();
+  }, [partId]);
 
   const getLevelOptions = (level: number) => {
     if (level === 1) return hierarchyNodes.filter((node) => node.level === 1 && node.is_active);
@@ -339,7 +357,7 @@ export default function QPartPartFormPage({ partId }: Props) {
     return new File([blob], `${partNumber}.jpg`, { type: 'image/jpeg' });
   };
 
-  const onImageFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+  const onImageFileChange = async (event: ChangeEvent<HTMLInputElement>, mode: 'primary' | 'additional') => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) {
@@ -355,7 +373,8 @@ export default function QPartPartFormPage({ partId }: Props) {
       return;
     }
 
-    setUploadingImage(true);
+    if (mode === 'primary') setUploadingImage(true);
+    else setUploadingAdditionalImage(true);
     setImageUploadMessage('Processing image…');
 
     try {
@@ -363,15 +382,33 @@ export default function QPartPartFormPage({ partId }: Props) {
       const formData = new FormData();
       formData.append('image', optimizedFile);
 
-      const response = await fetch(`/api/qpart/parts/${partId}/image`, { method: 'POST', body: formData });
+      const response = await fetch(`/api/qpart/parts/${partId}/image?mode=${mode}`, { method: 'POST', body: formData });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Upload failed.');
 
-      setImageUploadMessage('Picture uploaded successfully.');
+      setImageUploadMessage(mode === 'primary' ? 'Picture uploaded successfully.' : 'Additional picture uploaded successfully.');
+      await loadImages();
     } catch (error) {
       setImageUploadMessage(error instanceof Error ? error.message : 'Image upload failed.');
     } finally {
-      setUploadingImage(false);
+      if (mode === 'primary') setUploadingImage(false);
+      else setUploadingAdditionalImage(false);
+    }
+  };
+
+  const deleteImage = async (imageId: number) => {
+    if (!partId) return;
+    setDeletingImageId(imageId);
+    try {
+      const res = await fetch(`/api/qpart/parts/${partId}/image?imageId=${imageId}`, { method: 'DELETE' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || 'Delete failed.');
+      setImageUploadMessage('Picture deleted.');
+      await loadImages();
+    } catch (error) {
+      setImageUploadMessage(error instanceof Error ? error.message : 'Delete failed.');
+    } finally {
+      setDeletingImageId(null);
     }
   };
   const persist = async () => {
@@ -446,10 +483,14 @@ export default function QPartPartFormPage({ partId }: Props) {
                   <button type="button" className="tab qpartTakePictureButton" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage || !partNumber.trim()}>
                     {uploadingImage ? 'Uploading…' : 'Take picture'}
                   </button>
-                  <input ref={imageInputRef} type="file" accept="image/*" capture="environment" onChange={onImageFileChange} style={{ display: 'none' }} />
+                  <button type="button" className="tab qpartTakePictureButton" onClick={() => setManagePicturesOpen(true)}>
+                    Manage pictures
+                  </button>
+                  <input ref={imageInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void onImageFileChange(event, 'primary')} style={{ display: 'none' }} />
                 </>
               ) : null}
             </div>
+            {images[0]?.blob_url ? <img className="qpartMainImagePreview" src={images[0].blob_url} alt={`${partNumber} primary`} /> : null}
             {!partId ? (
               <label className="qpartTopHeaderInput">
                 Assign part number
@@ -589,6 +630,35 @@ export default function QPartPartFormPage({ partId }: Props) {
           </div>
         ) : null}
       </div>
+      {managePicturesOpen ? (
+        <div className="qpartPicturesModalBackdrop" onClick={() => setManagePicturesOpen(false)}>
+          <div className="qpartPicturesModal" onClick={(event) => event.stopPropagation()}>
+            <div className="qpartPicturesModalHeader">
+              <h3>Manage pictures</h3>
+              <button type="button" className="tab" onClick={() => setManagePicturesOpen(false)}>Close</button>
+            </div>
+            <div className="qpartPicturesActions">
+              <button type="button" className="tab" disabled={uploadingAdditionalImage} onClick={() => additionalImageInputRef.current?.click()}>
+                {uploadingAdditionalImage ? 'Uploading…' : 'Add picture'}
+              </button>
+              <input ref={additionalImageInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void onImageFileChange(event, 'additional')} style={{ display: 'none' }} />
+            </div>
+            <div className="qpartPicturesGrid">
+              {images.map((image) => (
+                <div key={image.id} className="qpartPictureCard">
+                  <img src={image.blob_url} alt={image.is_primary ? 'Primary image' : `Image ${image.image_index}`} />
+                  <div className="qpartPictureMeta">
+                    <span>{image.is_primary ? 'Primary' : `Slot ${image.image_index}`}</span>
+                    <button type="button" onClick={() => void deleteImage(image.id)} disabled={deletingImageId === image.id}>
+                      {deletingImageId === image.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="qpartSectionHeader">
