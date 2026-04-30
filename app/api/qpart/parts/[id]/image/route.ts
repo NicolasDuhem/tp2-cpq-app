@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { del } from '@vercel/blob';
 import { getPartDetail } from '@/lib/qpart/parts/service';
-import { choosePreferredQPartImage, deleteQPartImageMetadata, getNextImageIndex, listQPartImages, upsertQPartImageMetadata } from '@/lib/qpart/parts/image-service';
+import { choosePreferredQPartImage, deleteQPartImageMetadata, getNextImageIndex, reconcileQPartImages, upsertQPartImageMetadata } from '@/lib/qpart/parts/image-service';
 
 type Params = { params: { id: string } };
 
@@ -14,7 +14,11 @@ function buildBlobPath(partNumber: string, imageIndex: number) {
 export async function GET(_req: NextRequest, { params }: Params) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid part id.' }, { status: 400 });
-  const rows = await listQPartImages(id);
+  const part = await getPartDetail(id);
+  const partNumber = part?.part?.part_number?.trim();
+  if (!partNumber) return NextResponse.json({ error: 'Part not found or part number is missing.' }, { status: 400 });
+
+  const rows = await reconcileQPartImages(id, partNumber);
   return NextResponse.json({ rows, primary: choosePreferredQPartImage(rows) });
 }
 
@@ -78,7 +82,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const imageId = Number(req.nextUrl.searchParams.get('imageId'));
   if (!Number.isFinite(imageId)) return NextResponse.json({ error: 'Invalid image id.' }, { status: 400 });
 
-  const rows = await listQPartImages(id);
+  const part = await getPartDetail(id);
+  const partNumber = part?.part?.part_number?.trim();
+  if (!partNumber) return NextResponse.json({ error: 'Part not found or part number is missing.' }, { status: 400 });
+
+  const rows = await reconcileQPartImages(id, partNumber);
   const target = rows.find((row) => row.id === imageId);
   if (!target) return NextResponse.json({ error: 'Image not found.' }, { status: 404 });
 
