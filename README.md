@@ -113,3 +113,12 @@ create unique index if not exists cpq_sampler_result_namespace_ipn_country_uniq
 - Live schema intelligence exports are in `database-intelligence/` and should be treated as the primary runtime DB reference for performance/schema validation.
 - Important: files in this repo currently use capitalized names (for example `Schema.csv`, `Constraints.csv`, `Indexes.csv`, `Table_sizes.csv`), and there is currently no `database-intelligence/README.md`.
 - For Neon load analysis and optimization planning, use those CSV exports first, then reconcile with code.
+
+
+## QPart image upload (v1)
+- QPart detail page now has a compact **Take picture** action beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
+- Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
+- Metadata is stored in Neon table `qpart_part_images` (one row per part) with blob URL/path, mime type, file size and timestamps.
+- Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
+- Planned next step: read metadata/blob path and render the current part image on detail page when present.

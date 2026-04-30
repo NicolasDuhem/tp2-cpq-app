@@ -142,3 +142,12 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 - Route: `/admin/data-point` (admin-mode visibility).
 - Process role: static+curated contract index connecting page UI controls to source table/service and write APIs.
 - Primary maintenance rule: update registry entries when page controls, APIs, or data ownership changes.
+
+
+## QPart image upload (v1)
+- QPart detail page now has a compact **Take picture** action beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
+- Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
+- Metadata is stored in Neon table `qpart_part_images` (one row per part) with blob URL/path, mime type, file size and timestamps.
+- Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
+- Planned next step: read metadata/blob path and render the current part image on detail page when present.

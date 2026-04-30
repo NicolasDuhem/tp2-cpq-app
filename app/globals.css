@@ -426,3 +426,5 @@ th { position:sticky; top:0; background:#f8faff; z-index:1; }
   font-size: 12px;
   text-transform: none !important;
 }
+.qpartPartIdentityRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.qpartTakePictureButton { padding:5px 10px; font-size:12px; }
