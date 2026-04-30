@@ -161,3 +161,12 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 ## 2026-04-29 Neon load reduction updates
 - No new indexes were applied in this pass; review-first indexes remain pending in `docs/neon-compute-proposed-indexes.sql`.
 - `sql/schema.sql` was reviewed against `database-intelligence/*` and intentionally not bulk-resynced in this pass for safety.
+
+
+## QPart image upload (v1)
+- QPart detail page now has a compact **Take picture** action beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
+- Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
+- Metadata is stored in Neon table `qpart_part_images` (one row per part) with blob URL/path, mime type, file size and timestamps.
+- Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
+- Planned next step: read metadata/blob path and render the current part image on detail page when present.

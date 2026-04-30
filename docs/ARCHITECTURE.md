@@ -146,3 +146,12 @@ QPart sales allocation behavior:
 - Sales Bike Allocation uses server page size 100 and now renders page-number pagination below the table.
 - Sales QPart Allocation now uses server-side pagination on part rows with default page size 200 and below-table page-number pagination.
 - QPart Parts list now uses server-side pagination with default page size 200 and below-table pagination controls.
+
+
+## QPart image upload (v1)
+- QPart detail page now has a compact **Take picture** action beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
+- Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
+- Metadata is stored in Neon table `qpart_part_images` (one row per part) with blob URL/path, mime type, file size and timestamps.
+- Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
+- Planned next step: read metadata/blob path and render the current part image on detail page when present.

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { QPART_CHANNEL_OPTIONS } from '@/lib/qpart/channels';
 import { QPartCompatibilityCandidate, QPartCompatibilityRule, QPartHierarchyNode, QPartMetadataDefinition } from '@/types/qpart';
@@ -43,6 +43,9 @@ export default function QPartPartFormPage({ partId }: Props) {
   const [derivedCandidates, setDerivedCandidates] = useState<QPartCompatibilityCandidate[]>([]);
   const [hierarchySelections, setHierarchySelections] = useState<LevelSelections>(emptyLevelSelections);
   const [message, setMessage] = useState('');
+  const [imageUploadMessage, setImageUploadMessage] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const nonBaseLocales = useMemo(() => locales.filter((locale) => locale !== baseLocale), [locales, baseLocale]);
 
@@ -313,6 +316,64 @@ export default function QPartPartFormPage({ partId }: Props) {
     setCoreMessages((prev) => ({ ...prev, [field]: `Translated ${translatedRows.length} locale(s). ${skippedLocales} skipped (already filled).` }));
   };
 
+
+  const resizeImageFile = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    const maxDimension = 1600;
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Unable to process image.');
+
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('Unable to encode image.');
+
+    return new File([blob], `${partNumber}.jpg`, { type: 'image/jpeg' });
+  };
+
+  const onImageFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      setImageUploadMessage('No file selected.');
+      return;
+    }
+    if (!partId || !partNumber.trim()) {
+      setImageUploadMessage('Save the part with a valid part number before uploading an image.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setImageUploadMessage('Please select an image file.');
+      return;
+    }
+
+    setUploadingImage(true);
+    setImageUploadMessage('Processing image…');
+
+    try {
+      const optimizedFile = await resizeImageFile(file);
+      const formData = new FormData();
+      formData.append('image', optimizedFile);
+
+      const response = await fetch(`/api/qpart/parts/${partId}/image`, { method: 'POST', body: formData });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Upload failed.');
+
+      setImageUploadMessage('Picture uploaded successfully.');
+    } catch (error) {
+      setImageUploadMessage(error instanceof Error ? error.message : 'Image upload failed.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
   const persist = async () => {
     const translationRows = nonBaseLocales.map((locale) => ({ locale, name: translations[locale]?.name || '', description: translations[locale]?.description || '' }));
 
@@ -373,11 +434,22 @@ export default function QPartPartFormPage({ partId }: Props) {
       </div>
 
       {message ? <div className="note">{message}</div> : null}
+      {imageUploadMessage ? <div className="note">{imageUploadMessage}</div> : null}
 
       <div className="card">
         <div className="qpartTopHeader">
           <div className="qpartTopIdentity">
-            <h3 className="qpartPartNumberTitle">{partNumber || (partId ? `Part #${partId}` : 'New part')}</h3>
+            <div className="qpartPartIdentityRow">
+              <h3 className="qpartPartNumberTitle">{partNumber || (partId ? `Part #${partId}` : 'New part')}</h3>
+              {partId ? (
+                <>
+                  <button type="button" className="tab qpartTakePictureButton" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage || !partNumber.trim()}>
+                    {uploadingImage ? 'Uploading…' : 'Take picture'}
+                  </button>
+                  <input ref={imageInputRef} type="file" accept="image/*" capture="environment" onChange={onImageFileChange} style={{ display: 'none' }} />
+                </>
+              ) : null}
+            </div>
             {!partId ? (
               <label className="qpartTopHeaderInput">
                 Assign part number
