@@ -61,7 +61,7 @@ export async function listQPartImages(partId: number): Promise<QPartImageRow[]> 
 }
 
 export async function getNextImageIndex(partId: number) {
-  const rows = await sql<{ image_index: number }[]>`
+  const rows = await sql<{ image_index: number }>`
     select image_index
     from qpart_part_images
     where part_id = ${partId}
