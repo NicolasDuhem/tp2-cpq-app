@@ -320,15 +320,17 @@ create table if not exists qpart_part_images (
   id bigserial primary key,
   part_id bigint not null references qpart_parts(id) on delete cascade,
   part_number text not null,
+  image_index integer not null default 0,
+  is_primary boolean not null default false,
   blob_url text not null,
   blob_path text not null,
   mime_type text not null default 'image/jpeg',
   file_size_bytes bigint not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (part_id),
-  unique (part_number)
+  unique (part_id, image_index)
 );
+create unique index if not exists qpart_part_images_primary_uq on qpart_part_images (part_id) where is_primary;
 
 create table if not exists qpart_part_compatibility_rules (
   id bigserial primary key,
