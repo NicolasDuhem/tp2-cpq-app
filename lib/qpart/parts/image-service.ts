@@ -105,7 +105,7 @@ export async function reconcileQPartImages(partId: number, partNumber: string): 
           isPrimary: false,
           blobUrl: blob.url,
           blobPath: path,
-          mimeType: blob.contentType || 'image/jpeg',
+          mimeType: 'image/jpeg',
           fileSizeBytes: blob.size || 0,
         });
       }
@@ -119,7 +119,7 @@ export async function reconcileQPartImages(partId: number, partNumber: string): 
       isPrimary,
       blobUrl: blob.url,
       blobPath: path,
-      mimeType: blob.contentType || 'image/jpeg',
+      mimeType: 'image/jpeg',
       fileSizeBytes: blob.size || 0,
     });
   }
