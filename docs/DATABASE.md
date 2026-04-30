@@ -164,9 +164,9 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 
 
 ## QPart image upload (v1)
-- QPart detail page has compact **Take picture** (primary slot) and **Manage pictures** actions beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`).
+- QPart detail page has compact **Take picture** (primary slot) and **Manage pictures** actions beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`). **Take picture** always writes/replaces the primary image at `image_index=0` (`is_primary=true`).
 - Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
 - Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
 - Metadata is stored in Neon table `qpart_part_images` (one-to-many per part) with primary (`image_index=0`) and numbered secondary slots (`1..n`), plus blob URL/path, mime type, file size and timestamps.
 - Required env: `BLOB_READ_WRITE_TOKEN` in Vercel/hosted environment.
-- QPart detail header now renders the primary image when present, and **Manage pictures** provides compact add/list/delete for all slots.
+- QPart detail header now renders a compact preview using deterministic selection: preferred `is_primary=true`, fallback lowest `image_index`, fallback no image; **Manage pictures** provides compact add/list/delete for all slots.
