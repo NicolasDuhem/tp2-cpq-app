@@ -54,7 +54,7 @@ export async function listQPartImages(partId: number): Promise<QPartImageRow[]> 
     select ${imageSelection}
     from qpart_part_images
     where part_id = ${partId}
-    order by image_index asc
+    order by image_index asc, id asc
   `;
 
   return normalizeQPartImageRows(result);
@@ -66,7 +66,7 @@ export async function getNextImageIndex(partId: number) {
     from qpart_part_images
     where part_id = ${partId}
       and image_index > 0
-    order by image_index asc
+    order by image_index asc, id asc
   `;
 
   const rows = result as Array<{ image_index: number }>;
@@ -105,7 +105,26 @@ export async function upsertQPartImageMetadata(input: QPartImageMetadataInput) {
   `;
 
   const rows = normalizeQPartImageRows(result);
-  return rows[0] ?? null;
+  const upserted = rows[0] ?? null;
+
+  if (upserted && input.imageIndex === 0) {
+    await sql`
+      update qpart_part_images
+      set is_primary = case when id = ${upserted.id} then true else false end,
+          updated_at = now()
+      where part_id = ${input.partId}
+    `;
+
+    const refreshed = await sql`
+      select ${imageSelection}
+      from qpart_part_images
+      where id = ${upserted.id}
+      limit 1
+    `;
+    return normalizeQPartImageRows(refreshed)[0] ?? upserted;
+  }
+
+  return upserted;
 }
 
 export async function deleteQPartImageMetadata(partId: number, imageId: number) {
@@ -118,4 +137,15 @@ export async function deleteQPartImageMetadata(partId: number, imageId: number) 
 
   const rows = normalizeQPartImageRows(result);
   return rows[0] ?? null;
+}
+
+export function choosePreferredQPartImage(rows: QPartImageRow[]): QPartImageRow | null {
+  const primaryCandidates = rows
+    .filter((row) => row.is_primary)
+    .sort((a, b) => a.image_index - b.image_index || a.id - b.id);
+
+  if (primaryCandidates.length) return primaryCandidates[0];
+
+  const byIndex = [...rows].sort((a, b) => a.image_index - b.image_index || a.id - b.id);
+  return byIndex[0] ?? null;
 }

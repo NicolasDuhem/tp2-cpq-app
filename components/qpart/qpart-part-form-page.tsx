@@ -73,6 +73,17 @@ export default function QPartPartFormPage({ partId }: Props) {
     () => metadataDefs.filter((definition) => definition.field_type !== 'boolean'),
     [metadataDefs],
   );
+
+  const primaryDisplayImage = useMemo(() => {
+    const primaryCandidates = images
+      .filter((image) => image.is_primary)
+      .sort((a, b) => a.image_index - b.image_index || a.id - b.id);
+
+    if (primaryCandidates.length) return primaryCandidates[0];
+
+    return [...images].sort((a, b) => a.image_index - b.image_index || a.id - b.id)[0] ?? null;
+  }, [images]);
+
   const metadataColumns = useMemo(() => {
     const left: QPartMetadataDefinition[] = [];
     const right: QPartMetadataDefinition[] = [];
@@ -490,7 +501,7 @@ export default function QPartPartFormPage({ partId }: Props) {
                 </>
               ) : null}
             </div>
-            {images[0]?.blob_url ? <img className="qpartMainImagePreview" src={images[0].blob_url} alt={`${partNumber} primary`} /> : null}
+            {primaryDisplayImage?.blob_url ? <img className="qpartMainImagePreview" src={primaryDisplayImage.blob_url} alt={`${partNumber} primary`} /> : null}
             {!partId ? (
               <label className="qpartTopHeaderInput">
                 Assign part number

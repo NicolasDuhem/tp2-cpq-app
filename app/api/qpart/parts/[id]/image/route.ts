@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { del } from '@vercel/blob';
 import { getPartDetail } from '@/lib/qpart/parts/service';
-import { deleteQPartImageMetadata, getNextImageIndex, listQPartImages, upsertQPartImageMetadata } from '@/lib/qpart/parts/image-service';
+import { choosePreferredQPartImage, deleteQPartImageMetadata, getNextImageIndex, listQPartImages, upsertQPartImageMetadata } from '@/lib/qpart/parts/image-service';
 
 type Params = { params: { id: string } };
 
@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid part id.' }, { status: 400 });
   const rows = await listQPartImages(id);
-  return NextResponse.json({ rows, primary: rows.find((row) => row.is_primary) ?? null });
+  return NextResponse.json({ rows, primary: choosePreferredQPartImage(rows) });
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
