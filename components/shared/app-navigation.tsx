@@ -30,6 +30,19 @@ export default function AppNavigation() {
   const [passwordError, setPasswordError] = useState('');
 
   const visibleLinks = useMemo(() => links.filter((link) => isAdminMode || !link.adminOnly), [isAdminMode]);
+  const navClusters = useMemo(() => {
+    const clusterLabels = [
+      ['Dashboard', 'CPQ - Process'],
+      ['Sales - bike allocation', 'Sales - QPart allocation'],
+      ['CPQ - Bike Builder', 'CPQ - Setup', 'QPart - Spare Parts PIM'],
+    ];
+    const primaryLinks = visibleLinks.filter((link) => !link.adminOnly);
+    const adminLinks = visibleLinks.filter((link) => link.adminOnly);
+    return [
+      ...clusterLabels.map((labels) => primaryLinks.filter((link) => labels.includes(link.label))),
+      adminLinks,
+    ].filter((cluster) => cluster.length > 0);
+  }, [visibleLinks]);
 
   const submitAdminPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -46,19 +59,24 @@ export default function AppNavigation() {
   return (
     <>
       <nav className="tabs" aria-label="Primary navigation">
-        {visibleLinks.map((link) => {
-          const isActive = pathname === link.href;
-          return (
-            <Link
-              className={`tab ${isActive ? 'tabActive' : ''}`}
-              key={link.href}
-              href={link.href}
-              aria-current={isActive ? 'page' : undefined}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
+        {navClusters.map((cluster, clusterIndex) => (
+          <div className="navCluster" key={`cluster-${clusterIndex}`}>
+            {clusterIndex > 0 ? <span className="navDivider" aria-hidden="true" /> : null}
+            {cluster.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <Link
+                  className={`tab ${isActive ? 'tabActive' : ''}`}
+                  key={link.href}
+                  href={link.href}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
         <div className="adminModeActions">
           {!isAdminMode ? (
             <button className="tab tabAdminAction" type="button" onClick={() => setAdminPromptOpen(true)}>

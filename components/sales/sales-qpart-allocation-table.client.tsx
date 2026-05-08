@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   QPartAllocationStatus,
@@ -9,6 +9,9 @@ import {
   SalesQPartAllocationRow,
   SalesQPartTerritoryFilterRegion,
 } from '@/lib/sales/qpart-allocation/service';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import StatusCell from '@/components/shared/StatusCell';
+import Toast from '@/components/shared/Toast';
 import styles from './sales-qpart-allocation-page.module.css';
 
 type Props = {
@@ -125,12 +128,24 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(countryColumns.map((countryCode) => [countryCode, true])),
+  );
+  const [pendingBulkStatus, setPendingBulkStatus] = useState<QPartAllocationStatus | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   const visibleCountries = useMemo(() => {
     if (!countrySelection.length) return countryColumns;
     const selected = new Set(countrySelection);
     return countryColumns.filter((countryCode) => selected.has(countryCode));
   }, [countryColumns, countrySelection]);
+
+  const renderedCountries = useMemo(
+    () => visibleCountries.filter((countryCode) => columnVisibility[countryCode] !== false),
+    [visibleCountries, columnVisibility],
+  );
 
   const territoryGroups = useMemo(() => {
     const search = territorySearch.trim().toLowerCase();
@@ -345,10 +360,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     }
 
     const label = targetStatus === 'active' ? 'Activate' : 'Deactivate';
-    const confirmed = window.confirm(
-      `${label} ${filteredRows.length} visible part(s) for ${visibleCountries.length} country column(s): ${visibleCountries.join(', ')}?`,
-    );
-    if (!confirmed) return;
 
     setBulkBusy(true);
     setMessage(null);
@@ -376,6 +387,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         type: 'success',
         text: `Bulk ${label.toLowerCase()} complete: ${payload.result.updatedCount} allocation cells updated (${payload.result.partCount} parts × ${payload.result.countryCount} countries).`,
       });
+      setToastMessage(`Done — ${filteredRows.length} items updated`);
+      setToastVisible(true);
       router.refresh();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Bulk update failed' });
@@ -383,6 +396,19 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       setBulkBusy(false);
     }
   };
+
+  const requestBulk = (targetStatus: QPartAllocationStatus) => {
+    setPendingBulkStatus(targetStatus);
+  };
+
+  const confirmBulk = () => {
+    if (!pendingBulkStatus) return;
+    const targetStatus = pendingBulkStatus;
+    setPendingBulkStatus(null);
+    void runBulk(targetStatus);
+  };
+
+  const dismissToast = useCallback(() => setToastVisible(false), []);
 
 
   useEffect(() => {
@@ -511,6 +537,27 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
               {filtersOpen ? 'Hide filters' : 'Show filters'}
             </button>
             <div className={styles.rowCountBadge}>Rows in table: {filteredRows.length}</div>
+            <div className={styles.columnDropdownWrap}>
+              <button type="button" className={styles.collapseToggle} onClick={() => setColumnsOpen((prev) => !prev)}>
+                Columns
+              </button>
+              {columnsOpen ? (
+                <div className={styles.columnDropdownPanel}>
+                  {countryColumns.map((countryCode) => (
+                    <label key={`column-toggle-${countryCode}`} className={styles.checkboxOption}>
+                      <input
+                        type="checkbox"
+                        checked={columnVisibility[countryCode] !== false}
+                        onChange={(event) =>
+                          setColumnVisibility((prev) => ({ ...prev, [countryCode]: event.target.checked }))
+                        }
+                      />
+                      <span>{countryCode}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className={styles.filterHeaderActions}>
             <div className={styles.bulkSelection}>
@@ -524,10 +571,10 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 Last checked: {bcCheckSummary.checkedAt} · Checked {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
               </span>
             ) : null}
-            <button type="button" className={styles.bulkActionButton} onClick={() => void runBulk('active')} disabled={bulkBusy}>
+            <button type="button" className={styles.bulkActionButton} onClick={() => requestBulk('active')} disabled={bulkBusy}>
               {bulkBusy ? 'Working…' : 'Bulk activate'}
             </button>
-            <button type="button" className={styles.bulkActionButton} onClick={() => void runBulk('inactive')} disabled={bulkBusy}>
+            <button type="button" className={styles.bulkActionButton} onClick={() => requestBulk('inactive')} disabled={bulkBusy}>
               {bulkBusy ? 'Working…' : 'Bulk deactivate'}
             </button>
           </div>
@@ -639,17 +686,27 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         </div>
       ) : null}
 
+      <ConfirmModal
+        open={pendingBulkStatus !== null}
+        title={pendingBulkStatus === 'active' ? 'Bulk activate?' : 'Bulk deactivate?'}
+        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${filteredRows.length} items across all selected markets.`}
+        confirmLabel="Confirm"
+        onConfirm={confirmBulk}
+        onCancel={() => setPendingBulkStatus(null)}
+      />
+      <Toast message={toastMessage} visible={toastVisible} onDismiss={dismissToast} />
+
       {filteredRows.length ? (
         <section className={styles.tableSection}>
           <div className={styles.tableWrap}>
             <table className={styles.matrixTable}>
-            <thead>
+            <thead className={styles.stickyHeader}>
               <tr>
                 <th className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>BC Status</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyPart}`}>Part</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyTitle}`}>English title</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyHierarchy}`}>Hierarchy</th>
-                {visibleCountries.map((countryCode) => (
+                {renderedCountries.map((countryCode) => (
                   <th key={`head-${countryCode}`} className={styles.countryHeader}>
                     <span className={styles.countryHeaderLabel}>
                       <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
@@ -682,29 +739,20 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                     </Link>
                   </td>
                   <td className={`${styles.hierarchyCell} ${styles.stickyColumn} ${styles.stickyHierarchy}`}>{row.hierarchySummary || '—'}</td>
-                  {visibleCountries.map((countryCode) => {
+                  {renderedCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
                     return (
                       <td key={`${row.partId}-${countryCode}`} className={styles.countryCell}>
-                        <div className={styles.cellActions}>
-                          <button
-                            type="button"
-                            className={`${styles.statusButton} ${status === 'active' ? styles.statusActive : styles.statusNotActive}`}
-                            onClick={() => void toggleCell(row, countryCode, status)}
-                            disabled={busyKey === cellKey || pushBusyKey === cellKey}
-                          >
-                            {statusLabel(status)}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.pushButton}
-                            onClick={() => void pushCell(row, countryCode)}
-                            disabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
-                          >
-                            {pushBusyKey === cellKey ? 'Pushing…' : 'Push'}
-                          </button>
-                        </div>
+                        <StatusCell
+                          status={status === 'active' ? 'active' : 'inactive'}
+                          onToggle={() => void toggleCell(row, countryCode, status)}
+                          onPush={() => void pushCell(row, countryCode)}
+                          disabled={busyKey === cellKey || pushBusyKey === cellKey}
+                          pushDisabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
+                          statusLabel={statusLabel(status)}
+                          pushLabel={pushBusyKey === cellKey ? 'Pushing…' : 'Push'}
+                        />
                       </td>
                     );
                   })}

@@ -1,6 +1,8 @@
 'use client';
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import LifecycleStepper from '@/components/BikeBuilder/LifecycleStepper';
+import PageHeader from '@/components/shared/PageHeader';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
 import {
   BikeBuilderContext,
@@ -252,6 +254,17 @@ type BulkProgress = {
   saved: number;
   message: string;
 };
+
+
+function formatOptionDisplayLabel(label: string) {
+  const delimiter = ' - ';
+  const delimiterIndex = label.lastIndexOf(delimiter);
+  if (delimiterIndex === -1) return label;
+  const name = label.slice(0, delimiterIndex);
+  const price = label.slice(delimiterIndex + delimiter.length);
+  if (!name || !price) return label;
+  return `${name} — ${price === '0' ? 'Included' : price}`;
+}
 
 const fallbackRuleset = {
   cpq_ruleset: 'BBLV6_G-LineMY26',
@@ -2647,11 +2660,12 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     <main style={styles.page}>
       <section style={styles.controls}>
         <div style={styles.controlsHeader}>
-          <div>
-            <h1 style={styles.sectionTitle}>CPQ Manual Configuration Lifecycle</h1>
-            <p style={styles.muted}>StartConfiguration → Configure → FinalizeConfiguration → Save reference → Retrieve by reference.</p>
-          </div>
-          {isAdminMode ? <span style={styles.adminBadge}>Admin mode</span> : null}
+          <PageHeader
+            title="CPQ Manual Configuration Lifecycle"
+            description={undefined}
+            actions={isAdminMode ? <span style={styles.adminBadge}>Admin mode</span> : undefined}
+          />
+          <LifecycleStepper currentStep={0} />
         </div>
 
         <div style={styles.compactControlStrip}>
@@ -2680,28 +2694,28 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
           <div style={styles.actionButtonsWrap}>
             <button
-              style={styles.button}
+              className="bbButtonPrimary"
               onClick={() => void startNewSessionFromUiAction()}
               disabled={requestState.loading || bulkProgress.running}
             >
               {requestState.loading ? 'Starting…' : 'Start a new session'}
             </button>
             <button
-              style={styles.button}
+              className="bbButtonSecondary"
               onClick={() => void saveConfiguration()}
               disabled={saveStatus === 'saving' || !state || bulkProgress.running}
             >
               {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
             </button>
             <button
-              style={styles.button}
+              className="bbButtonSecondary"
               onClick={() => void saveCurrentConfigurationToSampler()}
               disabled={samplerSaveStatus === 'saving' || !lastSamplerSource || bulkProgress.running}
             >
               {samplerSaveStatus === 'saving' ? 'Saving sampler row…' : 'Save current configuration to sampler'}
             </button>
             <button
-              style={styles.button}
+              className="bbButtonTertiary"
               onClick={generateCombinations}
               disabled={requestState.loading || !state?.features?.length || bulkProgress.running}
             >
@@ -2717,7 +2731,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
             placeholder="CFG-YYYYMMDD-XXXXXXXX"
             style={styles.input}
           />
-          <button style={styles.button} onClick={() => void retrieveConfiguration()} disabled={retrieveStatus === 'saving'}>
+          <button className="bbButtonTertiary" onClick={() => void retrieveConfiguration()} disabled={retrieveStatus === 'saving'}>
             {retrieveStatus === 'saving' ? 'Retrieving…' : 'Retrieve Configuration'}
           </button>
         </div>
@@ -2779,7 +2793,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
                 >
                   {feature.availableOptions.map((option) => (
                     <option key={option.optionId} value={option.optionId}>
-                      {option.label}
+                      {formatOptionDisplayLabel(option.label)}
                     </option>
                   ))}
                 </select>
@@ -2811,7 +2825,18 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
           <div style={styles.previewViewport}>
             {imageLayerStatus.loading ? <div style={styles.previewEmpty}>Loading layered preview…</div> : null}
-            {!imageLayerStatus.loading && orderedPreviewLayers.length === 0 ? <div style={styles.previewEmpty}>No image layers available.</div> : null}
+            {!imageLayerStatus.loading && orderedPreviewLayers.length === 0 ? (
+              <div className="previewEmptyState">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                  <rect x="8" y="10" width="32" height="28" rx="3" stroke="#d1d5db" strokeWidth="2" />
+                  <circle cx="18" cy="20" r="3" stroke="#d1d5db" strokeWidth="2" />
+                  <path d="M12 34L22 26L28 31L33 27L40 34" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <h3>No preview available</h3>
+                <p>Select options above to generate a layered preview. Some selections may not have image mappings yet.</p>
+                <span className="infoChip">Unmatched selections: {imageLayerResolution.unmatchedSelections.length}</span>
+              </div>
+            ) : null}
             {!imageLayerStatus.loading &&
               orderedPreviewLayers.map((layer) => (
                 <img
