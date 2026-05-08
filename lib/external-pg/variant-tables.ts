@@ -70,14 +70,7 @@ type ExternalVariantPushStage =
   | "rollback_start"
   | "rollback_success";
 
-type ExternalPgQueryResult = {
-  rowCount: number | null;
-  rows: unknown[];
-};
-
-type ExternalPgQueryClient = {
-  query: (text: string, values?: unknown[]) => Promise<ExternalPgQueryResult>;
-};
+type ExternalPgClient = Parameters<Parameters<typeof withExternalPgClient>[0]>[0];
 
 type ExternalVariantPushOptions = {
   onStage?: (
@@ -185,7 +178,7 @@ export async function lookupLatestSamplerRuleset(
 }
 
 async function syncExternalVariantWithClient(
-  client: ExternalPgQueryClient,
+  client: ExternalPgClient,
   tableName: string,
   input: ExternalVariantInput,
   options: ExternalVariantPushOptions,
@@ -209,7 +202,7 @@ async function syncExternalVariantWithClient(
       `select "Sku" from ${tableName} where "Sku" = $1 limit 1`,
       [payload.sku],
     );
-    const exists = existing.rowCount > 0;
+    const exists = existing.rows.length > 0;
     options.onStage?.("select_success", {
       tableName,
       exists,
@@ -295,7 +288,7 @@ async function syncExternalVariantWithClient(
 }
 
 async function syncExternalVariantEligibilityWithClient(
-  client: ExternalPgQueryClient,
+  client: ExternalPgClient,
   tableName: string,
   input: ExternalVariantEligibilityInput,
   options: ExternalVariantPushOptions,
@@ -315,7 +308,7 @@ async function syncExternalVariantEligibilityWithClient(
       `select "Sku" from ${tableName} where "Sku" = $1 and "CountryCode" = $2 limit 1`,
       [payload.sku, payload.countryCode],
     );
-    const exists = existing.rowCount > 0;
+    const exists = existing.rows.length > 0;
     options.onStage?.("select_success", { tableName, exists, businessKey });
 
     if (exists) {
