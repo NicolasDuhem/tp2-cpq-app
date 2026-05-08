@@ -14,11 +14,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
-  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibility` and `variants` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
+  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibilities` and `variants` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
-  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibility` and `variants` rows; Neon `qpart_country_allocation` remains the internal allocation source.
+  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibilities` and `variants` rows; Neon `qpart_country_allocation` remains the internal allocation source.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
@@ -97,7 +97,7 @@ See `docs/README.md` for the full documentation map, including deep architecture
 
 ## External PostgreSQL row push configuration
 
-The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variant_eligibility` and `variants`. The old external `cpq_sampler_result` push is no longer used; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
+The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variant_eligibilities` and `variants`. The old external `cpq_sampler_result` push is no longer used; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
 
 Runtime dependency requirement:
 
@@ -116,8 +116,8 @@ Required environment variables:
 Required external unique indexes:
 
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibility_sku_country_uniq
-  ON public.variant_eligibility ("Sku", "CountryCode");
+CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
+  ON public.variant_eligibilities ("Sku", "CountryCode");
 
 CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
   ON public.variants ("Sku");

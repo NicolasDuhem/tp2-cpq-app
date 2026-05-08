@@ -195,8 +195,8 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 The external PostgreSQL integration no longer writes to external `cpq_sampler_result`. Internal Neon `CPQ_sampler_result` is still the app's sampler/allocation source. External push requires:
 
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibility_sku_country_uniq
-  ON public.variant_eligibility ("Sku", "CountryCode");
+CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
+  ON public.variant_eligibilities ("Sku", "CountryCode");
 
 CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
   ON public.variants ("Sku");

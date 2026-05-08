@@ -176,5 +176,5 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 ## External PostgreSQL push process
 
 - Bike and QPart Push actions build their source payloads from Neon first and continue to rely on Neon `CPQ_sampler_result` / `qpart_country_allocation` for internal state.
-- The external write no longer targets external `cpq_sampler_result`; it sequentially upserts external `variant_eligibility` and `variants`.
+- The external write no longer targets external `cpq_sampler_result`; it sequentially upserts external `variant_eligibilities` and `variants`.
 - BC IDs in external `variants` are sourced from Neon `bc_item_variant_map`; later BigCommerce status checks can populate those IDs and trigger a non-blocking external `variants` refresh.

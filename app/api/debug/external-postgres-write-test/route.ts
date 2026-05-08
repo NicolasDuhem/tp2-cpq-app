@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       stage: "response_send",
       diagnostic,
       message:
-        "Write diagnostic against variant_eligibility succeeded and transaction was rolled back.",
+        "Write diagnostic against variant_eligibilities succeeded and transaction was rolled back.",
     });
   } catch (error) {
     stage("failed", { stage: currentStage });
