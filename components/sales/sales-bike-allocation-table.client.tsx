@@ -276,7 +276,7 @@ export default function SalesBikeAllocationTableClient({
         errorDetail?: string;
         errorHint?: string;
         stage?: string;
-        result?: { action: 'inserted' | 'updated' };
+        result?: { skipped: boolean; message: string; variantResult: { action: 'inserted' | 'updated' | 'skipped' }; eligibilityResult: { action: 'inserted' | 'updated' | 'skipped' } };
       };
 
       if (!response.ok || !payload.result) {
@@ -294,7 +294,9 @@ export default function SalesBikeAllocationTableClient({
 
       setMessage({
         type: 'success',
-        text: `${row.ipnCode} ${countryCode} pushed (${payload.result.action}).`,
+        text: payload.result.skipped
+          ? payload.result.message
+          : `${row.ipnCode} ${countryCode} pushed (variants ${payload.result.variantResult.action}, eligibility ${payload.result.eligibilityResult.action}).`,
       });
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push row.' });
@@ -468,17 +470,20 @@ export default function SalesBikeAllocationTableClient({
         err,
       });
 
-      void fetch('/api/bigcommerce/item-map/upsert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          itemType: 'BIKE',
-          sourcePage: 'bike-allocation',
-          items: Object.fromEntries(skus.map((sku) => [sku, payload.items?.[sku] ?? { status: 'ERR', sku }])),
-        }),
-      }).catch((error) => {
+      try {
+        const upsertResponse = await fetch('/api/bigcommerce/item-map/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemType: 'BIKE',
+            sourcePage: 'bike-allocation',
+            items: Object.fromEntries(skus.map((sku) => [sku, payload.items?.[sku] ?? { status: 'ERR', sku }])),
+          }),
+        });
+        if (upsertResponse.ok) router.refresh();
+      } catch (error) {
         console.warn('[BC status][bike-allocation] failed to upsert cache', error);
-      });
+      }
     } catch {
       const failedStatuses = Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])) as BCStatusMap;
       setBcStatusBySku((prev) => ({ ...prev, ...failedStatuses }));
@@ -577,7 +582,7 @@ export default function SalesBikeAllocationTableClient({
       </section>
 
       <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>↑ Push</strong> to upsert a row-country record into external PostgreSQL.
+        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>↑ Push</strong> to sync eligible rows into external PostgreSQL variants, then variant eligibility. Push appears only when the SKU has both BigCommerce IDs mapped.
       </div>
 
       {message ? (
@@ -683,7 +688,7 @@ export default function SalesBikeAllocationTableClient({
                         <StatusCell
                           status={status === 'not_active' ? 'inactive' : status}
                           onToggle={() => void onCountryCellClick(row, country, status)}
-                          onPush={() => void pushRowToExternal(row, country)}
+                          onPush={row.hasBcIds ? () => void pushRowToExternal(row, country) : undefined}
                           disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
                           pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
                           statusLabel={isBusy ? 'Saving…' : statusLabel(status)}

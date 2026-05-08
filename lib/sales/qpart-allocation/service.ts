@@ -13,6 +13,7 @@ export type SalesQPartAllocationRow = {
   hierarchySummary: string;
   metadataValues: Record<string, string[]>;
   countryStatuses: Record<string, QPartAllocationStatus>;
+  hasBcIds: boolean;
 };
 
 export type SalesQPartTerritoryFilterRegion = {
@@ -49,6 +50,7 @@ type PartAllocationRow = {
   hierarchy_5: string | null;
   hierarchy_6: string | null;
   hierarchy_7: string | null;
+  has_bc_ids: boolean | null;
 };
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
@@ -73,7 +75,8 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
       coalesce(case when n0.level = 4 then n0.label_en end, case when n1.level = 4 then n1.label_en end, case when n2.level = 4 then n2.label_en end, case when n3.level = 4 then n3.label_en end, case when n4.level = 4 then n4.label_en end, case when n5.level = 4 then n5.label_en end, case when n6.level = 4 then n6.label_en end) as hierarchy_4,
       coalesce(case when n0.level = 5 then n0.label_en end, case when n1.level = 5 then n1.label_en end, case when n2.level = 5 then n2.label_en end, case when n3.level = 5 then n3.label_en end, case when n4.level = 5 then n4.label_en end, case when n5.level = 5 then n5.label_en end, case when n6.level = 5 then n6.label_en end) as hierarchy_5,
       coalesce(case when n0.level = 6 then n0.label_en end, case when n1.level = 6 then n1.label_en end, case when n2.level = 6 then n2.label_en end, case when n3.level = 6 then n3.label_en end, case when n4.level = 6 then n4.label_en end, case when n5.level = 6 then n5.label_en end, case when n6.level = 6 then n6.label_en end) as hierarchy_6,
-      coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7
+      coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7,
+      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids
     from qpart_parts p
     join qpart_country_allocation allocation on allocation.part_id = p.id
     left join qpart_hierarchy_nodes n0 on n0.id = p.hierarchy_node_id
@@ -83,6 +86,13 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
     left join qpart_hierarchy_nodes n4 on n4.id = n3.parent_id
     left join qpart_hierarchy_nodes n5 on n5.id = n4.parent_id
     left join qpart_hierarchy_nodes n6 on n6.id = n5.parent_id
+    left join lateral (
+      select bc_product_id, bc_variant_id
+      from public.bc_item_variant_map map
+      where coalesce(trim(map.sku_code), '') = coalesce(trim(p.part_number), '')
+      order by updated_at desc nulls last, id desc
+      limit 1
+    ) map on true
     where (${hasPartIds}::boolean = false or p.id = any(${normalizedPartIds}::bigint[]))
     order by p.part_number, allocation.country_code
   `) as PartAllocationRow[];
@@ -167,8 +177,10 @@ export async function getSalesQPartAllocationPageData(input: { page?: number; pa
           .join(' > '),
         metadataValues: {},
         countryStatuses: {},
+        hasBcIds: row.has_bc_ids === true,
       };
 
+    existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
     existing.countryStatuses[asTrimmed(row.country_code)] = normalizeStatus(row.active);
     rowMap.set(row.part_id, existing);
   }

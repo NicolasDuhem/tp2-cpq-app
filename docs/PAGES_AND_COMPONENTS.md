@@ -275,13 +275,15 @@
 - Main write actions:
   - cell toggle active/inactive
   - bulk activate/deactivate
+  - eligible per-cell Push to external PostgreSQL `variants`, then `variant_eligibilities`
 - API endpoints used:
   - `/api/sales/bike-allocation/toggle`
   - `/api/sales/bike-allocation/bulk-update`
   - `/api/sales/bike-allocation/launch-context`
+  - `/api/sales/bike-allocation/push`
 - Database tables involved:
-  - Reads: `CPQ_sampler_result`, `CPQ_setup_account_context`
-  - Writes: `CPQ_sampler_result.active`, `updated_at`
+  - Reads: `CPQ_sampler_result`, `CPQ_setup_account_context`, `bc_item_variant_map`
+  - Writes: `CPQ_sampler_result.active`, `updated_at`; Push writes external `variants` and `variant_eligibilities` only when both BC IDs exist
 - Key components:
 
 ### Component: SalesBikeAllocationPage
@@ -306,8 +308,10 @@
 - Write actions:
   - toggle single cell status
   - bulk status update
+  - Push visible only when the SKU has both `bc_product_id` and `bc_variant_id` in Neon
 - Side effects / dependencies:
   - "Not configured" action resolves context, stores replay payload in `sessionStorage`, and routes to `/cpq` with `replay_token`
+  - Push syncs external `variants` before `variant_eligibilities` and skips server-side if BC IDs are missing
 
 ### Data usage
 - Reads:

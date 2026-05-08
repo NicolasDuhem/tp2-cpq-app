@@ -14,15 +14,8 @@ export type ExternalPgDiagnosticStageName =
   | "table_exists"
   | "variant_eligibilities_table_exists"
   | "variants_table_exists"
-  | "upsert_prerequisite"
-  | "variant_eligibilities_upsert_prerequisite"
-  | "variants_upsert_prerequisite";
-
-const VARIANT_ELIGIBILITY_UPSERT_TARGET_COLUMNS = [
-  "Sku",
-  "CountryCode",
-] as const;
-const VARIANTS_UPSERT_TARGET_COLUMNS = ["Sku"] as const;
+  | "variant_eligibilities_readable"
+  | "variants_readable";
 
 export type ExternalPgDiagnosticStageResult = {
   stage: ExternalPgDiagnosticStageName;
@@ -282,14 +275,26 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
         [config.schema, tableName],
       );
       const exists = Boolean(tableResult.rows?.[0]?.table_exists);
+      const durationMs = durationFrom(tableStart);
+      const message = exists
+        ? `${qualifiedTableName} exists.`
+        : `${qualifiedTableName} does not exist.`;
       stageResults.push({
         stage,
         ok: exists,
-        duration_ms: durationFrom(tableStart),
-        message: exists
-          ? `${qualifiedTableName} exists.`
-          : `${qualifiedTableName} does not exist.`,
+        duration_ms: durationMs,
+        message,
       });
+      if (!exists) {
+        await client.end().catch(() => undefined);
+        return {
+          success: false,
+          stage_results: stageResults,
+          config_summary: configSummary,
+          final_failure_stage: stage,
+          final_failure_type: "missing_table",
+        };
+      }
       return null;
     } catch (error) {
       const normalized = normalizeExternalPgError(error);
@@ -304,63 +309,19 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
     }
   }
 
-  async function checkUniqueUpsertPrerequisite(
+  async function checkTableReadable(
     stage: ExternalPgDiagnosticStageName,
     tableName: "variant_eligibilities" | "variants",
-    targetColumns: readonly string[],
   ): Promise<ExternalPgDiagnosticResult | null> {
-    const upsertStart = measureStart();
+    const readStart = measureStart();
+    const qualifiedTableName = formatQualifiedTableName(config.schema, tableName);
     try {
-      const indexCheck = await client.query<{
-        has_required_unique: boolean;
-        support_type: "constraint" | "index" | null;
-        support_name: string | null;
-        ordered_columns: string[] | null;
-      }>(
-        `
-        with matching_unique_support as (
-          select
-            i.indexrelid,
-            ix.relname as index_name,
-            c.conname as constraint_name,
-            array_agg(a.attname::text order by idx.ord) as ordered_columns
-          from pg_index i
-          join pg_class t on t.oid = i.indrelid
-          join pg_namespace n on n.oid = t.relnamespace
-          join pg_class ix on ix.oid = i.indexrelid
-          join unnest(i.indkey) with ordinality as idx(attnum, ord) on true
-          join pg_attribute a on a.attrelid = i.indrelid and a.attnum = idx.attnum
-          left join pg_constraint c on c.conindid = i.indexrelid and c.contype in ('u', 'p')
-          where n.nspname = $1
-            and t.relname = $2
-            and i.indisunique = true
-            and i.indisvalid = true
-            and i.indpred is null
-            and idx.attnum > 0
-          group by i.indexrelid, ix.relname, c.conname
-        )
-        select
-          true as has_required_unique,
-          case when constraint_name is not null then 'constraint' else 'index' end as support_type,
-          coalesce(constraint_name, index_name) as support_name,
-          ordered_columns
-        from matching_unique_support
-        where ordered_columns = $3::text[]
-        limit 1
-        `,
-        [config.schema, tableName, [...targetColumns]],
-      );
-      const supportingObject = indexCheck.rows[0];
-      const hasRequiredUnique = Boolean(supportingObject?.has_required_unique);
-      const supportType = supportingObject?.support_type ?? null;
-      const supportName = supportingObject?.support_name ?? null;
+      await client.query(`select 1 from "${config.schema.replace(/"/g, '""')}"."${tableName}" limit 1`);
       stageResults.push({
         stage,
-        ok: hasRequiredUnique,
-        duration_ms: durationFrom(upsertStart),
-        message: hasRequiredUnique
-          ? `Found matching ${supportType ?? "unique support"} (${supportName ?? "unnamed"}) for ON CONFLICT (${targetColumns.map((column) => `"${column}"`).join(", ")}).`
-          : `Missing matching unique index/constraint for ON CONFLICT (${targetColumns.map((column) => `"${column}"`).join(", ")}).`,
+        ok: true,
+        duration_ms: durationFrom(readStart),
+        message: `${qualifiedTableName} can be read by the configured external PostgreSQL user.`,
       });
       return null;
     } catch (error) {
@@ -369,7 +330,7 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
       return fail(
         stage,
         normalized.message,
-        durationFrom(upsertStart),
+        durationFrom(readStart),
         normalized.code,
         configSummary,
       );
@@ -388,19 +349,17 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
   );
   if (variantsTableFailure) return variantsTableFailure;
 
-  const variantEligibilityUpsertFailure = await checkUniqueUpsertPrerequisite(
-    "variant_eligibilities_upsert_prerequisite",
+  const variantEligibilityReadFailure = await checkTableReadable(
+    "variant_eligibilities_readable",
     "variant_eligibilities",
-    VARIANT_ELIGIBILITY_UPSERT_TARGET_COLUMNS,
   );
-  if (variantEligibilityUpsertFailure) return variantEligibilityUpsertFailure;
+  if (variantEligibilityReadFailure) return variantEligibilityReadFailure;
 
-  const variantsUpsertFailure = await checkUniqueUpsertPrerequisite(
-    "variants_upsert_prerequisite",
+  const variantsReadFailure = await checkTableReadable(
+    "variants_readable",
     "variants",
-    VARIANTS_UPSERT_TARGET_COLUMNS,
   );
-  if (variantsUpsertFailure) return variantsUpsertFailure;
+  if (variantsReadFailure) return variantsReadFailure;
 
   await client.end().catch(() => undefined);
 

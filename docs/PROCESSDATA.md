@@ -176,5 +176,10 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 ## External PostgreSQL push process
 
 - Bike and QPart Push actions build their source payloads from Neon first and continue to rely on Neon `CPQ_sampler_result` / `qpart_country_allocation` for internal state.
-- The external write no longer targets external `cpq_sampler_result`; it sequentially upserts external `variant_eligibilities` and `variants`.
-- BC IDs in external `variants` are sourced from Neon `bc_item_variant_map`; later BigCommerce status checks can populate those IDs and trigger a non-blocking external `variants` refresh.
+- The old external `cpq_sampler_result` push process has been removed from active usage. Neon `CPQ_sampler_result` remains unchanged internally.
+- The external write targets are `${EXTERNAL_PG_SCHEMA}.variants` first and `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` second.
+- Before any external write, the SKU must have both `bc_product_id` and `bc_variant_id` in Neon `bc_item_variant_map`. Missing IDs return a skipped API result and no external write.
+- The current process uses SELECT-first UPDATE/INSERT logic rather than `ON CONFLICT`, so unique indexes are not a prerequisite.
+- `variants` receives BC IDs from Neon, `ForecastCtyCode = F_BB`, `BblRuleSetItem` from Neon `cpq_sampler_result.ruleset`, and Unix-second bigint timestamps.
+- `variant_eligibilities` receives SKU/country/detail ID plus `IsActive` from the current allocation row being pushed, not from country mapping metadata.
+- Push buttons are hidden in the Sales bike and QPart allocation tables unless the row SKU/part number has both BigCommerce IDs available in Neon.

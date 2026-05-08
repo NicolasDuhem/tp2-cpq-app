@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { buildBikeExternalSamplerPayload } from "@/lib/external-pg/cpq-sampler-result";
-import {
-  lookupBcIds,
-  upsertExternalVariant,
-  upsertExternalVariantEligibility,
-} from "@/lib/external-pg/variant-tables";
+import { syncExternalVariantTablesForPayload } from "@/lib/external-pg/variant-tables";
 import { toExternalPgApiError } from "@/lib/external-pg/errors";
 
 export const runtime = "nodejs";
@@ -38,49 +34,29 @@ export async function POST(req: NextRequest) {
     );
     stage("payload_build", { ok: true });
 
-    stage("bc_ids_lookup_start", { sku: payload.ipnCode });
-    const { bcVariantId, bcProductId } = await lookupBcIds(payload.ipnCode);
-    stage("bc_ids_lookup_success", {
+    stage("external_variant_tables_sync_start", {
       sku: payload.ipnCode,
-      hasBcVariantId: bcVariantId != null,
-      hasBcProductId: bcProductId != null,
+      countryCode: payload.countryCode,
     });
-
-    stage("eligibility_upsert_start");
-    const eligibilityResult = await upsertExternalVariantEligibility(
+    const result = await syncExternalVariantTablesForPayload(
       {
         sku: payload.ipnCode,
         countryCode: payload.countryCode,
         detailId: payload.detailId,
         isActive: payload.active,
       },
-      {
-        onStage: (name, details) => stage(`eligibility_${name}`, details),
-      },
-    );
-
-    stage("variant_upsert_start");
-    const variantResult = await upsertExternalVariant(
-      {
-        sku: payload.ipnCode,
-        bcVariantId,
-        bcProductId,
-        forecastCtyCode: null,
-        bblRuleSetItem: payload.ruleset,
-      },
-      {
-        onStage: (name, details) => stage(`variant_${name}`, details),
-      },
+      { onStage: (name, details) => stage(`external_${name}`, details) },
     );
 
     revalidatePath("/sales/bike-allocation");
     stage("response_send", {
-      ok: true,
-      eligibilityAction: eligibilityResult.action,
-      variantAction: variantResult.action,
+      ok: result.ok,
+      skipped: result.skipped,
+      eligibilityAction: result.eligibilityResult.action,
+      variantAction: result.variantResult.action,
     });
 
-    return NextResponse.json({ eligibilityResult, variantResult });
+    return NextResponse.json({ result });
   } catch (error) {
     stage("failed", { stage: currentStage });
     const apiError = toExternalPgApiError(error, { stage: currentStage });

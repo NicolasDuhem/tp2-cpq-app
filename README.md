@@ -14,11 +14,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
-  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibilities` and `variants` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
+  - Includes per-cell **Push** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
-  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibilities` and `variants` rows; Neon `qpart_country_allocation` remains the internal allocation source.
+  - Includes per-cell **Push** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `qpart_country_allocation` remains the internal allocation source.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
@@ -97,7 +97,7 @@ See `docs/README.md` for the full documentation map, including deep architecture
 
 ## External PostgreSQL row push configuration
 
-The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variant_eligibilities` and `variants`. The old external `cpq_sampler_result` push is no longer used; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
+The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variants` first and `variant_eligibilities` second. The old external `cpq_sampler_result` push is removed from active usage; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
 
 Runtime dependency requirement:
 
@@ -110,20 +110,14 @@ Required environment variables:
 - `EXTERNAL_PG_DATABASE`
 - `EXTERNAL_PG_USER`
 - `EXTERNAL_PG_PASSWORD`
-- `EXTERNAL_PG_SSL` (`true` recommended for Azure PostgreSQL)
+- `EXTERNAL_PG_SSL` (`true` recommended for hosted PostgreSQL)
 - `EXTERNAL_PG_SCHEMA` (default `public`)
 
-Required external unique indexes:
+External unique indexes are **not required** for the current push path. The app uses SELECT-first logic, then UPDATE or INSERT, because the external tables may not have unique indexes yet.
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
-  ON public.variant_eligibilities ("Sku", "CountryCode");
+Push is allowed only when Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
 
-CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
-  ON public.variants ("Sku");
-```
-
-`variants."BcVariantID"` and `variants."BcProductID"` come from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is `NULL` for now; `"BblRuleSetItem"` is the ruleset. BigCommerce item-map upserts can later refresh external `variants` when BC IDs become available.
+`variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, hardcoded `"ForecastCtyCode" = 'F_BB'`, deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
 
 ## Live Neon metadata source of truth
 

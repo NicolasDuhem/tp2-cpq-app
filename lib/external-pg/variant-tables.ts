@@ -17,40 +17,67 @@ export type ExternalVariantEligibilityInput = {
 
 export type ExternalVariantInput = {
   sku: string;
-  bcVariantId: number | null;
-  bcProductId: number | null;
-  forecastCtyCode: string | null;
+  bcVariantId: number;
+  bcProductId: number;
+  forecastCtyCode: string;
   bblRuleSetItem: string;
 };
 
-export type ExternalVariantEligibilityUpsertResult = {
-  action: "inserted" | "updated";
+export type ExternalVariantEligibilitySyncResult = {
+  action: "inserted" | "updated" | "skipped";
   businessKey: {
     sku: string;
     countryCode: string;
   };
+  message?: string;
 };
 
-export type ExternalVariantUpsertResult = {
-  action: "inserted" | "updated";
+export type ExternalVariantSyncResult = {
+  action: "inserted" | "updated" | "skipped";
   businessKey: {
     sku: string;
   };
+  message?: string;
+};
+
+export type ExternalVariantTablesSyncResult = {
+  ok: boolean;
+  skipped: boolean;
+  message: string;
+  variantResult: ExternalVariantSyncResult;
+  eligibilityResult: ExternalVariantEligibilitySyncResult;
 };
 
 export type ExternalVariantWriteDiagnosticResult = {
   rolledBack: true;
-  tableName: string;
+  tableNames: string[];
   durationMs: number;
+  variantResult: ExternalVariantSyncResult;
+  eligibilityResult: ExternalVariantEligibilitySyncResult;
 };
 
 type ExternalVariantPushStage =
   | "begin_start"
   | "begin_success"
-  | "upsert_start"
-  | "upsert_success"
+  | "select_start"
+  | "select_success"
+  | "insert_start"
+  | "insert_success"
+  | "update_start"
+  | "update_success"
+  | "sync_start"
+  | "sync_success"
   | "rollback_start"
   | "rollback_success";
+
+type ExternalPgQueryResult = {
+  rowCount: number | null;
+  rows: unknown[];
+};
+
+type ExternalPgQueryClient = {
+  query: (text: string, values?: unknown[]) => Promise<ExternalPgQueryResult>;
+};
 
 type ExternalVariantPushOptions = {
   onStage?: (
@@ -61,6 +88,7 @@ type ExternalVariantPushOptions = {
   ) => void;
 };
 
+const FORECAST_CTY_CODE = "F_BB";
 const asTrimmed = (value: unknown) => String(value ?? "").trim();
 
 function quoteIdentifier(identifier: string): string {
@@ -77,20 +105,38 @@ function qualifiedTableName(
   return `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
 }
 
+function currentExternalTimestamp(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 function ensureEligibilityInput(input: ExternalVariantEligibilityInput) {
-  if (!asTrimmed(input.sku))
-    throw new Error("sku is required for external push");
-  if (!asTrimmed(input.countryCode))
-    throw new Error("countryCode is required for external push");
-  if (!asTrimmed(input.detailId))
-    throw new Error("detailId is required for external push");
+  if (!asTrimmed(input.sku)) {
+    throw new Error("sku is required for external variant_eligibilities sync");
+  }
+  if (!asTrimmed(input.countryCode)) {
+    throw new Error("countryCode is required for external variant_eligibilities sync");
+  }
+  if (!asTrimmed(input.detailId)) {
+    throw new Error("detailId is required for external variant_eligibilities sync");
+  }
 }
 
 function ensureVariantInput(input: ExternalVariantInput) {
-  if (!asTrimmed(input.sku))
-    throw new Error("sku is required for external push");
-  if (!asTrimmed(input.bblRuleSetItem))
-    throw new Error("bblRuleSetItem is required for external push");
+  if (!asTrimmed(input.sku)) {
+    throw new Error("sku is required for external variants sync");
+  }
+  if (!Number.isFinite(input.bcVariantId)) {
+    throw new Error("bcVariantId is required for external variants sync");
+  }
+  if (!Number.isFinite(input.bcProductId)) {
+    throw new Error("bcProductId is required for external variants sync");
+  }
+  if (!asTrimmed(input.forecastCtyCode)) {
+    throw new Error("forecastCtyCode is required for external variants sync");
+  }
+  if (!asTrimmed(input.bblRuleSetItem)) {
+    throw new Error("bblRuleSetItem is required for external variants sync");
+  }
 }
 
 export async function lookupBcIds(skuCode: string): Promise<BcIdsLookupResult> {
@@ -103,6 +149,7 @@ export async function lookupBcIds(skuCode: string): Promise<BcIdsLookupResult> {
       bc_product_id
     from public.bc_item_variant_map
     where sku_code = ${sku}
+    order by updated_at desc nulls last, id desc
     limit 1
   `) as Array<{ bc_variant_id: number | null; bc_product_id: number | null }>;
 
@@ -120,121 +167,70 @@ export async function lookupLatestSamplerRuleset(
   if (!sku) throw new Error("skuCode is required");
 
   const rows = (await sql`
-    select ruleset
-    from public.cpq_sampler_result
-    where coalesce(trim(ipn_code), '') = ${sku}
-    order by updated_at desc nulls last, created_at desc nulls last, id desc
+    select csr.ruleset
+    from public.cpq_sampler_result csr
+    join public.bc_item_variant_map map
+      on coalesce(trim(csr.ipn_code), '') = coalesce(trim(map.sku_code), '')
+    where coalesce(trim(map.sku_code), '') = ${sku}
+      and coalesce(trim(csr.ruleset), '') <> ''
+    group by csr.ruleset
+    order by
+      max(csr.updated_at) desc nulls last,
+      max(csr.created_at) desc nulls last,
+      csr.ruleset asc
     limit 1
   `) as Array<{ ruleset: string | null }>;
 
   return asTrimmed(rows[0]?.ruleset) || null;
 }
 
-export async function upsertExternalVariantEligibility(
-  input: ExternalVariantEligibilityInput,
-  options: ExternalVariantPushOptions = {},
-): Promise<ExternalVariantEligibilityUpsertResult> {
-  ensureEligibilityInput(input);
-  const payload = {
-    sku: asTrimmed(input.sku),
-    countryCode: asTrimmed(input.countryCode).toUpperCase(),
-    detailId: asTrimmed(input.detailId),
-    isActive: input.isActive === true,
-  };
-
-  return withExternalPgClient(async (client, schema) => {
-    const tableName = qualifiedTableName(schema, "variant_eligibilities");
-    options.onStage?.("upsert_start", { tableName });
-
-    let result;
-    try {
-      result = await client.query(
-        `
-        insert into ${tableName} (
-          "Sku",
-          "CountryCode",
-          "DetailID",
-          "IsActive"
-        ) values (
-          $1,
-          $2,
-          $3,
-          $4
-        )
-        on conflict ("Sku", "CountryCode")
-        do update set
-          "DetailID" = excluded."DetailID",
-          "IsActive" = excluded."IsActive"
-        returning (xmax = 0) as inserted
-        `,
-        [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
-      );
-    } catch (error) {
-      throw normalizeExternalPgError(error, { stage: "upsert_execute" });
-    }
-
-    const row = result.rows[0] as { inserted?: boolean } | undefined;
-    if (!row)
-      throw new Error(
-        "No result returned by external variant_eligibilities upsert",
-      );
-
-    const action = row.inserted ? "inserted" : "updated";
-    const businessKey = { sku: payload.sku, countryCode: payload.countryCode };
-    options.onStage?.("upsert_success", { action, businessKey });
-    return { action, businessKey };
-  }, options);
-}
-
-export async function upsertExternalVariant(
+async function syncExternalVariantWithClient(
+  client: ExternalPgQueryClient,
+  tableName: string,
   input: ExternalVariantInput,
-  options: ExternalVariantPushOptions = {},
-): Promise<ExternalVariantUpsertResult> {
+  options: ExternalVariantPushOptions,
+): Promise<ExternalVariantSyncResult> {
   ensureVariantInput(input);
   const payload = {
     sku: asTrimmed(input.sku),
     bcVariantId: input.bcVariantId,
     bcProductId: input.bcProductId,
-    forecastCtyCode:
-      input.forecastCtyCode == null
-        ? null
-        : asTrimmed(input.forecastCtyCode) || null,
+    forecastCtyCode: asTrimmed(input.forecastCtyCode),
     bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
   };
+  const timestamp = currentExternalTimestamp();
 
-  return withExternalPgClient(async (client, schema) => {
-    const tableName = qualifiedTableName(schema, "variants");
-    options.onStage?.("upsert_start", { tableName });
+  try {
+    options.onStage?.("select_start", {
+      tableName,
+      businessKey: { sku: payload.sku },
+    });
+    const existing = await client.query(
+      `select "Sku" from ${tableName} where "Sku" = $1 limit 1`,
+      [payload.sku],
+    );
+    const exists = existing.rowCount > 0;
+    options.onStage?.("select_success", {
+      tableName,
+      exists,
+      businessKey: { sku: payload.sku },
+    });
 
-    let result;
-    try {
-      result = await client.query(
+    if (exists) {
+      options.onStage?.("update_start", {
+        tableName,
+        businessKey: { sku: payload.sku },
+      });
+      await client.query(
         `
-        insert into ${tableName} (
-          "Sku",
-          "BcVariantID",
-          "BcProductID",
-          "ForecastCtyCode",
-          "BblRuleSetItem",
-          "CreatedAt",
-          "UpdatedAt"
-        ) values (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          now(),
-          now()
-        )
-        on conflict ("Sku")
-        do update set
-          "BcVariantID" = excluded."BcVariantID",
-          "BcProductID" = excluded."BcProductID",
-          "ForecastCtyCode" = excluded."ForecastCtyCode",
-          "BblRuleSetItem" = excluded."BblRuleSetItem",
-          "UpdatedAt" = now()
-        returning (xmax = 0) as inserted
+        update ${tableName}
+        set
+          "BcVariantId" = $2,
+          "BcProductId" = $3,
+          "ForecastCtyCode" = $4,
+          "BblRuleSetItem" = $5,
+          "UpdatedAt" = $6
+        where "Sku" = $1
         `,
         [
           payload.sku,
@@ -242,28 +238,69 @@ export async function upsertExternalVariant(
           payload.bcProductId,
           payload.forecastCtyCode,
           payload.bblRuleSetItem,
+          timestamp,
         ],
       );
-    } catch (error) {
-      throw normalizeExternalPgError(error, { stage: "upsert_execute" });
+      const result = {
+        action: "updated" as const,
+        businessKey: { sku: payload.sku },
+      };
+      options.onStage?.("update_success", { tableName, ...result });
+      return result;
     }
 
-    const row = result.rows[0] as { inserted?: boolean } | undefined;
-    if (!row) throw new Error("No result returned by external variants upsert");
-
-    const action = row.inserted ? "inserted" : "updated";
-    const businessKey = { sku: payload.sku };
-    options.onStage?.("upsert_success", { action, businessKey });
-    return { action, businessKey };
-  }, options);
+    options.onStage?.("insert_start", {
+      tableName,
+      businessKey: { sku: payload.sku },
+    });
+    await client.query(
+      `
+      insert into ${tableName} (
+        "Sku",
+        "BcVariantId",
+        "BcProductId",
+        "ForecastCtyCode",
+        "BblRuleSetItem",
+        "CreatedAt",
+        "UpdatedAt"
+      ) values (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7
+      )
+      `,
+      [
+        payload.sku,
+        payload.bcVariantId,
+        payload.bcProductId,
+        payload.forecastCtyCode,
+        payload.bblRuleSetItem,
+        timestamp,
+        timestamp,
+      ],
+    );
+    const result = {
+      action: "inserted" as const,
+      businessKey: { sku: payload.sku },
+    };
+    options.onStage?.("insert_success", { tableName, ...result });
+    return result;
+  } catch (error) {
+    throw normalizeExternalPgError(error, { stage: "variants_sync_execute" });
+  }
 }
 
-export async function runExternalVariantEligibilityWriteDiagnostic(
+async function syncExternalVariantEligibilityWithClient(
+  client: ExternalPgQueryClient,
+  tableName: string,
   input: ExternalVariantEligibilityInput,
-  options: ExternalVariantPushOptions = {},
-): Promise<ExternalVariantWriteDiagnosticResult> {
+  options: ExternalVariantPushOptions,
+): Promise<ExternalVariantEligibilitySyncResult> {
   ensureEligibilityInput(input);
-  const startedAt = Date.now();
   const payload = {
     sku: asTrimmed(input.sku),
     countryCode: asTrimmed(input.countryCode).toUpperCase(),
@@ -271,73 +308,230 @@ export async function runExternalVariantEligibilityWriteDiagnostic(
     isActive: input.isActive === true,
   };
 
+  try {
+    const businessKey = { sku: payload.sku, countryCode: payload.countryCode };
+    options.onStage?.("select_start", { tableName, businessKey });
+    const existing = await client.query(
+      `select "Sku" from ${tableName} where "Sku" = $1 and "CountryCode" = $2 limit 1`,
+      [payload.sku, payload.countryCode],
+    );
+    const exists = existing.rowCount > 0;
+    options.onStage?.("select_success", { tableName, exists, businessKey });
+
+    if (exists) {
+      options.onStage?.("update_start", { tableName, businessKey });
+      await client.query(
+        `
+        update ${tableName}
+        set
+          "DetailId" = $3,
+          "IsActive" = $4
+        where "Sku" = $1
+          and "CountryCode" = $2
+        `,
+        [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
+      );
+      const result = { action: "updated" as const, businessKey };
+      options.onStage?.("update_success", { tableName, ...result });
+      return result;
+    }
+
+    options.onStage?.("insert_start", { tableName, businessKey });
+    await client.query(
+      `
+      insert into ${tableName} (
+        "Sku",
+        "CountryCode",
+        "DetailId",
+        "IsActive"
+      ) values (
+        $1,
+        $2,
+        $3,
+        $4
+      )
+      `,
+      [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
+    );
+    const result = { action: "inserted" as const, businessKey };
+    options.onStage?.("insert_success", { tableName, ...result });
+    return result;
+  } catch (error) {
+    throw normalizeExternalPgError(error, {
+      stage: "variant_eligibilities_sync_execute",
+    });
+  }
+}
+
+export async function syncExternalVariant(
+  input: ExternalVariantInput,
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantSyncResult> {
   return withExternalPgClient(async (client, schema) => {
-    const tableName = qualifiedTableName(schema, "variant_eligibilities");
+    return syncExternalVariantWithClient(
+      client,
+      qualifiedTableName(schema, "variants"),
+      input,
+      options,
+    );
+  }, options);
+}
+
+export async function syncExternalVariantEligibility(
+  input: ExternalVariantEligibilityInput,
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantEligibilitySyncResult> {
+  return withExternalPgClient(async (client, schema) => {
+    return syncExternalVariantEligibilityWithClient(
+      client,
+      qualifiedTableName(schema, "variant_eligibilities"),
+      input,
+      options,
+    );
+  }, options);
+}
+
+export async function syncExternalVariantTablesForPayload(
+  input: ExternalVariantEligibilityInput,
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantTablesSyncResult> {
+  ensureEligibilityInput(input);
+  const sku = asTrimmed(input.sku);
+  const countryCode = asTrimmed(input.countryCode).toUpperCase();
+  const businessKey = { sku, countryCode };
+
+  const { bcVariantId, bcProductId } = await lookupBcIds(sku);
+  if (bcVariantId == null || bcProductId == null) {
+    const missing = [
+      bcProductId == null ? "bc_product_id" : null,
+      bcVariantId == null ? "bc_variant_id" : null,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" and ");
+    const message = `External PostgreSQL push skipped for ${sku}: missing ${missing} in Neon bc_item_variant_map.`;
+    return {
+      ok: true,
+      skipped: true,
+      message,
+      variantResult: { action: "skipped", businessKey: { sku }, message },
+      eligibilityResult: { action: "skipped", businessKey, message },
+    };
+  }
+
+  const ruleset = await lookupLatestSamplerRuleset(sku);
+  if (!ruleset) {
+    throw new Error(`No cpq_sampler_result ruleset found for SKU ${sku}`);
+  }
+
+  return withExternalPgClient(async (client, schema) => {
+    const variantsTableName = qualifiedTableName(schema, "variants");
+    const eligibilityTableName = qualifiedTableName(schema, "variant_eligibilities");
+    options.onStage?.("sync_start", {
+      sku,
+      countryCode,
+      order: ["variants", "variant_eligibilities"],
+    });
+    const variantResult = await syncExternalVariantWithClient(
+      client,
+      variantsTableName,
+      {
+        sku,
+        bcVariantId,
+        bcProductId,
+        forecastCtyCode: FORECAST_CTY_CODE,
+        bblRuleSetItem: ruleset,
+      },
+      options,
+    );
+    const eligibilityResult = await syncExternalVariantEligibilityWithClient(
+      client,
+      eligibilityTableName,
+      {
+        sku,
+        countryCode,
+        detailId: input.detailId,
+        isActive: input.isActive,
+      },
+      options,
+    );
+    options.onStage?.("sync_success", {
+      sku,
+      countryCode,
+      variantAction: variantResult.action,
+      eligibilityAction: eligibilityResult.action,
+    });
+    return {
+      ok: true,
+      skipped: false,
+      message: `External PostgreSQL push completed for ${sku} / ${countryCode}.`,
+      variantResult,
+      eligibilityResult,
+    };
+  }, options);
+}
+
+export async function runExternalVariantTablesWriteDiagnostic(
+  input: ExternalVariantInput & ExternalVariantEligibilityInput,
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantWriteDiagnosticResult> {
+  ensureVariantInput(input);
+  ensureEligibilityInput(input);
+  const startedAt = Date.now();
+
+  return withExternalPgClient(async (client, schema) => {
+    const variantsTableName = qualifiedTableName(schema, "variants");
+    const eligibilityTableName = qualifiedTableName(schema, "variant_eligibilities");
     options.onStage?.("begin_start", {
-      tableName,
+      tableNames: [variantsTableName, eligibilityTableName],
       mode: "write_diagnostic_rollback",
     });
     try {
       await client.query("begin");
       options.onStage?.("begin_success", {
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         mode: "write_diagnostic_rollback",
       });
-      options.onStage?.("upsert_start", {
-        tableName,
-        mode: "write_diagnostic_rollback",
-      });
-      await client.query(
-        `
-        insert into ${tableName} (
-          "Sku",
-          "CountryCode",
-          "DetailID",
-          "IsActive"
-        ) values (
-          $1,
-          $2,
-          $3,
-          $4
-        )
-        on conflict ("Sku", "CountryCode")
-        do update set
-          "DetailID" = excluded."DetailID",
-          "IsActive" = excluded."IsActive"
-        `,
-        [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
+      const variantResult = await syncExternalVariantWithClient(
+        client,
+        variantsTableName,
+        input,
+        options,
       );
-      options.onStage?.("upsert_success", {
-        tableName,
-        mode: "write_diagnostic_rollback",
-      });
+      const eligibilityResult = await syncExternalVariantEligibilityWithClient(
+        client,
+        eligibilityTableName,
+        input,
+        options,
+      );
       options.onStage?.("rollback_start", {
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         mode: "write_diagnostic_rollback",
       });
       await client.query("rollback");
       options.onStage?.("rollback_success", {
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         mode: "write_diagnostic_rollback",
       });
       return {
         rolledBack: true,
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         durationMs: Math.max(0, Date.now() - startedAt),
+        variantResult,
+        eligibilityResult,
       };
     } catch (error) {
       options.onStage?.("rollback_start", {
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         mode: "write_diagnostic_rollback",
         from: "catch",
       });
       await client.query("rollback").catch(() => undefined);
       options.onStage?.("rollback_success", {
-        tableName,
+        tableNames: [variantsTableName, eligibilityTableName],
         mode: "write_diagnostic_rollback",
         from: "catch",
       });
-      throw normalizeExternalPgError(error, { stage: "upsert_execute" });
+      throw normalizeExternalPgError(error, { stage: "write_diagnostic_execute" });
     }
   }, options);
 }

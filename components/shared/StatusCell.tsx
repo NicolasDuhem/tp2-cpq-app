@@ -3,7 +3,7 @@
 type StatusCellProps = {
   status: 'active' | 'inactive' | 'not_configured';
   onToggle: () => void;
-  onPush: () => void;
+  onPush?: () => void;
   disabled?: boolean;
   pushDisabled?: boolean;
   statusLabel?: string;
@@ -30,9 +30,11 @@ export default function StatusCell({
       <button type="button" className={badgeClass} onClick={onToggle} disabled={disabled} title={title}>
         {statusLabel ?? fallbackLabel}
       </button>
-      <button type="button" className="statusCellPush" onClick={onPush} disabled={pushDisabled ?? disabled} title={pushTitle ?? 'Push to external PostgreSQL'}>
-        {pushLabel}
-      </button>
+      {onPush ? (
+        <button type="button" className="statusCellPush" onClick={onPush} disabled={pushDisabled ?? disabled} title={pushTitle ?? 'Push to external PostgreSQL'}>
+          {pushLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

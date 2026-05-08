@@ -310,7 +310,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         errorDetail?: string;
         errorHint?: string;
         stage?: string;
-        result?: { action: 'inserted' | 'updated' };
+        result?: { skipped: boolean; message: string; variantResult: { action: 'inserted' | 'updated' | 'skipped' }; eligibilityResult: { action: 'inserted' | 'updated' | 'skipped' } };
       };
 
       if (!response.ok || !payload.result) {
@@ -326,7 +326,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         throw new Error(payload.error ? (detail ? `${payload.error} (${detail})` : payload.error) : 'Failed to push allocation to external PostgreSQL');
       }
 
-      setMessage({ type: 'success', text: `${row.partNumber} ${countryCode} pushed (${payload.result.action}).` });
+      setMessage({
+        type: 'success',
+        text: payload.result.skipped
+          ? payload.result.message
+          : `${row.partNumber} ${countryCode} pushed (variants ${payload.result.variantResult.action}, eligibility ${payload.result.eligibilityResult.action}).`,
+      });
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push allocation' });
     } finally {
@@ -502,17 +507,20 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         err,
       });
 
-      void fetch('/api/bigcommerce/item-map/upsert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          itemType: 'QPART',
-          sourcePage: 'qpart-allocation',
-          items: Object.fromEntries(skus.map((sku) => [sku, payload.items?.[sku] ?? { status: 'ERR', sku }])),
-        }),
-      }).catch((error) => {
+      try {
+        const upsertResponse = await fetch('/api/bigcommerce/item-map/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemType: 'QPART',
+            sourcePage: 'qpart-allocation',
+            items: Object.fromEntries(skus.map((sku) => [sku, payload.items?.[sku] ?? { status: 'ERR', sku }])),
+          }),
+        });
+        if (upsertResponse.ok) router.refresh();
+      } catch (error) {
         console.warn('[BC status][qpart-allocation] failed to upsert cache', error);
-      });
+      }
     } catch {
       const failedStatuses = Object.fromEntries(skus.map((sku) => [sku, { status: 'ERR' as const }])) as BCStatusMap;
       setBcStatusBySku((prev) => ({ ...prev, ...failedStatuses }));
@@ -747,7 +755,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                         <StatusCell
                           status={status === 'active' ? 'active' : 'inactive'}
                           onToggle={() => void toggleCell(row, countryCode, status)}
-                          onPush={() => void pushCell(row, countryCode)}
+                          onPush={row.hasBcIds ? () => void pushCell(row, countryCode) : undefined}
                           disabled={busyKey === cellKey || pushBusyKey === cellKey}
                           pushDisabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
                           statusLabel={statusLabel(status)}
