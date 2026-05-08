@@ -675,7 +675,7 @@ export default function QPartPartFormPage({ partId }: Props) {
         <div className="qpartSectionHeader">
           <h3>Hierarchy assignment (1-7)</h3>
           <button type="button" onClick={() => setHierarchyExpanded((prev) => !prev)}>
-            {hierarchyExpanded ? 'Collapse' : 'Expand'}
+            {hierarchyExpanded ? '▲ Hide' : '▼ Show'}
           </button>
         </div>
         {hierarchyExpanded ? (
@@ -699,7 +699,7 @@ export default function QPartPartFormPage({ partId }: Props) {
         <div className="qpartSectionHeader">
           <h3>Metadata values</h3>
           <button type="button" onClick={() => setMetadataExpanded((prev) => !prev)}>
-            {metadataExpanded ? 'Collapse' : 'Expand'}
+            {metadataExpanded ? '▲ Hide' : '▼ Show'}
           </button>
         </div>
         {metadataExpanded ? (
@@ -766,7 +766,7 @@ export default function QPartPartFormPage({ partId }: Props) {
         <div className="qpartSectionHeader">
           <h3>Channel &amp; Country assignment</h3>
           <button type="button" onClick={() => setAssignmentExpanded((prev) => !prev)}>
-            {assignmentExpanded ? 'Collapse' : 'Expand'}
+            {assignmentExpanded ? '▲ Hide' : '▼ Show'}
           </button>
         </div>
         {assignmentExpanded ? (
@@ -808,7 +808,7 @@ export default function QPartPartFormPage({ partId }: Props) {
         <div className="qpartSectionHeader">
           <h3>Compatibility</h3>
           <button type="button" onClick={() => setCompatibilityExpanded((prev) => !prev)}>
-            {compatibilityExpanded ? 'Collapse' : 'Expand'}
+            {compatibilityExpanded ? '▲ Hide' : '▼ Show'}
           </button>
         </div>
         {compatibilityExpanded ? (

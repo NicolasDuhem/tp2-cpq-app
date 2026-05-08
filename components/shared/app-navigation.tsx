@@ -11,15 +11,15 @@ const ADMIN_PASSWORD = 'Br0mpt0n';
 
 const links: NavLink[] = [
   { href: '/dashboard', label: 'Dashboard' },
-  { href: '/cpq/process', label: 'CPQ - Process' },
-  { href: '/sales/bike-allocation', label: 'Sales - bike allocation' },
-  { href: '/sales/qpart-allocation', label: 'Sales - QPart allocation' },
-  { href: '/cpq', label: 'CPQ - Bike Builder' },
-  { href: '/cpq/setup', label: 'CPQ - Setup' },
-  { href: '/qpart', label: 'QPart - Spare Parts PIM' },
-  { href: '/cpq/results', label: 'CPQ - Sampler Results', adminOnly: true },
-  { href: '/cpq/ui-docs', label: 'CPQ - UI Docs', adminOnly: true },
-  { href: '/admin/data-point', label: 'Admin - Data point', adminOnly: true },
+  { href: '/cpq/process', label: 'Process' },
+  { href: '/sales/bike-allocation', label: 'Bike Allocation' },
+  { href: '/sales/qpart-allocation', label: 'QPart Allocation' },
+  { href: '/cpq', label: 'Bike Builder' },
+  { href: '/cpq/setup', label: 'Setup' },
+  { href: '/qpart', label: 'QPart PIM' },
+  { href: '/cpq/results', label: 'Sampler Results', adminOnly: true },
+  { href: '/cpq/ui-docs', label: 'UI Docs', adminOnly: true },
+  { href: '/admin/data-point', label: 'Data Points', adminOnly: true },
 ];
 
 export default function AppNavigation() {
@@ -32,9 +32,9 @@ export default function AppNavigation() {
   const visibleLinks = useMemo(() => links.filter((link) => isAdminMode || !link.adminOnly), [isAdminMode]);
   const navClusters = useMemo(() => {
     const clusterLabels = [
-      ['Dashboard', 'CPQ - Process'],
-      ['Sales - bike allocation', 'Sales - QPart allocation'],
-      ['CPQ - Bike Builder', 'CPQ - Setup', 'QPart - Spare Parts PIM'],
+      ['Dashboard', 'Process'],
+      ['Bike Allocation', 'QPart Allocation'],
+      ['Bike Builder', 'Setup', 'QPart PIM'],
     ];
     const primaryLinks = visibleLinks.filter((link) => !link.adminOnly);
     const adminLinks = visibleLinks.filter((link) => link.adminOnly);

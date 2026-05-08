@@ -577,7 +577,7 @@ export default function SalesBikeAllocationTableClient({
       </section>
 
       <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>Push</strong> to upsert a row-country record into external PostgreSQL.
+        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>↑ Push</strong> to upsert a row-country record into external PostgreSQL.
       </div>
 
       {message ? (
@@ -687,7 +687,7 @@ export default function SalesBikeAllocationTableClient({
                           disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
                           pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
                           statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
-                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : 'Push'}
+                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : '↑ Push'}
                           title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
                           pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : 'Push this bike + country row to external PostgreSQL'}
                         />
