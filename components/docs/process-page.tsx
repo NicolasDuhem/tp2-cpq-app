@@ -1,3 +1,5 @@
+import PageHeader from '@/components/shared/PageHeader';
+
 const anchorLinks = [
   { href: '#overview', label: 'Overview' },
   { href: '#step-0', label: 'Step 0 — CPQ admin setup' },
@@ -11,13 +13,10 @@ const anchorLinks = [
 export default function ProcessPage() {
   return (
     <main className="page processPage">
-      <header className="processHeader">
-        <h1>Process</h1>
-        <p>
-          Internal SOP for CPQ admin and Product team users. Use this page as the standard way to prepare
-          setup data, configure bikes, and avoid common execution issues.
-        </p>
-      </header>
+      <PageHeader
+        title="Process"
+        description="Internal SOP for CPQ admin and Product team users. Use this page as the standard way to prepare setup data, configure bikes, and avoid common execution issues."
+      />
 
       <nav className="processAnchorNav" aria-label="Process page sections">
         {anchorLinks.map((item) => (

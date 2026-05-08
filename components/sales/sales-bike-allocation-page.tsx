@@ -1,4 +1,5 @@
 import { getSalesBikeAllocationPageData } from '@/lib/sales/bike-allocation/service';
+import PageHeader from '@/components/shared/PageHeader';
 import SalesBikeAllocationTableClient from './sales-bike-allocation-table.client';
 import styles from './sales-bike-allocation-page.module.css';
 
@@ -24,13 +25,10 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1>Sales - bike allocation</h1>
-        <p>
-          Active = one or more matching sampler rows have active=true. Not active = matching rows exist but all are
-          active=false. Not configured = no sampler configuration found for country.
-        </p>
-      </header>
+      <PageHeader
+        title="Sales - bike allocation"
+        description="Active = one or more matching sampler rows have active=true. Not active = matching rows exist but all are active=false. Not configured = no sampler configuration found for country."
+      />
       <SalesBikeAllocationTableClient
         rows={data.rows}
         availableFeatures={data.availableFeatures}

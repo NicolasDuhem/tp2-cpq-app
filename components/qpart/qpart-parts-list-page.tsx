@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import PageHeader from '@/components/shared/PageHeader';
 import { useEffect, useMemo, useState } from 'react';
 import { QPartHierarchyNode, QPartRecord } from '@/types/qpart';
 
@@ -120,11 +121,11 @@ export default function QPartPartsListPage() {
   return (
     <section className="pageRoot">
       <div className="compactPageHeader qpartPartsHeader">
-        <div>
-          <h1>QPart Parts</h1>
-          <p className="subtle">Search and manage spare parts under isolated /qpart APIs.</p>
-        </div>
-        <div className="rowButtons qpartPartsHeaderActions">
+        <PageHeader
+          title="QPart Parts"
+          description="Search and manage spare parts under isolated /qpart APIs."
+          actions={(
+            <div className="rowButtons qpartPartsHeaderActions">
           <Link className="tab" href="/qpart">Back to QPart home</Link>
           <Link className="tab tabActive" href="/qpart/parts/new">Create part</Link>
           <a className="tab" href="/api/qpart/parts/export">Export CSV</a>
@@ -134,6 +135,8 @@ export default function QPartPartsListPage() {
             <button className="primary" onClick={() => void runImport(false)} disabled={importing}>{importing ? 'Applying…' : 'Apply import'}</button>
           </div>
         </div>
+          )}
+        />
       </div>
 
       {importError ? <p className="errorText qpartImportMessage">{importError}</p> : null}

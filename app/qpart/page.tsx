@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import PageHeader from '@/components/shared/PageHeader';
 import { getQPartSummary } from '@/lib/qpart/parts/service';
 
 export const dynamic = 'force-dynamic';
@@ -8,10 +9,10 @@ export default async function QPartLandingRoute() {
 
   return (
     <section className="pageRoot">
-      <div className="pageHeader">
-        <h1>QPart — Spare Parts PIM</h1>
-        <p>Isolated spare-part management domain under /qpart with dynamic hierarchy, metadata, translations, and compatibility.</p>
-      </div>
+      <PageHeader
+        title="QPart — Spare Parts PIM"
+        description="Isolated spare-part management domain under /qpart with dynamic hierarchy, metadata, translations, and compatibility."
+      />
       <div className="metricGrid">
         <div className="metric">
           <div className="metricLabel">Parts</div>

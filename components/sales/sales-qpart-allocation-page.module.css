@@ -568,3 +568,47 @@
 .paginationControls button:disabled { opacity: 0.65; cursor: not-allowed; }
 .paginationCurrent { background:#1f3f7e !important; color:#fff; border-color:#1f3f7e !important; }
 .paginationEllipsis { color:#738; padding:0 2px; }
+
+.stickyHeader {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.tableRow {
+  transition: background-color 0.15s ease;
+}
+.tableRow:hover td {
+  background: #f9fafb;
+}
+.stickyBCStatus,
+.stickyPart {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
+}
+.stickyTitle,
+.stickyHierarchy {
+  position: static;
+  box-shadow: none;
+}
+.countryHeader,
+.countryCell {
+  min-width: 110px;
+}
+.columnDropdownWrap {
+  position: relative;
+}
+.columnDropdownPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 220px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #d8e2f5;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(17, 35, 77, 0.16);
+  padding: 8px;
+}

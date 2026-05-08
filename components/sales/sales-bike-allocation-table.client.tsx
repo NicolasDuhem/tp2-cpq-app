@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AllocationStatus,
@@ -8,6 +8,10 @@ import {
   SalesBikeAllocationFilters,
   SalesBikeAllocationRow,
 } from '@/lib/sales/bike-allocation/service';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import MultiSelectDropdown from '@/components/shared/MultiSelectDropdown';
+import StatusCell from '@/components/shared/StatusCell';
+import Toast from '@/components/shared/Toast';
 import styles from './sales-bike-allocation-page.module.css';
 
 type Props = {
@@ -49,12 +53,6 @@ function statusLabel(status: AllocationStatus): string {
   return 'Not configured';
 }
 
-function statusClass(status: AllocationStatus): string {
-  if (status === 'active') return styles.statusActive;
-  if (status === 'not_active') return styles.statusNotActive;
-  return styles.statusNotConfigured;
-}
-
 function getBCBadgeClass(status: BCStatus): string {
   if (status === 'OK') return `${styles.bcBadge} ${styles.statusActive}`;
   if (status === 'NOK') return `${styles.bcBadge} ${styles.statusNotActive}`;
@@ -86,6 +84,9 @@ export default function SalesBikeAllocationTableClient({
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
+  const [pendingBulkStatus, setPendingBulkStatus] = useState<'active' | 'not_active' | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   const selectedFeatureSet = useMemo(() => new Set(selectedFeatures), [selectedFeatures]);
   const selectedCountryTargets = useMemo(
@@ -136,8 +137,7 @@ export default function SalesBikeAllocationTableClient({
     router.replace(query ? `${pathname}?${query}` : pathname);
   };
 
-  const onFeatureSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    const values = Array.from(event.target.selectedOptions).map((option) => option.value);
+  const updateSelectedFeatures = (values: string[]) => {
     setSelectedFeatures(values);
     setFeatureFilters((prev) => Object.fromEntries(values.map((value) => [value, prev[value] ?? ''])));
   };
@@ -318,10 +318,6 @@ export default function SalesBikeAllocationTableClient({
     }
 
     const label = targetStatus === 'active' ? 'Activate' : 'Deactivate';
-    const confirm = window.confirm(
-      `${label} ${filteredRows.length} visible IPN row(s) across ${selectedCountryTargets.length} country column(s): ${selectedCountryTargets.join(', ')}?\nOnly existing sampler rows will be updated.`,
-    );
-    if (!confirm) return;
 
     setBulkActionRunning(true);
     setMessage(null);
@@ -350,6 +346,8 @@ export default function SalesBikeAllocationTableClient({
         type: 'success',
         text: `Bulk ${label.toLowerCase()} done. Updated ${payload.result.updatedCount} sampler row(s) for ${payload.result.ipnCount} IPN(s) x ${payload.result.countryCount} countr${payload.result.countryCount === 1 ? 'y' : 'ies'}.`,
       });
+      setToastMessage(`Done — ${filteredRows.length} items updated`);
+      setToastVisible(true);
       runRefresh();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Bulk update failed.' });
@@ -357,6 +355,19 @@ export default function SalesBikeAllocationTableClient({
       setBulkActionRunning(false);
     }
   };
+
+  const requestBulkAction = (targetStatus: 'active' | 'not_active') => {
+    setPendingBulkStatus(targetStatus);
+  };
+
+  const confirmBulkAction = () => {
+    if (!pendingBulkStatus) return;
+    const targetStatus = pendingBulkStatus;
+    setPendingBulkStatus(null);
+    void runBulkAction(targetStatus);
+  };
+
+  const dismissToast = useCallback(() => setToastVisible(false), []);
 
 
   useEffect(() => {
@@ -524,13 +535,7 @@ export default function SalesBikeAllocationTableClient({
 
         <label className={styles.filterItem}>
           <span>Feature columns</span>
-          <select multiple value={selectedFeatures} onChange={onFeatureSelectChange} className={styles.multiSelect}>
-            {availableFeatures.map((feature) => (
-              <option key={feature} value={feature}>
-                {feature}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown options={availableFeatures} selected={selectedFeatures} onChange={updateSelectedFeatures} placeholder="All" />
         </label>
       </section>
 
@@ -562,10 +567,10 @@ export default function SalesBikeAllocationTableClient({
           ))}
         </div>
         <div className={styles.bulkButtons}>
-          <button type="button" onClick={() => void runBulkAction('active')} disabled={bulkActionRunning}>
+          <button type="button" onClick={() => requestBulkAction('active')} disabled={bulkActionRunning}>
             {bulkActionRunning ? 'Working…' : 'Bulk activate'}
           </button>
-          <button type="button" onClick={() => void runBulkAction('not_active')} disabled={bulkActionRunning}>
+          <button type="button" onClick={() => requestBulkAction('not_active')} disabled={bulkActionRunning}>
             {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
           </button>
         </div>
@@ -583,10 +588,20 @@ export default function SalesBikeAllocationTableClient({
 
       {rows.length === 0 ? <div className={styles.empty}>No bike allocation records found for the selected filters.</div> : null}
 
+      <ConfirmModal
+        open={pendingBulkStatus !== null}
+        title={pendingBulkStatus === 'active' ? 'Bulk activate?' : 'Bulk deactivate?'}
+        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${filteredRows.length} items across all selected markets.`}
+        confirmLabel="Confirm"
+        onConfirm={confirmBulkAction}
+        onCancel={() => setPendingBulkStatus(null)}
+      />
+      <Toast message={toastMessage} visible={toastVisible} onDismiss={dismissToast} />
+
       {rows.length > 0 ? (
         <div className={styles.tableWrap}>
           <table className={styles.matrixTable}>
-            <thead>
+            <thead className={styles.stickyHeader}>
               <tr>
                 <th className={styles.stickyBCStatus}>BC Status</th>
                 <th className={styles.stickyFirstColumn}>ipn_code</th>
@@ -637,12 +652,19 @@ export default function SalesBikeAllocationTableClient({
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={`${row.rowRuleset}::${row.ipnCode}`}>
+                <tr key={`${row.rowRuleset}::${row.ipnCode}`} className={styles.tableBodyRow}>
                   <td className={styles.stickyBCStatus}>
                     {bcStatusLoading && !bcStatusBySku[row.ipnCode] ? (
                       <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
                     ) : bcStatusBySku[row.ipnCode]?.status ? (
-                      <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
+                      bcStatusBySku[row.ipnCode].status === 'NOK' ? (
+                        <span className="nokTooltipWrap" title="BC Status: Not OK — this configuration has not passed BigCommerce validation">
+                          <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
+                          <span className="nokTooltip">BC Status: Not OK — this configuration has not passed BigCommerce validation</span>
+                        </span>
+                      ) : (
+                        <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
+                      )
                     ) : (
                       <span className={styles.bcNotChecked}>Not checked</span>
                     )}
@@ -658,26 +680,17 @@ export default function SalesBikeAllocationTableClient({
                     const isBusy = cellActionKey === actionKey;
                     return (
                       <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`}>
-                        <div className={styles.cellActions}>
-                          <button
-                            type="button"
-                            className={`${styles.statusButton} ${statusClass(status)}`}
-                            onClick={() => void onCountryCellClick(row, country, status)}
-                            disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
-                            title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
-                          >
-                            {isBusy ? 'Saving…' : statusLabel(status)}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.pushButton}
-                            onClick={() => void pushRowToExternal(row, country)}
-                            disabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
-                            title={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : 'Push this bike + country row to external PostgreSQL'}
-                          >
-                            {pushActionKey === actionKey ? 'Pushing…' : 'Push'}
-                          </button>
-                        </div>
+                        <StatusCell
+                          status={status === 'not_active' ? 'inactive' : status}
+                          onToggle={() => void onCountryCellClick(row, country, status)}
+                          onPush={() => void pushRowToExternal(row, country)}
+                          disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
+                          pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
+                          statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
+                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : 'Push'}
+                          title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
+                          pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : 'Push this bike + country row to external PostgreSQL'}
+                        />
                       </td>
                     );
                   })}

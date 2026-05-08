@@ -1,5 +1,6 @@
 'use client';
 
+import PageHeader from '@/components/shared/PageHeader';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -524,8 +525,10 @@ export default function CpqSetupPage({
   return (
     <main className="pageRoot">
       <section className="pageHeader compactCard">
-        <h1>CPQ Setup</h1>
-        <p>Manage account context defaults, CPQ rulesets, and picture-management option mappings stored in Neon.</p>
+        <PageHeader
+          title="CPQ Setup"
+          description="Manage account context defaults, CPQ rulesets, and picture-management option mappings stored in Neon."
+        />
         <div className="tabRow">
           <button className={tab === 'accounts' ? 'primary' : ''} onClick={() => { setTab('accounts'); updateRouteContext({ tab: 'accounts', feature: null, onlyMissingPicture: null }); }}>Account code management</button>
           <button className={tab === 'rulesets' ? 'primary' : ''} onClick={() => { setTab('rulesets'); updateRouteContext({ tab: 'rulesets', feature: null, onlyMissingPicture: null }); }}>Ruleset management</button>

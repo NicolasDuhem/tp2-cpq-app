@@ -9,8 +9,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="shell">
         <header className="brandbar">
           <div>
-            <div className="brandtitle">Brompton</div>
-            <div className="brandSubtitle">TP2 CPQ App</div>
+            <div className="brandtitle">
+              Brompton <span className="brandSubtitle">TP2 CPQ App</span>
+            </div>
           </div>
         </header>
         <AppNavigation />

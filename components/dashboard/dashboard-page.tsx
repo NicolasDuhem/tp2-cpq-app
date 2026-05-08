@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import PageHeader from '@/components/shared/PageHeader';
 import { DashboardPageData } from '@/lib/dashboard/service';
 import styles from './dashboard-page.module.css';
 
@@ -47,15 +48,11 @@ export default function DashboardPage({ data }: Props) {
 
   return (
     <div className={`pageRoot ${styles.dashboardPage}`}>
-      <header className={styles.header}>
-        <div>
-          <h1>Dashboard</h1>
-          <p>
-            Executive operations view across territory coverage, bike-type readiness, and picture-management completion.
-          </p>
-        </div>
-        <div className={styles.generatedAt}>Updated {new Date(data.generatedAt).toLocaleString()}</div>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        description="Executive operations view across territory coverage, bike-type readiness, and picture-management completion."
+        actions={<div className={styles.generatedAt}>Updated {new Date(data.generatedAt).toLocaleString()}</div>}
+      />
 
       <section className={styles.kpiGrid}>
         <button className={styles.kpiCard} onClick={() => router.push('/sales/bike-allocation')}>
