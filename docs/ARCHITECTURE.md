@@ -106,7 +106,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 ## External PostgreSQL variant push
 
 - Sales allocation Push routes do not write to external `cpq_sampler_result` anymore. Neon `CPQ_sampler_result` remains the internal sampler/allocation table.
-- External push targets are `variant_eligibility` keyed by (`"Sku"`, `"CountryCode"`) and `variants` keyed by (`"Sku"`), both under `EXTERNAL_PG_SCHEMA`.
+- External push targets are `variant_eligibilities` keyed by (`"Sku"`, `"CountryCode"`) and `variants` keyed by (`"Sku"`), both under `EXTERNAL_PG_SCHEMA`.
 - `variants."BcVariantID"` and `variants."BcProductID"` are looked up from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is currently `NULL`; `"BblRuleSetItem"` is the ruleset.
 - BigCommerce item-map upserts can asynchronously refresh external `variants` when BC IDs become available after a status check.
 

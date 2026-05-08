@@ -12,10 +12,10 @@ export type ExternalPgDiagnosticStageName =
   | "authentication"
   | "simple_query"
   | "table_exists"
-  | "variant_eligibility_table_exists"
+  | "variant_eligibilities_table_exists"
   | "variants_table_exists"
   | "upsert_prerequisite"
-  | "variant_eligibility_upsert_prerequisite"
+  | "variant_eligibilities_upsert_prerequisite"
   | "variants_upsert_prerequisite";
 
 const VARIANT_ELIGIBILITY_UPSERT_TARGET_COLUMNS = [
@@ -262,7 +262,7 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
 
   async function checkTableExists(
     stage: ExternalPgDiagnosticStageName,
-    tableName: "variant_eligibility" | "variants",
+    tableName: "variant_eligibilities" | "variants",
   ): Promise<ExternalPgDiagnosticResult | null> {
     const tableStart = measureStart();
     const qualifiedTableName = formatQualifiedTableName(
@@ -306,7 +306,7 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
 
   async function checkUniqueUpsertPrerequisite(
     stage: ExternalPgDiagnosticStageName,
-    tableName: "variant_eligibility" | "variants",
+    tableName: "variant_eligibilities" | "variants",
     targetColumns: readonly string[],
   ): Promise<ExternalPgDiagnosticResult | null> {
     const upsertStart = measureStart();
@@ -377,8 +377,8 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
   }
 
   const variantEligibilityTableFailure = await checkTableExists(
-    "variant_eligibility_table_exists",
-    "variant_eligibility",
+    "variant_eligibilities_table_exists",
+    "variant_eligibilities",
   );
   if (variantEligibilityTableFailure) return variantEligibilityTableFailure;
 
@@ -389,8 +389,8 @@ export async function runExternalPgDiagnostics(): Promise<ExternalPgDiagnosticRe
   if (variantsTableFailure) return variantsTableFailure;
 
   const variantEligibilityUpsertFailure = await checkUniqueUpsertPrerequisite(
-    "variant_eligibility_upsert_prerequisite",
-    "variant_eligibility",
+    "variant_eligibilities_upsert_prerequisite",
+    "variant_eligibilities",
     VARIANT_ELIGIBILITY_UPSERT_TARGET_COLUMNS,
   );
   if (variantEligibilityUpsertFailure) return variantEligibilityUpsertFailure;

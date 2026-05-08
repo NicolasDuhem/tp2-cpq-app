@@ -7,7 +7,7 @@ The row-level push actions from:
 
 now write to two external PostgreSQL variant target tables:
 
-- `<EXTERNAL_PG_SCHEMA>.variant_eligibility`
+- `<EXTERNAL_PG_SCHEMA>.variant_eligibilities`
 - `<EXTERNAL_PG_SCHEMA>.variants`
 
 The previous external push to `cpq_sampler_result` is no longer used. The internal Neon `cpq_sampler_result` table remains unchanged and continues to be used by the app for sampler persistence, sales allocation state, payload building, and ruleset lookups.
@@ -17,7 +17,7 @@ The previous external push to `cpq_sampler_result` is no longer used. The intern
 - Server-side push routes require the Node PostgreSQL client package `pg` at runtime.
 - Keep `pg` in `dependencies` (not only `devDependencies`) so production/serverless deployments can import it.
 
-## External target 1: `variant_eligibility`
+## External target 1: `variant_eligibilities`
 
 Columns are PascalCase and the app writes them double-quoted:
 
@@ -45,8 +45,8 @@ Mapping:
 Required unique index:
 
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibility_sku_country_uniq
-  ON public.variant_eligibility ("Sku", "CountryCode");
+CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
+  ON public.variant_eligibilities ("Sku", "CountryCode");
 ```
 
 Use the configured external schema instead of `public` if `EXTERNAL_PG_SCHEMA` is not `public`.
@@ -100,7 +100,7 @@ For bike and QPart pushes, the app still builds source payloads from Neon first:
 After payload build, each route:
 
 1. looks up BC IDs in Neon `public.bc_item_variant_map` by `sku_code = payload.ipnCode`
-2. upserts `variant_eligibility`
+2. upserts `variant_eligibilities`
 3. upserts `variants`
 
 The two external upserts are sequential so route logs show each target independently.
@@ -124,9 +124,9 @@ For these follow-up pushes:
 - external PostgreSQL environment/config parsing
 - DNS and connection/authentication checks
 - simple query execution
-- `variant_eligibility` table existence
+- `variant_eligibilities` table existence
 - `variants` table existence
-- unique support for `variant_eligibility ("Sku", "CountryCode")`
+- unique support for `variant_eligibilities ("Sku", "CountryCode")`
 - unique support for `variants ("Sku")`
 
-`/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variant_eligibility`; it no longer writes to external `cpq_sampler_result`.
+`/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variant_eligibilities`; it no longer writes to external `cpq_sampler_result`.

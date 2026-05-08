@@ -72,7 +72,7 @@ function quoteIdentifier(identifier: string): string {
 
 function qualifiedTableName(
   schema: string,
-  table: "variant_eligibility" | "variants",
+  table: "variant_eligibilities" | "variants",
 ): string {
   return `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
 }
@@ -143,7 +143,7 @@ export async function upsertExternalVariantEligibility(
   };
 
   return withExternalPgClient(async (client, schema) => {
-    const tableName = qualifiedTableName(schema, "variant_eligibility");
+    const tableName = qualifiedTableName(schema, "variant_eligibilities");
     options.onStage?.("upsert_start", { tableName });
 
     let result;
@@ -176,7 +176,7 @@ export async function upsertExternalVariantEligibility(
     const row = result.rows[0] as { inserted?: boolean } | undefined;
     if (!row)
       throw new Error(
-        "No result returned by external variant_eligibility upsert",
+        "No result returned by external variant_eligibilities upsert",
       );
 
     const action = row.inserted ? "inserted" : "updated";
@@ -272,7 +272,7 @@ export async function runExternalVariantEligibilityWriteDiagnostic(
   };
 
   return withExternalPgClient(async (client, schema) => {
-    const tableName = qualifiedTableName(schema, "variant_eligibility");
+    const tableName = qualifiedTableName(schema, "variant_eligibilities");
     options.onStage?.("begin_start", {
       tableName,
       mode: "write_diagnostic_rollback",
