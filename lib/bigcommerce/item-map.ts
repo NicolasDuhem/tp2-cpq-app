@@ -1,7 +1,7 @@
-import { sql } from '@/lib/db/client';
+import { sql } from "@/lib/db/client";
 
-export type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED' | 'UNKNOWN';
-export type BCItemType = 'BIKE' | 'QPART' | 'PNA' | 'UNKNOWN';
+export type BCStatus = "OK" | "NOK" | "ERR" | "DISABLED" | "UNKNOWN";
+export type BCItemType = "BIKE" | "QPART" | "PNA" | "UNKNOWN";
 
 type ItemMapRow = {
   sku_code: string;
@@ -52,18 +52,31 @@ export type ItemMapUpsertPayload = {
   >;
 };
 
-const asTrimmed = (value: unknown) => String(value ?? '').trim();
+const asTrimmed = (value: unknown) => String(value ?? "").trim();
 
 function toBcStatus(value: unknown): BCStatus {
   const status = asTrimmed(value).toUpperCase();
-  if (status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' || status === 'UNKNOWN') return status;
-  return 'UNKNOWN';
+  if (
+    status === "OK" ||
+    status === "NOK" ||
+    status === "ERR" ||
+    status === "DISABLED" ||
+    status === "UNKNOWN"
+  )
+    return status;
+  return "UNKNOWN";
 }
 
 function toItemType(value: unknown): BCItemType {
   const itemType = asTrimmed(value).toUpperCase();
-  if (itemType === 'BIKE' || itemType === 'QPART' || itemType === 'PNA' || itemType === 'UNKNOWN') return itemType;
-  return 'UNKNOWN';
+  if (
+    itemType === "BIKE" ||
+    itemType === "QPART" ||
+    itemType === "PNA" ||
+    itemType === "UNKNOWN"
+  )
+    return itemType;
+  return "UNKNOWN";
 }
 
 function safeNullableText(value: unknown): string | null {
@@ -72,7 +85,7 @@ function safeNullableText(value: unknown): string | null {
 }
 
 function safeNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -83,13 +96,17 @@ function safeInteger(value: unknown): number | null {
 }
 
 function safeBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value;
-  if (value === 'true' || value === 't' || value === 1 || value === '1') return true;
-  if (value === 'false' || value === 'f' || value === 0 || value === '0') return false;
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === "t" || value === 1 || value === "1")
+    return true;
+  if (value === "false" || value === "f" || value === 0 || value === "0")
+    return false;
   return null;
 }
 
-export async function lookupBigCommerceItemMap(skus: string[]): Promise<Record<string, ItemMapLookupItem>> {
+export async function lookupBigCommerceItemMap(
+  skus: string[],
+): Promise<Record<string, ItemMapLookupItem>> {
   const normalizedSkus = [...new Set(skus.map(asTrimmed).filter(Boolean))];
   if (!normalizedSkus.length) return {};
 
@@ -130,18 +147,33 @@ export async function lookupBigCommerceItemMap(skus: string[]): Promise<Record<s
   );
 }
 
-export async function upsertBigCommerceItemMap(payload: ItemMapUpsertPayload): Promise<number> {
+export type ItemMapUpsertedRow = {
+  skuCode: string;
+  bcProductId: number | null;
+  bcVariantId: number | null;
+};
+
+export type ItemMapUpsertResult = {
+  upserted: number;
+  rows: ItemMapUpsertedRow[];
+};
+
+export async function upsertBigCommerceItemMap(
+  payload: ItemMapUpsertPayload,
+): Promise<ItemMapUpsertResult> {
   const itemType = toItemType(payload.itemType);
   const sourcePage = safeNullableText(payload.sourcePage);
   const entries = Object.entries(payload.items ?? {});
 
   let upserted = 0;
+  const upsertedRows: ItemMapUpsertedRow[] = [];
   for (const [requestedSku, rawItem] of entries) {
     const skuCode = asTrimmed(rawItem?.sku ?? requestedSku);
     if (!skuCode) continue;
 
     const status = toBcStatus(rawItem?.status);
-    const variantJson = rawItem?.variantJson == null ? null : rawItem.variantJson;
+    const variantJson =
+      rawItem?.variantJson == null ? null : rawItem.variantJson;
     const bcProductId = safeInteger(rawItem?.productId);
     const bcVariantId = safeInteger(rawItem?.variantId);
     const bcSkuId = safeInteger(rawItem?.skuId);
@@ -170,21 +202,21 @@ export async function upsertBigCommerceItemMap(payload: ItemMapUpsertPayload): P
       ) values (
         ${skuCode},
         ${itemType},
-        ${status === 'OK' ? bcProductId : null},
-        ${status === 'OK' ? bcVariantId : null},
-        ${status === 'OK' ? bcSkuId : null},
+        ${status === "OK" ? bcProductId : null},
+        ${status === "OK" ? bcVariantId : null},
+        ${status === "OK" ? bcSkuId : null},
         ${status},
-        ${status === 'OK' ? safeNullableText(rawItem?.productName) : null},
-        ${status === 'OK' ? safeNullableText(rawItem?.sku) : null},
-        ${status === 'OK' ? safeNullableText(rawItem?.imageUrl) : null},
-        ${status === 'OK' ? safeNumber(rawItem?.calculatedPrice) : null},
-        ${status === 'OK' ? safeInteger(rawItem?.inventoryLevel) : null},
-        ${status === 'OK' ? safeBoolean(rawItem?.purchasingDisabled) : null},
-        ${status === 'OK' ? safeBoolean(rawItem?.isVisible) : null},
-        ${status === 'OK' ? JSON.stringify(variantJson) : null}::jsonb,
+        ${status === "OK" ? safeNullableText(rawItem?.productName) : null},
+        ${status === "OK" ? safeNullableText(rawItem?.sku) : null},
+        ${status === "OK" ? safeNullableText(rawItem?.imageUrl) : null},
+        ${status === "OK" ? safeNumber(rawItem?.calculatedPrice) : null},
+        ${status === "OK" ? safeInteger(rawItem?.inventoryLevel) : null},
+        ${status === "OK" ? safeBoolean(rawItem?.purchasingDisabled) : null},
+        ${status === "OK" ? safeBoolean(rawItem?.isVisible) : null},
+        ${status === "OK" ? JSON.stringify(variantJson) : null}::jsonb,
         now(),
-        ${status === 'ERR' ? safeNullableText(rawItem?.error) : null},
-        ${status === 'ERR' ? safeNullableText(rawItem?.errorCode) : null},
+        ${status === "ERR" ? safeNullableText(rawItem?.error) : null},
+        ${status === "ERR" ? safeNullableText(rawItem?.errorCode) : null},
         ${sourcePage},
         now()
       )
@@ -224,11 +256,23 @@ export async function upsertBigCommerceItemMap(payload: ItemMapUpsertPayload): P
         source_page = excluded.source_page,
         updated_at = now()
       where not (excluded.bc_status = 'DISABLED' and public.bc_item_variant_map.bc_last_checked_at is not null)
-      returning id
-    `) as Array<{ id: number }>;
+      returning sku_code, bc_product_id, bc_variant_id
+    `) as Array<{
+      sku_code: string;
+      bc_product_id: number | null;
+      bc_variant_id: number | null;
+    }>;
 
-    if (rows.length > 0) upserted += 1;
+    const row = rows[0];
+    if (row) {
+      upserted += 1;
+      upsertedRows.push({
+        skuCode: row.sku_code,
+        bcProductId: row.bc_product_id,
+        bcVariantId: row.bc_variant_id,
+      });
+    }
   }
 
-  return upserted;
+  return { upserted, rows: upsertedRows };
 }

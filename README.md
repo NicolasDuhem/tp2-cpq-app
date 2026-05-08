@@ -3,6 +3,7 @@
 Next.js CPQ operations app for bike configuration, setup management, sampler analytics, and sales allocation handoff.
 
 ## Current routes
+
 - `/` → redirect to `/cpq`.
 - `/bike-builder` → redirect to `/cpq`.
 - `/cpq` → Bike Builder runtime (manual + bulk CPQ flow, save/retrieve, layered preview).
@@ -13,16 +14,17 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
-  - Includes per-cell **Push** action to upsert bike row-country records into external PostgreSQL `cpq_sampler_result` using business key `(namespace, ipn_code, country_code)`.
+  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibility` and `variants` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
-  - Includes per-cell **Push** action to upsert qpart row-country records into external PostgreSQL `cpq_sampler_result` using business key `(namespace, ipn_code, country_code)`.
+  - Includes per-cell **Push** action to upsert external PostgreSQL `variant_eligibility` and `variants` rows; Neon `qpart_country_allocation` remains the internal allocation source.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
 
 ## Core lifecycle contract (`/cpq`)
+
 1. `POST /api/cpq/init` (StartConfiguration)
 2. `POST /api/cpq/configure` (zero or more)
 3. `POST /api/cpq/finalize`
@@ -33,6 +35,7 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 Canonical snapshot source for save/sampler is latest Configure snapshot, fallback latest Start snapshot (never Finalize body).
 
 ### `/cpq` init trigger contract
+
 - `POST /api/cpq/init` is re-run whenever account code changes in UI.
 - `POST /api/cpq/init` is re-run whenever ruleset changes in UI.
 - Each init request is sequenced; only the latest init response is accepted as active context (stale responses are ignored).
@@ -40,6 +43,7 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 - Finalize/save always read session/ruleset/account from the authoritative active CPQ context set by the accepted init (not from stale/default session refs).
 
 ## Data ownership summary
+
 - Canonical save/retrieve: `cpq_configuration_references`
 - Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status: Active=true, Inactive=false, Not configured=no row)
 - QPart sales territory allocation state: `qpart_country_allocation` (`active` is authoritative, one row per `part_id + country_code`)
@@ -48,17 +52,21 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 - Dashboard aggregation source: `CPQ_sampler_result` + `CPQ_setup_ruleset` bike-type mapping + `cpq_country_mappings` territory metadata + `cpq_image_management` completeness status
 
 ## Admin mode and visibility
+
 - Client-side admin visibility gate in top nav (`Open as admin`, password `Br0mpt0n`).
 - Always-visible tabs: Process, Sales allocation, Bike Builder, Setup.
 - Admin-only tabs: Sampler Results, UI Docs.
 - `/cpq` technical/debug sections additionally require admin mode.
 
 ## Feature flags / runtime switches
+
 - `NEXT_PUBLIC_CPQ_DEBUG=true` enables client debug timeline (still admin-only visible).
 - `CPQ_USE_MOCK=true` switches `/api/cpq/init` and `/api/cpq/configure` to mock responses.
 
 ## Documentation
+
 See `docs/README.md` for the full documentation map, including deep architecture, page/component breakdown, and gap analysis.
+
 - `/qpart` → QPart spare-parts PIM landing page.
 - `/qpart/parts` → spare part search/list and edit links.
 - `/qpart/parts` also supports CSV export/import (dry-run preview + apply upsert by `part_number`).
@@ -68,6 +76,7 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - `/qpart/compatibility` → compatibility reference values and sampler derivation preview.
 
 ## QPart isolation summary
+
 - Namespace isolation: routes are under `/qpart`, APIs under `/api/qpart/*`, services under `lib/qpart/*`, and tables are prefixed `qpart_`.
 - CPQ/runtime pages (`/cpq`, `/cpq/setup`, `/sales/*`, dashboard) remain unchanged in behavior and do not depend on QPart tables at runtime.
 - Dynamic locale source for QPart translations: `CPQ_setup_account_context.language` (distinct values).
@@ -79,21 +88,23 @@ See `docs/README.md` for the full documentation map, including deep architecture
 - CSV metadata columns are dynamic from active `qpart_metadata_definitions` (`metadata__<key>` + `metadata__<key>__<locale>` for translatable definitions).
 - CSV translation locale columns are dynamic from distinct `CPQ_setup_account_context.language` values (`title__<locale>`, `description__<locale>`, non-base locales only).
 
-
 ## QPart AI translation configuration
+
 - `OPENAI_API_KEY` (required): server-side key for `POST /api/qpart/translations/field`.
 - `OPENAI_TRANSLATION_MODEL` (optional): defaults to `gpt-5.4-mini`.
 - QPart field translation is server-side only and never exposes API keys in browser code.
 - Supported translation locales stay dynamic from distinct `CPQ_setup_account_context.language` values (excluding base locale).
 
-
 ## External PostgreSQL row push configuration
-The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes to an external PostgreSQL table (`cpq_sampler_result`) server-side only.
+
+The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variant_eligibility` and `variants`. The old external `cpq_sampler_result` push is no longer used; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
 
 Runtime dependency requirement:
+
 - `pg` must be present in production dependencies (not just devDependencies) so server-side push routes can load the Node PostgreSQL client at runtime (for example in Vercel serverless functions).
 
 Required environment variables:
+
 - `EXTERNAL_PG_HOST`
 - `EXTERNAL_PG_PORT` (default `5432`)
 - `EXTERNAL_PG_DATABASE`
@@ -102,20 +113,26 @@ Required environment variables:
 - `EXTERNAL_PG_SSL` (`true` recommended for Azure PostgreSQL)
 - `EXTERNAL_PG_SCHEMA` (default `public`)
 
-Important: external upsert matching relies on unique business key `(namespace, ipn_code, country_code)` in the destination table. Ensure this index/constraint exists before using Push:
+Required external unique indexes:
 
 ```sql
-create unique index if not exists cpq_sampler_result_namespace_ipn_country_uniq
-  on public.cpq_sampler_result(namespace, ipn_code, country_code);
+CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibility_sku_country_uniq
+  ON public.variant_eligibility ("Sku", "CountryCode");
+
+CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
+  ON public.variants ("Sku");
 ```
 
+`variants."BcVariantID"` and `variants."BcProductID"` come from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is `NULL` for now; `"BblRuleSetItem"` is the ruleset. BigCommerce item-map upserts can later refresh external `variants` when BC IDs become available.
+
 ## Live Neon metadata source of truth
+
 - Live schema intelligence exports are in `database-intelligence/` and should be treated as the primary runtime DB reference for performance/schema validation.
 - Important: files in this repo currently use capitalized names (for example `Schema.csv`, `Constraints.csv`, `Indexes.csv`, `Table_sizes.csv`), and there is currently no `database-intelligence/README.md`.
 - For Neon load analysis and optimization planning, use those CSV exports first, then reconcile with code.
 
-
 ## QPart image upload (v1)
+
 - QPart detail page has compact **Take picture** (primary slot) and **Manage pictures** actions beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`). **Take picture** always writes/replaces the primary image at `image_index=0` (`is_primary=true`).
 - Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
 - Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).

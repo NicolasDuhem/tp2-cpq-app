@@ -1,9 +1,11 @@
 # Architecture (current implementation)
 
 ## 1) Application scope
+
 This repository is a CPQ-focused Next.js app with operational setup, runtime configuration, sampler analytics, and sales allocation orchestration.
 
 Primary routes:
+
 - `/dashboard` (executive operations dashboard)
 - `/cpq` (Bike Builder runtime)
 - `/cpq/setup` (setup + picture management)
@@ -14,10 +16,12 @@ Primary routes:
 - `/sales/qpart-allocation` (sales territory matrix for QPart spare parts)
 
 Aliases:
+
 - `/` → `/cpq`
 - `/bike-builder` → `/cpq`
 
 ## 2) Shell/navigation/auth model
+
 - `app/layout.tsx` wraps pages in `AppShell`.
 - `AppShell` provides brand header + nav + `AdminModeProvider`.
 - Admin mode is client-side only (sessionStorage key `tp2-cpq-admin-mode`, password `Br0mpt0n`).
@@ -28,6 +32,7 @@ Aliases:
 Important boundary: this is **not** server-enforced authentication/RBAC; it is UI visibility gating.
 
 ## 3) Page architecture
+
 - `/cpq` → `components/cpq/bike-builder-page.tsx`
   - Start/Configure/Finalize lifecycle
   - canonical save/retrieve
@@ -50,13 +55,16 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `/cpq/process` and `/cpq/ui-docs` are static-ish client-doc pages.
 
 ## 4) API architecture
+
 ### CPQ runtime routes
+
 - `POST /api/cpq/init`
 - `POST /api/cpq/configure`
 - `POST /api/cpq/finalize`
 - `POST /api/cpq/retrieve-configuration`
 
 ### CPQ persistence/setup routes
+
 - `POST/GET /api/cpq/configuration-references`
 - `POST /api/cpq/sampler-result`
 - `POST /api/cpq/image-layers`
@@ -66,6 +74,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `GET/PUT/POST /api/cpq/setup/picture-management*`
 
 ### Sales routes
+
 - `POST /api/sales/bike-allocation/toggle`
 - `POST /api/sales/bike-allocation/bulk-update`
 - `POST /api/sales/bike-allocation/launch-context`
@@ -75,6 +84,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
   - Toggle/bulk routes revalidate `/sales/qpart-allocation` after writes.
 
 ## 5) Data boundaries
+
 - `cpq_configuration_references` = canonical saved configuration registry for retrieve.
 - `CPQ_sampler_result` = support snapshots + sales allocation status source (`active`).
 - `CPQ_setup_account_context`, `cpq_country_mappings`, `CPQ_setup_ruleset` = setup/master tables.
@@ -83,15 +93,25 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - Bike-type source of truth used by dashboard and sales deep-links: `CPQ_setup_ruleset.cpq_ruleset -> CPQ_setup_ruleset.bike_type`.
 
 ## 6) Feature flags/runtime switches
+
 - `NEXT_PUBLIC_CPQ_DEBUG=true`: client debug timeline capture in `/cpq` (still admin-visible only).
 - `CPQ_USE_MOCK=true`: mock responses for init/configure routes.
 
 ## 7) Known constraints
+
 - UI admin mode is not security.
 - `/cpq/results` can be opened directly by URL even when admin tab is hidden.
 - `/cpq/ui-docs` route renders for all users, but its component content gates detailed table to admin mode.
 
+## External PostgreSQL variant push
+
+- Sales allocation Push routes do not write to external `cpq_sampler_result` anymore. Neon `CPQ_sampler_result` remains the internal sampler/allocation table.
+- External push targets are `variant_eligibility` keyed by (`"Sku"`, `"CountryCode"`) and `variants` keyed by (`"Sku"`), both under `EXTERNAL_PG_SCHEMA`.
+- `variants."BcVariantID"` and `variants."BcProductID"` are looked up from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is currently `NULL`; `"BblRuleSetItem"` is the ruleset.
+- BigCommerce item-map upserts can asynchronously refresh external `variants` when BC IDs become available after a status check.
+
 ## 8) CPQ context invariants
+
 - One authoritative active CPQ context is maintained in `/cpq` state with owner + accountCode + countryCode + ruleset + sessionId (+ ids).
 - Bike Builder setup loading filters out blank account codes and blocks session actions until a valid account code is selected.
 - `init` context is driven by current UI `accountCode` + `ruleset` (including replay launch from sales), and init requests are sequenced so stale responses cannot win.
@@ -100,6 +120,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - `CPQ_sampler_result.active` remains canonical for Sales Active/Inactive rendering.
 
 ## 9) QPart module architecture (isolated)
+
 - Domain entry route: `/qpart` with child pages `/qpart/parts`, `/qpart/hierarchy`, `/qpart/metadata`, `/qpart/compatibility`.
 - API namespace: `/api/qpart/*` only.
 - Domain services: `lib/qpart/locales`, `lib/qpart/hierarchy`, `lib/qpart/metadata`, `lib/qpart/parts`, `lib/qpart/parts/csv-service`, `lib/qpart/compatibility`.
@@ -111,18 +132,20 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - Isolation rule implemented: QPart only reads CPQ setup/sampler tables for dynamic reference data (locales, bike types, compatibility derivation). It does not hook into CPQ configure/finalize/runtime flows.
 
 QPart source-of-truth reads from CPQ tables:
+
 - locales: `CPQ_setup_account_context.language`
 - bike types: `CPQ_setup_ruleset.bike_type`
 - sampler compatibility candidates: `CPQ_sampler_result.json_result`
 - country list for QPart allocation: active `cpq_country_mappings.country_code`
 
 QPart sales allocation behavior:
+
 - no “Not configured” state; only Active/Inactive cells are rendered.
 - matrix completeness is enforced by a sync helper that inserts missing `(part_id, country_code)` rows before load and before mutations.
 - new part creation seeds default inactive rows across all active countries.
 
-
 ## 10) QPart AI translation (field scoped)
+
 - Triggered inline from `/qpart/parts/new` + `/qpart/parts/[id]` on English title, English description, and each translatable metadata field.
 - Server path only: browser calls QPart API route, route calls OpenAI with `OPENAI_API_KEY`; no key in client bundle.
 - Locale targets are always derived from `CPQ_setup_account_context.language` via `/api/qpart/locales`.
@@ -130,25 +153,26 @@ QPart sales allocation behavior:
 - Save policy currently uses fill-missing behavior (existing non-empty locale translations are skipped by default).
 - Model default: `gpt-5.4-mini`, override with `OPENAI_TRANSLATION_MODEL`.
 
-
 ## 11) Admin data-contract observability
+
 - New internal route: `/admin/data-point` (admin mode nav only).
 - Purpose: browse page-by-page UI data points with source/read/write/process annotations.
 - Backed by structured registry in `lib/admin/data-point-registry.ts` and rendered by `components/admin/data-point-page.tsx`.
 
 ## 2026-04-29 Performance pass
+
 - Added server-side pagination for `/sales/bike-allocation` and `/cpq/results`.
 - Added low-churn filter-option caching (5-minute in-process TTL) for those pages.
 - Added debounced/min-length `sku_code` search gating on `/cpq/results`.
 
-
 ## Pagination updates (2026-04-29)
+
 - Sales Bike Allocation uses server page size 100 and now renders page-number pagination below the table.
 - Sales QPart Allocation now uses server-side pagination on part rows with default page size 200 and below-table page-number pagination.
 - QPart Parts list now uses server-side pagination with default page size 200 and below-table pagination controls.
 
-
 ## QPart image upload (v1)
+
 - QPart detail page has compact **Take picture** (primary slot) and **Manage pictures** actions beside the QPart code (mobile camera-capable via `accept=image/*` + `capture=environment`). **Take picture** always writes/replaces the primary image at `image_index=0` (`is_primary=true`).
 - Selected image is resized client-side (max dimension 1600px, aspect ratio preserved) and re-encoded as JPEG at quality 0.82 before upload.
 - Upload target uses Vercel Blob public store with deterministic key: `qparts/<part_number>.jpg` and overwrite enabled (`allowOverwrite: true`, `addRandomSuffix: false`).
