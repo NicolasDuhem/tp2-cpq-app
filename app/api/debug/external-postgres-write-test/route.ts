@@ -3,7 +3,11 @@ import {
   buildBikeExternalSamplerPayload,
   buildQpartExternalSamplerPayload,
 } from "@/lib/external-pg/cpq-sampler-result";
-import { runExternalVariantEligibilityWriteDiagnostic } from "@/lib/external-pg/variant-tables";
+import {
+  lookupBcIds,
+  lookupLatestSamplerRuleset,
+  runExternalVariantTablesWriteDiagnostic,
+} from "@/lib/external-pg/variant-tables";
 import { toExternalPgApiError } from "@/lib/external-pg/errors";
 
 export const runtime = "nodejs";
@@ -59,13 +63,37 @@ export async function POST(req: NextRequest) {
               active: false,
             };
 
+    const bcIds =
+      mode === "deterministic"
+        ? { bcVariantId: 1778151766, bcProductId: 1778151766 }
+        : await lookupBcIds(payload.ipnCode);
+    const ruleset =
+      mode === "deterministic"
+        ? "diagnostic"
+        : await lookupLatestSamplerRuleset(payload.ipnCode);
+
+    if (bcIds.bcVariantId == null || bcIds.bcProductId == null) {
+      throw new Error(
+        `Write diagnostic requires bc_product_id and bc_variant_id for ${payload.ipnCode}`,
+      );
+    }
+    if (!ruleset) {
+      throw new Error(
+        `Write diagnostic requires a cpq_sampler_result ruleset for ${payload.ipnCode}`,
+      );
+    }
+
     stage("client_create");
-    const diagnostic = await runExternalVariantEligibilityWriteDiagnostic(
+    const diagnostic = await runExternalVariantTablesWriteDiagnostic(
       {
         sku: payload.ipnCode,
         countryCode: payload.countryCode,
         detailId: payload.detailId,
         isActive: payload.active,
+        bcVariantId: bcIds.bcVariantId,
+        bcProductId: bcIds.bcProductId,
+        forecastCtyCode: "F_BB",
+        bblRuleSetItem: ruleset,
       },
       {
         onStage: (name, details) => {
@@ -89,12 +117,15 @@ export async function POST(req: NextRequest) {
             stage("begin_success", details);
             return;
           }
-          if (name === "upsert_start") {
-            stage("upsert_start", details);
-            return;
-          }
-          if (name === "upsert_success") {
-            stage("upsert_success", details);
+          if (
+            name === "select_start" ||
+            name === "select_success" ||
+            name === "insert_start" ||
+            name === "insert_success" ||
+            name === "update_start" ||
+            name === "update_success"
+          ) {
+            stage(name, details);
             return;
           }
           if (name === "rollback_start") {
@@ -113,7 +144,7 @@ export async function POST(req: NextRequest) {
     stage("response_send", {
       mode,
       rolledBack: diagnostic.rolledBack,
-      tableName: diagnostic.tableName,
+      tableNames: diagnostic.tableNames,
     });
     return NextResponse.json({
       ok: true,
@@ -121,7 +152,7 @@ export async function POST(req: NextRequest) {
       stage: "response_send",
       diagnostic,
       message:
-        "Write diagnostic against variant_eligibilities succeeded and transaction was rolled back.",
+        "Write diagnostic against variants and variant_eligibilities succeeded in mandatory order and transaction was rolled back.",
     });
   } catch (error) {
     stage("failed", { stage: currentStage });

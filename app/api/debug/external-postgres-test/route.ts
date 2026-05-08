@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 function statusFromFailureType(failureType: string | null): number {
   if (!failureType) return 200;
   if (failureType === 'missing_env') return 400;
-  if (failureType === 'source_data_mapping' || failureType === 'missing_unique_index') return 422;
+  if (failureType === 'source_data_mapping' || failureType === 'missing_table') return 422;
   if (failureType === 'auth_failure') return 401;
   if (failureType === 'network_unreachable' || failureType === 'ssl_error' || failureType === 'connection_failure') return 502;
   if (failureType === 'connection_timeout') return 504;

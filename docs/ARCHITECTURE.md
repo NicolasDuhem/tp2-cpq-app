@@ -106,9 +106,11 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 ## External PostgreSQL variant push
 
 - Sales allocation Push routes do not write to external `cpq_sampler_result` anymore. Neon `CPQ_sampler_result` remains the internal sampler/allocation table.
-- External push targets are `variant_eligibilities` keyed by (`"Sku"`, `"CountryCode"`) and `variants` keyed by (`"Sku"`), both under `EXTERNAL_PG_SCHEMA`.
-- `variants."BcVariantID"` and `variants."BcProductID"` are looked up from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is currently `NULL`; `"BblRuleSetItem"` is the ruleset.
-- BigCommerce item-map upserts can asynchronously refresh external `variants` when BC IDs become available after a status check.
+- External push targets are `variants` first, then `variant_eligibilities`, both under `EXTERNAL_PG_SCHEMA`. The order is required because eligibility rows depend on the SKU existing in `variants`.
+- Push is skipped unless Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. The Sales bike and QPart UIs hide Push when those IDs are missing.
+- The external write path does not use `ON CONFLICT` and does not require unique indexes. It SELECTs by `"Sku"` for `variants` and by (`"Sku"`, `"CountryCode"`) for `variant_eligibilities`, then UPDATEs or INSERTs.
+- `variants."BcVariantId"` and `variants."BcProductId"` are looked up from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is temporarily hardcoded to `F_BB`; `"BblRuleSetItem"` is resolved deterministically from Neon `cpq_sampler_result.ruleset`; bigint timestamps are Unix seconds.
+- BigCommerce item-map upserts only update Neon `bc_item_variant_map`; they no longer perform a background external variants push.
 
 ## 8) CPQ context invariants
 

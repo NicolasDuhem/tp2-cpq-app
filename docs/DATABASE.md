@@ -192,14 +192,25 @@ The admin data-point viewer (`/admin/data-point`) maps page controls to the same
 
 ## External PostgreSQL integration tables
 
-The external PostgreSQL integration no longer writes to external `cpq_sampler_result`. Internal Neon `CPQ_sampler_result` is still the app's sampler/allocation source. External push requires:
+The external PostgreSQL integration no longer writes to external `cpq_sampler_result`. Internal Neon `CPQ_sampler_result` remains the app's sampler/allocation source. The current UI Push target tables are:
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
-  ON public.variant_eligibilities ("Sku", "CountryCode");
+- `${EXTERNAL_PG_SCHEMA}.variants`
+- `${EXTERNAL_PG_SCHEMA}.variant_eligibilities`
 
-CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
-  ON public.variants ("Sku");
-```
+The external Push button uses SELECT-first UPDATE/INSERT logic and does not require unique indexes yet. A SKU must have both `bc_product_id` and `bc_variant_id` in Neon `bc_item_variant_map`; otherwise the external push is skipped before any external write.
 
-External `variants` receives `"BcVariantID"` and `"BcProductID"` from Neon `bc_item_variant_map`, `"ForecastCtyCode"` as `NULL`, and `"BblRuleSetItem"` from the latest ruleset context.
+`variants` mapping:
+
+- `"Sku"` = pushed SKU / `bc_item_variant_map.sku_code`
+- `"BcVariantId"` = `bc_item_variant_map.bc_variant_id`
+- `"BcProductId"` = `bc_item_variant_map.bc_product_id`
+- `"ForecastCtyCode"` = `F_BB`
+- `"BblRuleSetItem"` = deterministic Neon `cpq_sampler_result.ruleset` lookup by SKU
+- `"CreatedAt"` and `"UpdatedAt"` = Unix-second bigint timestamp, for example `1778151766`
+
+`variant_eligibilities` mapping:
+
+- `"Sku"` = pushed SKU
+- `"CountryCode"` = pushed country
+- `"DetailId"` = current source payload detail ID
+- `"IsActive"` = current bike/QPart allocation active value

@@ -21,6 +21,7 @@ type SamplerRow = {
   detail_id: string | null;
   active: boolean | string | number | null;
   json_result: unknown;
+  has_bc_ids: boolean | null;
 };
 
 type ParsedOption = {
@@ -48,6 +49,7 @@ export type SalesBikeAllocationRow = {
   bikeType: string;
   featureValues: Record<string, string>;
   countryStatuses: Record<string, AllocationStatus>;
+  hasBcIds: boolean;
 };
 
 export type SalesBikeAllocationPageData = {
@@ -182,8 +184,16 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
       header_id,
       detail_id,
       active,
-      json_result
+      json_result,
+      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids
     from CPQ_sampler_result
+    left join lateral (
+      select bc_product_id, bc_variant_id
+      from public.bc_item_variant_map map
+      where coalesce(trim(map.sku_code), '') = coalesce(trim(CPQ_sampler_result.ipn_code), '')
+      order by updated_at desc nulls last, id desc
+      limit 1
+    ) map on true
     where coalesce(trim(ipn_code), '') <> ''
       and (${ruleset} = '' or ruleset = ${ruleset})
       and (
@@ -370,7 +380,7 @@ export async function getSalesBikeAllocationPageData(
     bikeTypeByRuleset.set(ruleset, asTrimmed(row.bike_type) || 'Unmapped');
   }
 
-  const countryColumns = [...new Set(sourceRows.map((row) => asTrimmed(row.country_code)).filter(Boolean))].sort((a, b) =>
+  const countryColumns = [...new Set(sourceRows.map((row) => asTrimmed(row.country_code)).filter((value): value is string => Boolean(value)))].sort((a, b) =>
     a.localeCompare(b),
   );
 
@@ -395,6 +405,7 @@ export async function getSalesBikeAllocationPageData(
         bikeType: bikeTypeByRuleset.get(rowRuleset) ?? 'Unmapped',
         featureValues: {},
         countryStatuses: {},
+        hasBcIds: row.has_bc_ids === true,
       };
       rowMap.set(rowKey, matrixRow);
     }
@@ -402,6 +413,8 @@ export async function getSalesBikeAllocationPageData(
     const parsedOptions = parseSelectedOptions(row.json_result);
     for (const option of parsedOptions) {
       availableFeatures.add(option.featureLabel);
+      matrixRow.hasBcIds = matrixRow.hasBcIds || row.has_bc_ids === true;
+
       if (!matrixRow.featureValues[option.featureLabel]) {
         matrixRow.featureValues[option.featureLabel] = option.resolvedValue;
       }

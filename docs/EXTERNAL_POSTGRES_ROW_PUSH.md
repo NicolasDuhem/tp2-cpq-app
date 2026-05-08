@@ -1,132 +1,134 @@
-# External PostgreSQL row push (Bike + QPart)
+# External PostgreSQL Row Push
 
-The row-level push actions from:
+This document describes the **current** UI row Push process for Sales bike allocation and Sales QPart allocation.
 
-- `/sales/bike-allocation`
-- `/sales/qpart-allocation`
+## Current state
 
-now write to two external PostgreSQL variant target tables:
+The legacy external PostgreSQL push to an external `cpq_sampler_result` table has been removed from active usage. Neon `CPQ_sampler_result` remains the internal sampler/allocation table and is not removed or replaced.
 
-- `<EXTERNAL_PG_SCHEMA>.variant_eligibilities`
-- `<EXTERNAL_PG_SCHEMA>.variants`
+The UI Push button now syncs only these external PostgreSQL tables, in this mandatory order:
 
-The previous external push to `cpq_sampler_result` is no longer used. The internal Neon `cpq_sampler_result` table remains unchanged and continues to be used by the app for sampler persistence, sales allocation state, payload building, and ruleset lookups.
+1. `${EXTERNAL_PG_SCHEMA}.variants`
+2. `${EXTERNAL_PG_SCHEMA}.variant_eligibilities`
 
-## Runtime dependency
+`EXTERNAL_PG_SCHEMA` defaults to `public` through the external PostgreSQL client configuration. The schema is not hardcoded in the write helper.
 
-- Server-side push routes require the Node PostgreSQL client package `pg` at runtime.
-- Keep `pg` in `dependencies` (not only `devDependencies`) so production/serverless deployments can import it.
+## Scope
 
-## External target 1: `variant_eligibilities`
+Implemented now:
 
-Columns are PascalCase and the app writes them double-quoted:
+- Single-cell Push from `/sales/bike-allocation`.
+- Single-cell Push from `/sales/qpart-allocation`.
+- Diagnostics for connection, table existence/readability, and rollback-safe writes to the new target tables.
 
-- `"Sku"`
-- `"CountryCode"`
-- `"DetailID"`
-- `"IsActive"`
+Not implemented now:
 
-Business key:
+- Bulk external sync. Future bulk work should compare external rows to Neon rows that have BC IDs, then sync `variants` first and `variant_eligibilities` second.
 
-- `("Sku", "CountryCode")`
+## Preconditions
 
-Upsert behavior:
+Before any external write, the push process checks Neon `public.bc_item_variant_map` for the pushed SKU.
 
-- insert when no row exists for `("Sku", "CountryCode")`
-- update existing rows by setting `"DetailID"` and `"IsActive"`
+The SKU must have both:
 
-Mapping:
+- `bc_product_id`
+- `bc_variant_id`
 
-- `"Sku"` = sampler payload `ipnCode` / item SKU
-- `"CountryCode"` = sampler payload `countryCode`
-- `"DetailID"` = sampler payload `detailId`
-- `"IsActive"` = sampler payload `active`
+If either value is missing, the external push is skipped. The API returns a successful skipped result with a clear message; it does not write either external table.
 
-Required unique index:
+The UI also hides the Push button for rows whose SKU/part number does not have both BC IDs in Neon, so most invalid push attempts are prevented before the API call.
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibilities_sku_country_uniq
-  ON public.variant_eligibilities ("Sku", "CountryCode");
-```
+## Source rows
 
-Use the configured external schema instead of `public` if `EXTERNAL_PG_SCHEMA` is not `public`.
+### Bike allocation
 
-## External target 2: `variants`
+`POST /api/sales/bike-allocation/push` builds its source payload from the latest matching Neon `CPQ_sampler_result` row for:
 
-Columns are PascalCase and the app writes them double-quoted:
+- `ruleset`
+- `ipn_code`
+- `country_code`
 
-- `"Sku"`
-- `"BcVariantID"`
-- `"BcProductID"`
-- `"ForecastCtyCode"`
-- `"BblRuleSetItem"`
-- `"CreatedAt"`
-- `"UpdatedAt"`
+The source row provides `detail_id` and the current `active` value used for external `variant_eligibilities."IsActive"`.
 
-Business key:
+### QPart allocation
 
-- `("Sku")`
+`POST /api/sales/qpart-allocation/push` builds its source payload from Neon `qpart_country_allocation` joined to `qpart_parts` for:
 
-Upsert behavior:
+- `part_id`
+- `country_code`
 
-- insert when no row exists for `"Sku"`
-- update existing rows by setting `"BcVariantID"`, `"BcProductID"`, `"ForecastCtyCode"`, `"BblRuleSetItem"`, and `"UpdatedAt"`
-- preserve the original `"CreatedAt"` on update
+The source allocation row provides the part number SKU, country, and current allocation `active` value used for external `variant_eligibilities."IsActive"`.
 
-Mapping:
+## External table mappings
 
-- `"Sku"` = sampler payload `ipnCode` / item SKU
-- `"BcVariantID"` = Neon `bc_item_variant_map.bc_variant_id`, or `NULL` when no mapping exists
-- `"BcProductID"` = Neon `bc_item_variant_map.bc_product_id`, or `NULL` when no mapping exists
-- `"ForecastCtyCode"` = `NULL` for now
-- `"BblRuleSetItem"` = sampler payload `ruleset`
+### `${EXTERNAL_PG_SCHEMA}.variants`
 
-Required unique index:
+| External column | Source/value |
+| --- | --- |
+| `"Sku"` | `bc_item_variant_map.sku_code` / pushed SKU |
+| `"BcVariantId"` | `bc_item_variant_map.bc_variant_id` |
+| `"BcProductId"` | `bc_item_variant_map.bc_product_id` |
+| `"ForecastCtyCode"` | hardcoded temporary value `F_BB` |
+| `"BblRuleSetItem"` | deterministic Neon `cpq_sampler_result.ruleset` lookup by joining `cpq_sampler_result.ipn_code` to `bc_item_variant_map.sku_code` |
+| `"CreatedAt"` | current Unix timestamp in seconds, for example `1778151766`, on insert only |
+| `"UpdatedAt"` | current Unix timestamp in seconds, for example `1778151766`, on insert and update |
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
-  ON public.variants ("Sku");
-```
+`CreatedAt` is preserved on update. Only `UpdatedAt` changes on update.
 
-Use the configured external schema instead of `public` if `EXTERNAL_PG_SCHEMA` is not `public`.
+### `${EXTERNAL_PG_SCHEMA}.variant_eligibilities`
 
-## Push flow
+| External column | Source/value |
+| --- | --- |
+| `"Sku"` | pushed SKU (`CPQ_sampler_result.ipn_code` for bikes, `qpart_parts.part_number` for QParts) |
+| `"CountryCode"` | current pushed country code |
+| `"DetailId"` | current source payload `detail_id` |
+| `"IsActive"` | current allocation state being pushed (`CPQ_sampler_result.active` for bikes, `qpart_country_allocation.active` for QParts) |
 
-For bike and QPart pushes, the app still builds source payloads from Neon first:
+`"IsActive"` intentionally does **not** use `cpq_country_mappings.is_active`.
 
-- `buildBikeExternalSamplerPayload()` reads the latest matching Neon `CPQ_sampler_result` row.
-- `buildQpartExternalSamplerPayload()` reads the QPart allocation row plus active account context.
+## Write algorithm
 
-After payload build, each route:
+The external database currently cannot rely on unique indexes, so the active write path does not use `ON CONFLICT`.
 
-1. looks up BC IDs in Neon `public.bc_item_variant_map` by `sku_code = payload.ipnCode`
-2. upserts `variant_eligibilities`
-3. upserts `variants`
+### Step 1: validate BC IDs
 
-The two external upserts are sequential so route logs show each target independently.
+- Query Neon `bc_item_variant_map` by SKU.
+- If either BC ID is missing, return skipped results for both target tables and stop.
 
-## BigCommerce item-map follow-up push
+### Step 2: sync `variants` first
 
-`POST /api/bigcommerce/item-map/upsert` continues to upsert Neon `bc_item_variant_map` first. After that succeeds, rows with a non-null `bc_product_id` or `bc_variant_id` trigger external `variants` upserts in parallel.
+- `SELECT "Sku" FROM <schema>.variants WHERE "Sku" = $1 LIMIT 1`.
+- If a row exists, `UPDATE` by `"Sku"` with BC IDs, forecast code, ruleset, and `UpdatedAt`.
+- If no row exists, `INSERT` all mapped columns including `CreatedAt` and `UpdatedAt`.
 
-This covers the case where a SKU was previously pushed to external `variants` with null BC IDs, then a later “Check BC Status” populates the IDs in Neon.
+### Step 3: sync `variant_eligibilities` second
 
-For these follow-up pushes:
+- `SELECT "Sku" FROM <schema>.variant_eligibilities WHERE "Sku" = $1 AND "CountryCode" = $2 LIMIT 1`.
+- If a row exists, `UPDATE` `"DetailId"` and `"IsActive"` by `("Sku", "CountryCode")`.
+- If no row exists, `INSERT` `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"`.
 
-- ruleset is loaded from the most recent Neon `public.cpq_sampler_result` row for the SKU (`updated_at desc nulls last, created_at desc nulls last, id desc`)
-- if no sampler ruleset exists, `"BblRuleSetItem"` is set to `Unknown`
-- external push failures are returned as warnings and do not fail the main Neon item-map upsert response
+This order is mandatory because `variant_eligibilities` depends on the SKU already existing in `variants`.
+
+## API response shape
+
+Push routes return:
+
+- `result.skipped`
+- `result.message`
+- `result.variantResult.action` (`inserted`, `updated`, or `skipped`)
+- `result.eligibilityResult.action` (`inserted`, `updated`, or `skipped`)
+- business keys for the affected SKU/country
 
 ## Diagnostics
 
-`/api/debug/external-postgres-test` verifies:
+`/api/debug/external-postgres-test` checks:
 
-- external PostgreSQL environment/config parsing
-- DNS and connection/authentication checks
-- simple query execution
-- `variant_eligibilities` table existence
-- `variants` table existence
-- unique support for `variant_eligibilities ("Sku", "CountryCode")`
-- unique support for `variants ("Sku")`
+- environment/config parsing
+- DNS and TCP connectivity
+- SSL/authentication/simple query
+- existence of `variants` and `variant_eligibilities`
+- basic read access to both tables
 
-`/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variant_eligibilities`; it no longer writes to external `cpq_sampler_result`.
+It does not require or check unique indexes.
+
+`/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variants` first and `variant_eligibilities` second. It uses the same SELECT-first UPDATE/INSERT helpers as the active push path and rolls the transaction back.
