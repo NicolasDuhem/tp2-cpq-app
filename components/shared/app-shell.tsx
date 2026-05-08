@@ -10,7 +10,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <header className="brandbar">
           <div>
             <div className="brandtitle">
-              Brompton <span className="brandSubtitle">TP2 CPQ App</span>
+              Brompton <span className="brandSubtitle">Operations</span>
             </div>
           </div>
         </header>

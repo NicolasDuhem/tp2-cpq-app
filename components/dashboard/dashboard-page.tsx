@@ -50,7 +50,6 @@ export default function DashboardPage({ data }: Props) {
     <div className={`pageRoot ${styles.dashboardPage}`}>
       <PageHeader
         title="Dashboard"
-        description="Executive operations view across territory coverage, bike-type readiness, and picture-management completion."
         actions={<div className={styles.generatedAt}>Updated {new Date(data.generatedAt).toLocaleString()}</div>}
       />
 

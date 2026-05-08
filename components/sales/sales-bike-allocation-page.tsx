@@ -26,8 +26,8 @@ export default async function SalesBikeAllocationPage({ searchParams }: { search
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Sales - bike allocation"
-        description="Active = one or more matching sampler rows have active=true. Not active = matching rows exist but all are active=false. Not configured = no sampler configuration found for country."
+        title="Bike Allocation"
+        description="Active = has active sampler rows. Inactive = rows exist but all inactive. Not configured = no rows."
       />
       <SalesBikeAllocationTableClient
         rows={data.rows}

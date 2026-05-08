@@ -751,7 +751,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                           disabled={busyKey === cellKey || pushBusyKey === cellKey}
                           pushDisabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
                           statusLabel={statusLabel(status)}
-                          pushLabel={pushBusyKey === cellKey ? 'Pushing…' : 'Push'}
+                          pushLabel={pushBusyKey === cellKey ? 'Pushing…' : '↑ Push'}
                         />
                       </td>
                     );

@@ -12,7 +12,7 @@ export default async function SalesQPartAllocationPage({ searchParams }: { searc
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Sales - QPart allocation"
+        title="QPart Allocation"
         description="Review and manage QPart activation by market. Toggle status or push specific country changes without leaving the matrix."
       />
       <SalesQPartAllocationTableClient rows={data.rows} countryColumns={data.countries} filterOptions={data.filterOptions} pagination={data.pagination} />

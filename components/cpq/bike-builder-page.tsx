@@ -3332,9 +3332,9 @@ const styles: Record<string, CSSProperties> = {
   controls: {
     border: '1px solid #d4d4d8',
     borderRadius: 12,
-    padding: '0.75rem',
+    padding: '0.6rem',
     display: 'grid',
-    gap: '0.6rem',
+    gap: '0.45rem',
     background: '#fff',
   },
   controlsHeader: {
@@ -3350,7 +3350,8 @@ const styles: Record<string, CSSProperties> = {
   },
   sectionSubtitle: {
     margin: 0,
-    fontSize: '1.1rem',
+    fontSize: '1rem',
+    color: '#1e3059',
   },
   adminBadge: {
     border: '1px solid #0f766e',
@@ -3459,8 +3460,9 @@ const styles: Record<string, CSSProperties> = {
   },
   statusBlock: {
     display: 'grid',
-    gap: '0.2rem',
-    fontSize: '0.92rem',
+    gap: '0.15rem',
+    fontSize: '0.82rem',
+    color: '#475569',
   },
   select: {
     minHeight: 32,

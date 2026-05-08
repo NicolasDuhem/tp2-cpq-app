@@ -29,8 +29,8 @@
 .filterItem input {
   border: 1px solid #c3c3c3;
   border-radius: 6px;
-  padding: 6px;
-  font-size: 13px;
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 .columnPicker {
