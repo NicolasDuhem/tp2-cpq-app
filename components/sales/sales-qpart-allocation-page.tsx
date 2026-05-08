@@ -1,5 +1,4 @@
 import { getSalesQPartAllocationPageData } from '@/lib/sales/qpart-allocation/service';
-import PageHeader from '@/components/shared/PageHeader';
 import SalesQPartAllocationTableClient from './sales-qpart-allocation-table.client';
 import styles from './sales-qpart-allocation-page.module.css';
 
@@ -11,10 +10,6 @@ export default async function SalesQPartAllocationPage({ searchParams }: { searc
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title="QPart Allocation"
-        description="Review and manage QPart activation by market. Toggle status or push specific country changes without leaving the matrix."
-      />
       <SalesQPartAllocationTableClient rows={data.rows} countryColumns={data.countries} filterOptions={data.filterOptions} pagination={data.pagination} />
     </div>
   );

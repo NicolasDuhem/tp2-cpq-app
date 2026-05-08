@@ -1,8 +1,8 @@
 .page {
-  padding: 8px 10px 10px;
+  padding: 4px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-width: 100%;
   margin: 0;
   min-width: 0;
@@ -38,9 +38,9 @@
 }
 
 .filterPanel {
-  padding: 10px;
+  padding: 8px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .filterHeaderRow {
@@ -80,19 +80,25 @@
 }
 
 .collapseToggle {
-  border: 1px solid #cbd8f4;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f8faff 0%, #f0f5ff 100%);
-  color: #1f3f7e;
+  border: 1px solid #e2e8f4;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
   font-size: 12px;
-  font-weight: 700;
-  padding: 7px 12px;
+  font-weight: 600;
+  padding: 6px 12px;
   cursor: pointer;
+}
+
+.collapseToggle:hover {
+  background: #f0f4ff;
+  border-color: #002FA7;
+  color: #002FA7;
 }
 
 .filterSections {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(420px, 2fr);
+  grid-template-columns: 220px 1fr;
   gap: 10px;
 }
 
@@ -100,9 +106,9 @@
   border: 1px solid #dce5f8;
   border-radius: 12px;
   background: #fbfcff;
-  padding: 10px;
+  padding: 8px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   align-content: start;
 }
 
@@ -115,8 +121,11 @@
 
 .sectionTitleRow h3 {
   margin: 0;
-  font-size: 12px;
-  color: #20335e;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  font-weight: 700;
 }
 
 .textButton {
@@ -150,18 +159,18 @@
 
 .territoryRegionGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  max-height: 320px;
-  overflow: auto;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
   align-items: start;
 }
 
 .territoryRegionCard {
-  border: 1px solid #e0e7f7;
-  border-radius: 10px;
-  background: #fff;
-  padding: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e8eef8;
+  background: #fbfcff;
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -170,7 +179,10 @@
 .territoryRegionTitle {
   font-size: 12px;
   font-weight: 700;
-  color: #294682;
+  color: #1e3a6e;
+  padding: 2px 0 4px;
+  border-bottom: 1px solid #eef2fb;
+  margin-bottom: 4px;
 }
 
 .subRegionBlock {
@@ -185,15 +197,61 @@
 
 .subRegionTitle {
   font-size: 11px;
-  color: #657493;
-  font-weight: 700;
-  margin-bottom: 3px;
+  color: #64748b;
+  font-weight: 600;
+  margin: 4px 0 2px;
+  padding: 2px 0;
 }
 
 .partFilterGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: minmax(180px, 240px) 1fr;
   gap: 8px;
+}
+
+.partSearchStack {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.hierarchyCompactGrid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+
+.hierarchyTitleRow,
+.hierarchyDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hierarchyActions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.hierarchyDetails {
+  border: 1px solid #d7e0f4;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+
+.hierarchyDetails summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #4e5a75;
+  font-weight: 700;
+}
+
+.hierarchyDetails .checkboxList {
+  margin-top: 6px;
+  min-height: 80px;
 }
 
 .checkboxList {
@@ -211,11 +269,12 @@
 .checkboxOption {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
   color: #33415f;
   font-weight: 500;
   min-height: 22px;
+  padding: 1px 0;
 }
 
 .checkboxOption input {
@@ -236,14 +295,20 @@
 }
 
 .bulkActionButton {
-  border: 1px solid #b9c8eb;
-  border-radius: 10px;
+  border: 1px solid #e2e8f4;
+  border-radius: 8px;
   background: #fff;
-  color: #173d84;
+  color: #334155;
   font-size: 12px;
-  font-weight: 700;
-  padding: 8px 12px;
+  font-weight: 600;
+  padding: 7px 14px;
   cursor: pointer;
+}
+
+.bulkActionButton:hover:not(:disabled) {
+  background: #f0f4ff;
+  border-color: #002FA7;
+  color: #002FA7;
 }
 
 .bulkActionButton:disabled {
@@ -282,8 +347,8 @@
   background: #fff;
   max-width: 100%;
   width: 100%;
-  max-height: calc(100vh - 360px);
-  min-height: 340px;
+  max-height: calc(100vh - 240px);
+  min-height: 400px;
   box-shadow: 0 10px 24px rgba(21, 37, 72, 0.08);
 }
 
@@ -294,7 +359,7 @@
 
 .matrixTable {
   border-collapse: separate;
-  border-spacing: 0 8px;
+  border-spacing: 0 4px;
   width: max-content;
   min-width: 100%;
   padding: 0 8px 8px;
@@ -310,15 +375,17 @@
 }
 
 .matrixTable thead th {
-  background: #f5f8ff;
-  border-top: 1px solid #e0e8fa;
-  border-bottom: 1px solid #e0e8fa;
+  background: #edf2ff;
+  border-top: 1px solid #d1d9f0;
+  border-bottom: 1px solid #d1d9f0;
   font-weight: 700;
+  font-size: 11px;
+  color: #1e3a6e;
+  letter-spacing: 0.02em;
+  text-transform: none;
   position: sticky;
   top: 0;
   z-index: 4;
-  color: #33415f;
-  letter-spacing: 0.01em;
 }
 
 .tableRow td {
@@ -340,7 +407,7 @@
 }
 
 .tableRow:hover td {
-  background: #fafcff;
+  background: #f0f4ff !important;
 }
 
 .stickyColumn {
@@ -357,15 +424,8 @@
 
 .stickyTitle {
   left: 258px;
-  min-width: 250px;
-  max-width: 250px;
-  background: #fff;
-}
-
-.stickyHierarchy {
-  left: 508px;
-  min-width: 280px;
-  max-width: 280px;
+  min-width: 200px;
+  max-width: 200px;
   background: #fff;
 }
 
@@ -378,14 +438,16 @@
 }
 
 .matrixTable thead .stickyColumn {
-  background: #f5f8ff;
+  background: #edf2ff;
   z-index: 6;
 }
 
 .partLink {
-  color: #204a95;
+  color: #002FA7;
   font-weight: 700;
+  font-size: 12px;
   text-decoration: none;
+  font-family: ui-monospace, monospace;
 }
 
 .partLink:hover {
@@ -402,8 +464,8 @@
 }
 
 .titleCell {
-  min-width: 250px;
-  max-width: 250px;
+  min-width: 200px;
+  max-width: 200px;
 }
 
 .titleText {
@@ -426,22 +488,30 @@
   line-height: 1.2;
   font-weight: 700;
   border: 1px solid transparent;
-  padding: 5px 10px;
+  padding: 4px 8px;
   background: transparent;
   cursor: pointer;
-  min-width: 84px;
+  min-width: 70px;
 }
 
 .statusActive {
-  background: #e9f9ef;
-  color: #166437;
-  border-color: #b8e2c7;
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.statusActive:hover:not(:disabled) {
+  background: #bbf7d0;
 }
 
 .statusNotActive {
-  background: #f7f8fb;
-  color: #6d7790;
-  border-color: #d4dbea;
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.statusNotActive:hover:not(:disabled) {
+  background: #f1f5f9;
 }
 
 .bcBadge {
@@ -495,21 +565,27 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 96px;
+  width: 80px;
   margin: 0 auto;
 }
 
 .pushButton {
-  border: 1px solid #d3dbef;
-  background: #fff;
-  color: #4f5e7e;
-  border-radius: 999px;
+  border: 1px solid #e2e8f4;
+  background: transparent;
+  color: #64748b;
+  border-radius: 6px;
   font-size: 10px;
   line-height: 1.2;
   font-weight: 600;
-  padding: 3px 9px;
+  padding: 2px 7px;
   cursor: pointer;
-  min-width: 84px;
+  min-width: auto;
+}
+
+.pushButton:hover:not(:disabled) {
+  background: #eff3ff;
+  border-color: #002FA7;
+  color: #002FA7;
 }
 
 .pushButton:disabled {
@@ -518,12 +594,12 @@
 }
 
 .countryCell {
-  min-width: 132px;
+  min-width: 90px;
   text-align: center !important;
 }
 
 .countryHeader {
-  min-width: 132px;
+  min-width: 90px;
   text-align: center !important;
 }
 
@@ -561,12 +637,12 @@
 }
 
 
-.paginationBar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:8px; }
+.paginationBar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; background:#fff; border:1px solid #e2e8f4; border-radius:10px; padding:7px 12px; }
 .paginationSummary { font-size:12px; color:#445; font-weight:600; }
 .paginationControls { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.paginationControls button { border:1px solid #c6d1ea; border-radius:8px; background:#fff; padding:4px 8px; font-size:12px; }
+.paginationControls button { border:1px solid #c6d1ea; border-radius:7px; background:#fff; padding:4px 9px; font-size:12px; }
 .paginationControls button:disabled { opacity: 0.65; cursor: not-allowed; }
-.paginationCurrent { background:#1f3f7e !important; color:#fff; border-color:#1f3f7e !important; }
+.paginationCurrent { background:#002FA7 !important; color:#fff; border-color:#002FA7 !important; }
 .paginationEllipsis { color:#738; padding:0 2px; }
 
 .stickyHeader {
@@ -580,20 +656,20 @@
   transition: background-color 0.15s ease;
 }
 .tableRow:hover td {
-  background: #f9fafb;
+  background: #f0f4ff !important;
 }
 .stickyBCStatus,
 .stickyPart {
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
 }
-.stickyTitle,
-.stickyHierarchy {
+.stickyTitle {
   position: static;
   box-shadow: none;
 }
 .countryHeader,
 .countryCell {
-  min-width: 110px;
+  min-width: 90px;
+  text-align: center !important;
 }
 .columnDropdownWrap {
   position: relative;
