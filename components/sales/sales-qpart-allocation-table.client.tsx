@@ -10,7 +10,6 @@ import {
   SalesQPartTerritoryFilterRegion,
 } from '@/lib/sales/qpart-allocation/service';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import StatusCell from '@/components/shared/StatusCell';
 import Toast from '@/components/shared/Toast';
 import styles from './sales-qpart-allocation-page.module.css';
 
@@ -70,41 +69,71 @@ function getBCBadgeClass(status: BCStatus) {
   return `${styles.bcBadge} ${styles.bcStatusDisabled}`;
 }
 
-function CheckboxListFilter({
-  label,
+function HierarchyFilter({
+  level,
   options,
   selected,
   onChange,
+  compact = false,
 }: {
-  label: string;
+  level: number;
   options: string[];
   selected: string[];
   onChange: (next: string[]) => void;
+  compact?: boolean;
 }) {
+  if (!options.length) return null;
+
+  const content = (
+    <div className={styles.checkboxList}>
+      {options.map((option) => {
+        const checked = selected.includes(option);
+        return (
+          <label key={`hierarchy-${level}-${option}`} className={styles.checkboxOption}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(event) =>
+                onChange(event.target.checked ? [...selected, option] : selected.filter((value) => value !== option))
+              }
+            />
+            <span>{option}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+
+  const actions = (
+    <span className={styles.hierarchyActions}>
+      <button type="button" className={styles.textButton} onClick={() => onChange(options)}>
+        Select all
+      </button>
+      <button type="button" className={styles.textButton} onClick={() => onChange([])}>
+        Clear
+      </button>
+    </span>
+  );
+
+  if (compact) {
+    return (
+      <details className={styles.hierarchyDetails}>
+        <summary>
+          <span>Hierarchy {level}</span>
+          {actions}
+        </summary>
+        {content}
+      </details>
+    );
+  }
+
   return (
     <div className={styles.filterItem}>
-      <span>{label}</span>
-      <div className={styles.checkboxList}>
-        {options.length ? (
-          options.map((option) => {
-            const checked = selected.includes(option);
-            return (
-              <label key={`${label}-${option}`} className={styles.checkboxOption}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(event) =>
-                    onChange(event.target.checked ? [...selected, option] : selected.filter((value) => value !== option))
-                  }
-                />
-                <span>{option}</span>
-              </label>
-            );
-          })
-        ) : (
-          <div className={styles.emptyFilterValues}>No values</div>
-        )}
-      </div>
+      <span className={styles.hierarchyTitleRow}>
+        <span>Hierarchy {level}</span>
+        {actions}
+      </span>
+      {content}
     </div>
   );
 }
@@ -208,14 +237,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       }),
     [textFilteredRows, hierarchySelection],
   );
-
-  const metadataOptions = useMemo(() => {
-    const options: Record<string, string[]> = {};
-    for (const field of filterOptions.metadataFields) {
-      options[field.key] = uniqueSorted(hierarchyFilteredRows.flatMap((row) => row.metadataValues[field.key] ?? []));
-    }
-    return options;
-  }, [hierarchyFilteredRows, filterOptions.metadataFields]);
 
   const metadataFilteredRows = useMemo(
     () =>
@@ -544,13 +565,43 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             <button type="button" className={styles.collapseToggle} onClick={() => setFiltersOpen((prev) => !prev)}>
               {filtersOpen ? 'Hide filters' : 'Show filters'}
             </button>
-            <div className={styles.rowCountBadge}>Rows in table: {filteredRows.length}</div>
+            {(countrySelection.length > 0 || partNumberSearch || titleSearch) && (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#475569',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f4',
+                  borderRadius: 999,
+                  padding: '3px 10px',
+                  fontWeight: 600,
+                }}
+              >
+                {filteredRows.length} parts shown
+              </span>
+            )}
             <div className={styles.columnDropdownWrap}>
               <button type="button" className={styles.collapseToggle} onClick={() => setColumnsOpen((prev) => !prev)}>
-                Columns
+                Country selection
               </button>
               {columnsOpen ? (
                 <div className={styles.columnDropdownPanel}>
+                  <div style={{ display: 'flex', gap: 6, padding: '0 0 6px', borderBottom: '1px solid #e8eef8', marginBottom: 6 }}>
+                    <button
+                      type="button"
+                      className={styles.textButton}
+                      onClick={() => setColumnVisibility(Object.fromEntries(countryColumns.map((countryCode) => [countryCode, true])))}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.textButton}
+                      onClick={() => setColumnVisibility(Object.fromEntries(countryColumns.map((countryCode) => [countryCode, false])))}
+                    >
+                      None
+                    </button>
+                  </div>
                   {countryColumns.map((countryCode) => (
                     <label key={`column-toggle-${countryCode}`} className={styles.checkboxOption}>
                       <input
@@ -560,7 +611,10 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                           setColumnVisibility((prev) => ({ ...prev, [countryCode]: event.target.checked }))
                         }
                       />
-                      <span>{countryCode}</span>
+                      <span className={styles.countryOptionLabel}>
+                        <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
+                        <span>{countryCode}</span>
+                      </span>
                     </label>
                   ))}
                 </div>
@@ -590,47 +644,90 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
         {filtersOpen ? (
           <div className={styles.filterSections}>
-            <section className={`${styles.filterSection} ${styles.territorySection}`}>
+            <section className={styles.filterSection}>
               <div className={styles.sectionTitleRow}>
-                <h3>Territory filters</h3>
-                <button type="button" className={styles.textButton} onClick={clearTerritorySelection}>
-                  Clear
-                </button>
+                <h3>Territory</h3>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" className={styles.textButton} onClick={() => setCountrySelection([...countryColumns])}>
+                    All
+                  </button>
+                  <button type="button" className={styles.textButton} onClick={clearTerritorySelection}>
+                    None
+                  </button>
+                </div>
               </div>
               <label className={styles.filterItem}>
-                <span>Country code search</span>
+                <span>Search</span>
                 <input
                   value={territorySearch}
                   onChange={(event) => setTerritorySearch(event.target.value.toUpperCase())}
-                  placeholder="Search country code"
+                  placeholder="e.g. DE, FR..."
                 />
               </label>
               <div className={styles.territoryRegionGrid}>
-                {territoryGroups.map((region: SalesQPartTerritoryFilterRegion) => (
-                  <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
-                    <div className={styles.territoryRegionTitle}>{region.region}</div>
-                    <div className={styles.checkboxList}>
-                      {region.subRegions.map((subRegion) => (
-                        <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
-                          <div className={styles.subRegionTitle}>{subRegion.subRegion}</div>
-                          {subRegion.countries.map((countryCode) => (
-                            <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
-                              <input
-                                type="checkbox"
-                                checked={countrySelection.includes(countryCode)}
-                                onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
-                              />
-                              <span className={styles.countryOptionLabel}>
-                                <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
-                                <span>{countryCode}</span>
+                {territoryGroups.map((region: SalesQPartTerritoryFilterRegion) => {
+                  const regionCodes = region.subRegions.flatMap((subRegion) => subRegion.countries);
+                  const selectedCount = regionCodes.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                  return (
+                    <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
+                      <div
+                        className={styles.territoryRegionTitle}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                        onClick={() => {
+                          const allSelected = regionCodes.every((countryCode) => countrySelection.includes(countryCode));
+                          if (allSelected) {
+                            setCountrySelection((prev) => prev.filter((countryCode) => !regionCodes.includes(countryCode)));
+                          } else {
+                            setCountrySelection((prev) => [...new Set([...prev, ...regionCodes])]);
+                          }
+                        }}
+                      >
+                        <span>{region.region}</span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>
+                          {selectedCount}/{regionCodes.length}
+                        </span>
+                      </div>
+
+                      {region.subRegions.map((subRegion) => {
+                        const subSelectedCount = subRegion.countries.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                        return (
+                          <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
+                            <div
+                              className={styles.subRegionTitle}
+                              style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+                              onClick={() => {
+                                const allSelected = subRegion.countries.every((countryCode) => countrySelection.includes(countryCode));
+                                if (allSelected) {
+                                  setCountrySelection((prev) => prev.filter((countryCode) => !subRegion.countries.includes(countryCode)));
+                                } else {
+                                  setCountrySelection((prev) => [...new Set([...prev, ...subRegion.countries])]);
+                                }
+                              }}
+                            >
+                              <span>{subRegion.subRegion}</span>
+                              <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                                {subSelectedCount}/{subRegion.countries.length}
                               </span>
-                            </label>
-                          ))}
-                        </div>
-                      ))}
+                            </div>
+                            {subRegion.countries.map((countryCode) => (
+                              <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
+                                <input
+                                  type="checkbox"
+                                  checked={countrySelection.includes(countryCode)}
+                                  onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
+                                />
+                                <span className={styles.countryOptionLabel}>
+                                  <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
+                                  <span>{countryCode}</span>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -639,49 +736,37 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 <h3>Part filters</h3>
               </div>
               <div className={styles.partFilterGrid}>
-                <label className={styles.filterItem}>
-                  <span>Part number</span>
-                  <input value={partNumberSearch} onChange={(event) => setPartNumberSearch(event.target.value)} placeholder="Search part number" />
-                </label>
-                <label className={styles.filterItem}>
-                  <span>English title</span>
-                  <input value={titleSearch} onChange={(event) => setTitleSearch(event.target.value)} placeholder="Search title" />
-                </label>
-
-                {Array.from({ length: 7 }).map((_, index) => {
-                  const level = index + 1;
-                  return (
-                    <CheckboxListFilter
-                      key={`h${level}`}
-                      label={`Hierarchy ${level}`}
-                      options={hierarchyOptions[level]}
-                      selected={hierarchySelection[level] ?? []}
-                      onChange={(values) => setHierarchyLevel(level, values)}
-                    />
-                  );
-                })}
-
-                {filterOptions.metadataFields.map((field) => (
-                  <CheckboxListFilter
-                    key={field.key}
-                    label={field.label}
-                    options={metadataOptions[field.key] ?? []}
-                    selected={metadataSelection[field.key] ?? []}
-                    onChange={(values) =>
-                      setMetadataSelection((prev) => ({
-                        ...prev,
-                        [field.key]: values,
-                      }))
-                    }
-                  />
-                ))}
-
-                <CheckboxListFilter
-                  label="Allocation status"
-                  options={['active', 'inactive']}
-                  selected={statusSelection}
-                  onChange={(values) => setStatusSelection(values as QPartAllocationStatus[])}
+                <div className={styles.partSearchStack}>
+                  <label className={styles.filterItem}>
+                    <span>Part number</span>
+                    <input value={partNumberSearch} onChange={(event) => setPartNumberSearch(event.target.value)} placeholder="Search part number" />
+                  </label>
+                  <label className={styles.filterItem}>
+                    <span>English title</span>
+                    <input value={titleSearch} onChange={(event) => setTitleSearch(event.target.value)} placeholder="Search title" />
+                  </label>
+                </div>
+                <HierarchyFilter
+                  level={1}
+                  options={hierarchyOptions[1]}
+                  selected={hierarchySelection[1] ?? []}
+                  onChange={(values) => setHierarchyLevel(1, values)}
                 />
+                <div className={styles.hierarchyCompactGrid}>
+                  {Array.from({ length: 6 }).map((_, index) => {
+                    const level = index + 2;
+                    return (
+                      <HierarchyFilter
+                        key={`h${level}`}
+                        level={level}
+                        options={hierarchyOptions[level]}
+                        selected={hierarchySelection[level] ?? []}
+                        onChange={(values) => setHierarchyLevel(level, values)}
+                        compact
+                      />
+                    );
+                  })}
+                </div>
               </div>
             </section>
           </div>
@@ -712,8 +797,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
               <tr>
                 <th className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>BC Status</th>
                 <th className={`${styles.stickyColumn} ${styles.stickyPart}`}>Part</th>
-                <th className={`${styles.stickyColumn} ${styles.stickyTitle}`}>English title</th>
-                <th className={`${styles.stickyColumn} ${styles.stickyHierarchy}`}>Hierarchy</th>
+                <th className={styles.titleCell}>English title</th>
+                <th style={{ minWidth: 80, textAlign: 'center', fontSize: 11 }}>Active</th>
                 {renderedCountries.map((countryCode) => (
                   <th key={`head-${countryCode}`} className={styles.countryHeader}>
                     <span className={styles.countryHeaderLabel}>
@@ -725,7 +810,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row) => (
+              {filteredRows.map((row) => {
+                const activeCount = renderedCountries.filter((countryCode) => row.countryStatuses[countryCode] === 'active').length;
+                return (
                 <tr key={row.partId} className={styles.tableRow}>
                   <td className={`${styles.stickyColumn} ${styles.stickyBCStatus}`}>
                     {bcStatusLoading && !bcStatusBySku[row.partNumber] ? (
@@ -741,31 +828,60 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                       {row.partNumber}
                     </Link>
                   </td>
-                  <td className={`${styles.titleCell} ${styles.stickyColumn} ${styles.stickyTitle}`}>
+                  <td className={styles.titleCell}>
                     <Link className={styles.titleLink} href={`/qpart/parts/${row.partId}`}>
                       <span className={styles.titleText}>{row.englishTitle}</span>
                     </Link>
                   </td>
-                  <td className={`${styles.hierarchyCell} ${styles.stickyColumn} ${styles.stickyHierarchy}`}>{row.hierarchySummary || '—'}</td>
+                  <td style={{ minWidth: 80, textAlign: 'center', fontSize: 11 }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: activeCount > 0 ? '#ecfdf5' : '#f8fafc',
+                        color: activeCount > 0 ? '#166534' : '#6b7280',
+                        border: `1px solid ${activeCount > 0 ? '#bbf7d0' : '#e2e8f0'}`,
+                        borderRadius: 999,
+                        padding: '2px 8px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {activeCount}/{renderedCountries.length}
+                    </span>
+                  </td>
                   {renderedCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
                     return (
                       <td key={`${row.partId}-${countryCode}`} className={styles.countryCell}>
-                        <StatusCell
-                          status={status === 'active' ? 'active' : 'inactive'}
-                          onToggle={() => void toggleCell(row, countryCode, status)}
-                          onPush={row.hasBcIds ? () => void pushCell(row, countryCode) : undefined}
-                          disabled={busyKey === cellKey || pushBusyKey === cellKey}
-                          pushDisabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
-                          statusLabel={statusLabel(status)}
-                          pushLabel={pushBusyKey === cellKey ? 'Pushing…' : '↑ Push'}
-                        />
+                        <div className={styles.cellActions}>
+                          <button
+                            type="button"
+                            className={`${styles.statusButton} ${status === 'active' ? styles.statusActive : styles.statusNotActive}`}
+                            onClick={() => void toggleCell(row, countryCode, status)}
+                            disabled={busyKey === cellKey || pushBusyKey === cellKey}
+                          >
+                            {statusLabel(status)}
+                          </button>
+                          {row.hasBcIds ? (
+                            <button
+                              type="button"
+                              className={styles.pushButton}
+                              onClick={() => void pushCell(row, countryCode)}
+                              disabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
+                              title="Push to external PostgreSQL"
+                            >
+                              {pushBusyKey === cellKey ? 'Pushing…' : '↑ Push'}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             </table>
           </div>
@@ -801,7 +917,11 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
           </div>
         </section>
       ) : (
-        <div className={styles.empty}>No QPart allocation rows match the current filters.</div>
+        <div className={styles.empty} style={{ padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+          <div style={{ fontWeight: 700, color: '#334155', marginBottom: 4 }}>No parts match your filters</div>
+          <div style={{ fontSize: 12, color: '#64748b' }}>Try clearing some filters or expanding your territory selection.</div>
+        </div>
       )}
     </>
   );
