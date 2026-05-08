@@ -1,69 +1,90 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { revalidatePath } from 'next/cache';
-import { buildBikeExternalSamplerPayload, upsertExternalSamplerResult } from '@/lib/external-pg/cpq-sampler-result';
-import { toExternalPgApiError } from '@/lib/external-pg/errors';
+import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { buildBikeExternalSamplerPayload } from "@/lib/external-pg/cpq-sampler-result";
+import {
+  lookupBcIds,
+  upsertExternalVariant,
+  upsertExternalVariantEligibility,
+} from "@/lib/external-pg/variant-tables";
+import { toExternalPgApiError } from "@/lib/external-pg/errors";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  let currentStage = 'request_received';
+  let currentStage = "request_received";
   const stageStartedAt = Date.now();
   const stage = (name: string, details?: Record<string, unknown>) => {
     currentStage = name;
     const elapsedMs = Math.max(0, Date.now() - stageStartedAt);
     if (details) {
-      console.info('[bike-allocation-push]', name, { elapsedMs, ...details });
+      console.info("[bike-allocation-push]", name, { elapsedMs, ...details });
       return;
     }
-    console.info('[bike-allocation-push]', name, { elapsedMs });
+    console.info("[bike-allocation-push]", name, { elapsedMs });
   };
 
-  stage('request_received');
+  stage("request_received");
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   try {
-    stage('payload_build');
-    const payload = await buildBikeExternalSamplerPayload({
-      ruleset: String(body.ruleset ?? ''),
-      ipnCode: String(body.ipnCode ?? ''),
-      countryCode: String(body.countryCode ?? ''),
-    }, { onStage: (name, details) => stage(name, details) });
-    stage('payload_build', { ok: true });
-
-    stage('client_create');
-    const result = await upsertExternalSamplerResult(payload, {
-      onStage: (name, details) => {
-        if (name === 'client_create') {
-          stage('client_create', details);
-          return;
-        }
-        if (name === 'client_connect_start') {
-          stage('client_connect_start', details);
-          return;
-        }
-        if (name === 'client_connect_success') {
-          stage('client_connect_success', details);
-          return;
-        }
-        if (name === 'upsert_start') {
-          stage('upsert_start', details);
-          return;
-        }
-        if (name === 'upsert_success') {
-          stage('upsert_success', details);
-          return;
-        }
-        stage(name, details);
+    stage("payload_build");
+    const payload = await buildBikeExternalSamplerPayload(
+      {
+        ruleset: String(body.ruleset ?? ""),
+        ipnCode: String(body.ipnCode ?? ""),
+        countryCode: String(body.countryCode ?? ""),
       },
-    });
-    revalidatePath('/sales/bike-allocation');
-    stage('response_send', { ok: true, action: result.action, id: result.id });
+      { onStage: (name, details) => stage(name, details) },
+    );
+    stage("payload_build", { ok: true });
 
-    return NextResponse.json({ result });
+    stage("bc_ids_lookup_start", { sku: payload.ipnCode });
+    const { bcVariantId, bcProductId } = await lookupBcIds(payload.ipnCode);
+    stage("bc_ids_lookup_success", {
+      sku: payload.ipnCode,
+      hasBcVariantId: bcVariantId != null,
+      hasBcProductId: bcProductId != null,
+    });
+
+    stage("eligibility_upsert_start");
+    const eligibilityResult = await upsertExternalVariantEligibility(
+      {
+        sku: payload.ipnCode,
+        countryCode: payload.countryCode,
+        detailId: payload.detailId,
+        isActive: payload.active,
+      },
+      {
+        onStage: (name, details) => stage(`eligibility_${name}`, details),
+      },
+    );
+
+    stage("variant_upsert_start");
+    const variantResult = await upsertExternalVariant(
+      {
+        sku: payload.ipnCode,
+        bcVariantId,
+        bcProductId,
+        forecastCtyCode: null,
+        bblRuleSetItem: payload.ruleset,
+      },
+      {
+        onStage: (name, details) => stage(`variant_${name}`, details),
+      },
+    );
+
+    revalidatePath("/sales/bike-allocation");
+    stage("response_send", {
+      ok: true,
+      eligibilityAction: eligibilityResult.action,
+      variantAction: variantResult.action,
+    });
+
+    return NextResponse.json({ eligibilityResult, variantResult });
   } catch (error) {
-    stage('failed', { stage: currentStage });
+    stage("failed", { stage: currentStage });
     const apiError = toExternalPgApiError(error, { stage: currentStage });
-    console.error('[bike-allocation-push] error', {
+    console.error("[bike-allocation-push] error", {
       stage: currentStage,
       errorType: apiError.errorType,
       errorCode: apiError.errorCode,

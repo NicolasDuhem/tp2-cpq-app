@@ -1,72 +1,132 @@
 # External PostgreSQL row push (Bike + QPart)
 
-This first-step integration adds row-level push actions from:
+The row-level push actions from:
+
 - `/sales/bike-allocation`
 - `/sales/qpart-allocation`
 
-Destination:
-- External PostgreSQL table `public.cpq_sampler_result`.
+now write to two external PostgreSQL variant target tables:
+
+- `<EXTERNAL_PG_SCHEMA>.variant_eligibility`
+- `<EXTERNAL_PG_SCHEMA>.variants`
+
+The previous external push to `cpq_sampler_result` is no longer used. The internal Neon `cpq_sampler_result` table remains unchanged and continues to be used by the app for sampler persistence, sales allocation state, payload building, and ruleset lookups.
 
 ## Runtime dependency
+
 - Server-side push routes require the Node PostgreSQL client package `pg` at runtime.
 - Keep `pg` in `dependencies` (not only `devDependencies`) so production/serverless deployments can import it.
 
-## Required upsert business key
-Application upsert logic matches rows using:
-- `namespace`
-- `ipn_code`
-- `country_code`
+## External target 1: `variant_eligibility`
 
-> Do not rely on target `id` primary key for matching.
+Columns are PascalCase and the app writes them double-quoted:
 
-## Azure PostgreSQL preparation
+- `"Sku"`
+- `"CountryCode"`
+- `"DetailID"`
+- `"IsActive"`
 
-### 1) Duplicate detection (before unique index)
+Business key:
+
+- `("Sku", "CountryCode")`
+
+Upsert behavior:
+
+- insert when no row exists for `("Sku", "CountryCode")`
+- update existing rows by setting `"DetailID"` and `"IsActive"`
+
+Mapping:
+
+- `"Sku"` = sampler payload `ipnCode` / item SKU
+- `"CountryCode"` = sampler payload `countryCode`
+- `"DetailID"` = sampler payload `detailId`
+- `"IsActive"` = sampler payload `active`
+
+Required unique index:
+
 ```sql
-select
-  namespace,
-  ipn_code,
-  country_code,
-  count(*) as duplicate_count
-from public.cpq_sampler_result
-group by namespace, ipn_code, country_code
-having count(*) > 1
-order by duplicate_count desc, namespace, ipn_code, country_code;
+CREATE UNIQUE INDEX IF NOT EXISTS variant_eligibility_sku_country_uniq
+  ON public.variant_eligibility ("Sku", "CountryCode");
 ```
 
-### 2) Inspect duplicate rows in detail (safe report)
+Use the configured external schema instead of `public` if `EXTERNAL_PG_SCHEMA` is not `public`.
+
+## External target 2: `variants`
+
+Columns are PascalCase and the app writes them double-quoted:
+
+- `"Sku"`
+- `"BcVariantID"`
+- `"BcProductID"`
+- `"ForecastCtyCode"`
+- `"BblRuleSetItem"`
+- `"CreatedAt"`
+- `"UpdatedAt"`
+
+Business key:
+
+- `("Sku")`
+
+Upsert behavior:
+
+- insert when no row exists for `"Sku"`
+- update existing rows by setting `"BcVariantID"`, `"BcProductID"`, `"ForecastCtyCode"`, `"BblRuleSetItem"`, and `"UpdatedAt"`
+- preserve the original `"CreatedAt"` on update
+
+Mapping:
+
+- `"Sku"` = sampler payload `ipnCode` / item SKU
+- `"BcVariantID"` = Neon `bc_item_variant_map.bc_variant_id`, or `NULL` when no mapping exists
+- `"BcProductID"` = Neon `bc_item_variant_map.bc_product_id`, or `NULL` when no mapping exists
+- `"ForecastCtyCode"` = `NULL` for now
+- `"BblRuleSetItem"` = sampler payload `ruleset`
+
+Required unique index:
+
 ```sql
-with duplicate_keys as (
-  select namespace, ipn_code, country_code
-  from public.cpq_sampler_result
-  group by namespace, ipn_code, country_code
-  having count(*) > 1
-)
-select
-  t.id,
-  t.namespace,
-  t.ipn_code,
-  t.country_code,
-  t.ruleset,
-  t.account_code,
-  t.customer_id,
-  t.active,
-  t.updated_at,
-  t.created_at
-from public.cpq_sampler_result t
-join duplicate_keys d
-  on d.namespace = t.namespace
- and d.ipn_code = t.ipn_code
- and d.country_code = t.country_code
-order by t.namespace, t.ipn_code, t.country_code, t.updated_at desc, t.id desc;
+CREATE UNIQUE INDEX IF NOT EXISTS variants_sku_uniq
+  ON public.variants ("Sku");
 ```
 
-### 3) Unique index for upsert key
-```sql
-create unique index if not exists cpq_sampler_result_namespace_ipn_country_uniq
-  on public.cpq_sampler_result(namespace, ipn_code, country_code);
-```
+Use the configured external schema instead of `public` if `EXTERNAL_PG_SCHEMA` is not `public`.
 
-## Notes
-- App uses PostgreSQL `INSERT ... ON CONFLICT (namespace, ipn_code, country_code) DO UPDATE`.
-- `created_at` is preserved on update; `updated_at` is refreshed to `now()`.
+## Push flow
+
+For bike and QPart pushes, the app still builds source payloads from Neon first:
+
+- `buildBikeExternalSamplerPayload()` reads the latest matching Neon `CPQ_sampler_result` row.
+- `buildQpartExternalSamplerPayload()` reads the QPart allocation row plus active account context.
+
+After payload build, each route:
+
+1. looks up BC IDs in Neon `public.bc_item_variant_map` by `sku_code = payload.ipnCode`
+2. upserts `variant_eligibility`
+3. upserts `variants`
+
+The two external upserts are sequential so route logs show each target independently.
+
+## BigCommerce item-map follow-up push
+
+`POST /api/bigcommerce/item-map/upsert` continues to upsert Neon `bc_item_variant_map` first. After that succeeds, rows with a non-null `bc_product_id` or `bc_variant_id` trigger external `variants` upserts in parallel.
+
+This covers the case where a SKU was previously pushed to external `variants` with null BC IDs, then a later “Check BC Status” populates the IDs in Neon.
+
+For these follow-up pushes:
+
+- ruleset is loaded from the most recent Neon `public.cpq_sampler_result` row for the SKU (`updated_at desc nulls last, created_at desc nulls last, id desc`)
+- if no sampler ruleset exists, `"BblRuleSetItem"` is set to `Unknown`
+- external push failures are returned as warnings and do not fail the main Neon item-map upsert response
+
+## Diagnostics
+
+`/api/debug/external-postgres-test` verifies:
+
+- external PostgreSQL environment/config parsing
+- DNS and connection/authentication checks
+- simple query execution
+- `variant_eligibility` table existence
+- `variants` table existence
+- unique support for `variant_eligibility ("Sku", "CountryCode")`
+- unique support for `variants ("Sku")`
+
+`/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variant_eligibility`; it no longer writes to external `cpq_sampler_result`.
