@@ -53,6 +53,22 @@ function uniqueSorted(values: string[]) {
   return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
+
+function parseParamList(searchParams: { get: (key: string) => string | null }, key: string) {
+  return uniqueSorted(
+    (searchParams.get(key) ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function setParamList(params: URLSearchParams, key: string, values: string[]) {
+  const normalized = uniqueSorted(values);
+  if (normalized.length) params.set(key, normalized.join(','));
+  else params.delete(key);
+}
+
 function statusLabel(status: QPartAllocationStatus) {
   return status === 'active' ? 'Active' : 'Inactive';
 }
@@ -144,13 +160,20 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [partNumberSearch, setPartNumberSearch] = useState('');
-  const [titleSearch, setTitleSearch] = useState('');
+  const [partNumberSearch, setPartNumberSearch] = useState(() => searchParams.get('part') ?? '');
+  const [titleSearch, setTitleSearch] = useState(() => searchParams.get('title') ?? '');
   const [territorySearch, setTerritorySearch] = useState('');
-  const [hierarchySelection, setHierarchySelection] = useState<LevelSelection>(defaultHierarchySelection);
+  const [hierarchySelection, setHierarchySelection] = useState<LevelSelection>(() => ({
+    ...defaultHierarchySelection,
+    ...Object.fromEntries(Array.from({ length: 7 }).map((_, index) => [index + 1, parseParamList(searchParams, `h${index + 1}`)])),
+  }));
   const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>({});
-  const [countrySelection, setCountrySelection] = useState<string[]>([]);
-  const [bcStatusSelection, setBcStatusSelection] = useState<QPartBCStatusFilter[]>([]);
+  const [countrySelection, setCountrySelection] = useState<string[]>(() => parseParamList(searchParams, 'countries').map((value) => value.toUpperCase()));
+  const [bcStatusSelection, setBcStatusSelection] = useState<QPartBCStatusFilter[]>(() =>
+    parseParamList(searchParams, 'bc_status')
+      .map((value) => value.toLowerCase())
+      .filter((value): value is QPartBCStatusFilter => value === 'ok' || value === 'nok'),
+  );
   const [updateAllEnabled, setUpdateAllEnabled] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -170,6 +193,42 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   }, [countryColumns, countrySelection]);
 
   const renderedCountries = visibleCountries;
+
+  const serializedFilters = useMemo(() => {
+    const params = new URLSearchParams();
+    const part = partNumberSearch.trim();
+    const title = titleSearch.trim();
+    if (part) params.set('part', part);
+    if (title) params.set('title', title);
+    setParamList(params, 'countries', countrySelection.map((value) => value.toUpperCase()));
+    setParamList(params, 'bc_status', bcStatusSelection);
+    for (let level = 1; level <= 7; level += 1) {
+      setParamList(params, `h${level}`, hierarchySelection[level] ?? []);
+    }
+    return params.toString();
+  }, [partNumberSearch, titleSearch, countrySelection, bcStatusSelection, hierarchySelection]);
+
+  useEffect(() => {
+    const filterKeys = ['part', 'title', 'countries', 'bc_status', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7'];
+    const current = new URLSearchParams(searchParams.toString());
+    const currentFilters = new URLSearchParams();
+    for (const key of filterKeys) {
+      const value = current.get(key);
+      if (value) currentFilters.set(key, value);
+    }
+
+    if (currentFilters.toString() === serializedFilters) return;
+
+    const next = new URLSearchParams(searchParams.toString());
+    const filters = new URLSearchParams(serializedFilters);
+    filterKeys.forEach((key) => next.delete(key));
+    filters.forEach((value, key) => next.set(key, value));
+    next.set('page', '1');
+    next.set('page_size', String(pagination.pageSize));
+
+    router.replace(`${pathname}?${next.toString()}`);
+  }, [serializedFilters, searchParams, router, pathname, pagination.pageSize]);
+
 
   const territoryGroups = useMemo(() => {
     const search = territorySearch.trim().toLowerCase();
@@ -199,25 +258,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     });
   }, [rows, partNumberSearch, titleSearch]);
 
-  const hierarchyOptions = useMemo(() => {
-    const options: Record<number, string[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
-
-    for (let level = 1; level <= 7; level += 1) {
-      const filtered = textFilteredRows.filter((row) => {
-        for (let parentLevel = 1; parentLevel < level; parentLevel += 1) {
-          const selected = hierarchySelection[parentLevel] ?? [];
-          if (!selected.length) continue;
-          const value = row.hierarchyLevels[parentLevel - 1] ?? '';
-          if (!selected.includes(value)) return false;
-        }
-        return true;
-      });
-
-      options[level] = uniqueSorted(filtered.map((row) => row.hierarchyLevels[level - 1] ?? '').filter(Boolean));
-    }
-
-    return options;
-  }, [textFilteredRows, hierarchySelection]);
+  const hierarchyOptions = filterOptions.hierarchyOptions;
 
   const hierarchyFilteredRows = useMemo(
     () =>
@@ -613,7 +654,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                   fontWeight: 600,
                 }}
               >
-                {filteredRows.length} parts shown
+                {pagination.totalRows} parts matched
               </span>
             )}
           </div>

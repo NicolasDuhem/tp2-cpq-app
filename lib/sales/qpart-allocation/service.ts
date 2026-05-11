@@ -30,6 +30,7 @@ export type SalesQPartAllocationFilterOptions = {
   countries: string[];
   territoryRegions: SalesQPartTerritoryFilterRegion[];
   metadataFields: Array<{ key: string; label: string }>;
+  hierarchyOptions: Record<number, string[]>;
 };
 
 export type SalesQPartAllocationPageData = {
@@ -57,6 +58,11 @@ type PartAllocationRow = {
 };
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
+
+function asFiniteNumber(value: unknown, fallback: number) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
 
 function normalizeStatus(value: unknown): QPartAllocationStatus {
   return value === true || value === 'true' || value === 't' || value === 1 || value === '1' ? 'active' : 'inactive';
@@ -140,52 +146,25 @@ async function listPartMetadataMap() {
   return map;
 }
 
-export async function getSalesQPartAllocationPageData(input: { page?: number; pageSize?: number } = {}): Promise<SalesQPartAllocationPageData> {
-  await syncQPartCountryAllocationRows();
-
-  const pageSize = Math.min(500, Math.max(1, Number(input.pageSize ?? 200)));
-
-  const countRows = (await sql`select count(*)::int as count from qpart_parts`) as Array<{ count: number }>;
-  const totalRows = Number(countRows[0]?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const page = Math.min(totalPages, Math.max(1, Number(input.page ?? 1)));
-  const offset = (page - 1) * pageSize;
-
-  const pagePartRows = (await sql`
-    select p.id
-    from qpart_parts p
-    order by p.part_number, p.id
-    limit ${pageSize}
-    offset ${offset}
-  `) as Array<{ id: number }> ;
-  const pagePartIds = pagePartRows.map((row) => Number(row.id));
-
-  const [allocations, metadataMap, metadataDefinitions, countryMappings] = await Promise.all([
-    listPartAllocationRows(pagePartIds),
-    listPartMetadataMap(),
-    listMetadataDefinitions(true),
-    listCountryMappings(true),
-  ]);
-
-  const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code)).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
-  );
-
+function buildAllocationRows(
+  allocations: PartAllocationRow[],
+  metadataMap: Map<number, Record<string, Set<string>>>,
+  countries: string[],
+): SalesQPartAllocationRow[] {
   const rowMap = new Map<number, SalesQPartAllocationRow>();
   for (const row of allocations) {
+    const countryCode = asTrimmed(row.country_code).toUpperCase();
+    const hierarchyLevels = [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7].map(
+      (value) => asTrimmed(value),
+    );
     const existing =
       rowMap.get(row.part_id) ??
       {
         partId: row.part_id,
         partNumber: row.part_number,
         englishTitle: row.default_name,
-        hierarchyLevels: [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7].map(
-          (value) => asTrimmed(value),
-        ),
-        hierarchySummary: [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7]
-          .map((value) => asTrimmed(value))
-          .filter(Boolean)
-          .join(' > '),
+        hierarchyLevels,
+        hierarchySummary: hierarchyLevels.filter(Boolean).join(' > '),
         metadataValues: {},
         countryStatuses: {},
         hasBcIds: row.has_bc_ids === true,
@@ -194,11 +173,11 @@ export async function getSalesQPartAllocationPageData(input: { page?: number; pa
 
     existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
     existing.bcStatus = existing.bcStatus === 'ok' || normalizeBCStatus(row.bc_status, row.has_bc_ids === true) === 'ok' ? 'ok' : 'nok';
-    existing.countryStatuses[asTrimmed(row.country_code)] = normalizeStatus(row.active);
+    if (countryCode) existing.countryStatuses[countryCode] = normalizeStatus(row.active);
     rowMap.set(row.part_id, existing);
   }
 
-  const rows = [...rowMap.values()]
+  return [...rowMap.values()]
     .map((row) => {
       const partMetadata = metadataMap.get(row.partId) ?? {};
       const metadataValues = Object.fromEntries(
@@ -214,6 +193,75 @@ export async function getSalesQPartAllocationPageData(input: { page?: number; pa
       };
     })
     .sort((a, b) => a.partNumber.localeCompare(b.partNumber));
+}
+
+function buildHierarchyOptions(rows: SalesQPartAllocationRow[]): Record<number, string[]> {
+  const options: Record<number, string[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+  for (let level = 1; level <= 7; level += 1) {
+    options[level] = [...new Set(rows.map((row) => row.hierarchyLevels[level - 1] ?? '').filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }
+  return options;
+}
+
+function rowMatchesCriteria(
+  row: SalesQPartAllocationRow,
+  criteria: Required<SalesQPartAllocationBulkFilterCriteria>,
+  allCountries: string[],
+): boolean {
+  if (criteria.partNumberSearch && !row.partNumber.toLowerCase().includes(criteria.partNumberSearch)) return false;
+  if (criteria.titleSearch && !row.englishTitle.toLowerCase().includes(criteria.titleSearch)) return false;
+  if (criteria.bcStatuses.length && !criteria.bcStatuses.includes(row.bcStatus)) return false;
+
+  for (const [level, selectedValues] of Object.entries(criteria.hierarchySelection)) {
+    if (!selectedValues.length) continue;
+    const index = Number(level) - 1;
+    if (!selectedValues.includes(row.hierarchyLevels[index] ?? '')) return false;
+  }
+
+  for (const [key, selectedValues] of Object.entries(criteria.metadataSelection)) {
+    if (!selectedValues.length) continue;
+    const partValues = row.metadataValues[key] ?? [];
+    if (!selectedValues.some((value) => partValues.includes(value))) return false;
+  }
+
+  if (criteria.allocationStatuses.length) {
+    const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : allCountries;
+    return targetCountries.some((countryCode) => criteria.allocationStatuses.includes(row.countryStatuses[countryCode] ?? 'inactive'));
+  }
+
+  return true;
+}
+
+export async function getSalesQPartAllocationPageData(
+  input: { page?: number; pageSize?: number; filterCriteria?: SalesQPartAllocationBulkFilterCriteria } = {},
+): Promise<SalesQPartAllocationPageData> {
+  await syncQPartCountryAllocationRows();
+
+  const pageSize = Math.min(500, Math.max(1, asFiniteNumber(input.pageSize, 200)));
+  const requestedPage = Math.max(1, asFiniteNumber(input.page, 1));
+  const criteria = normalizeCriteria(input.filterCriteria ?? {});
+
+  const [allocations, metadataMap, metadataDefinitions, countryMappings] = await Promise.all([
+    listPartAllocationRows(),
+    listPartMetadataMap(),
+    listMetadataDefinitions(true),
+    listCountryMappings(true),
+  ]);
+
+  const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+  const allRows = buildAllocationRows(allocations, metadataMap, countries);
+  const hierarchyOptions = buildHierarchyOptions(allRows);
+  const filteredRows = allRows.filter((row) => rowMatchesCriteria(row, criteria, countries));
+  const totalRows = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const page = Math.min(totalPages, requestedPage);
+  const offset = (page - 1) * pageSize;
+  const rows = filteredRows.slice(offset, offset + pageSize);
 
   const usedCountries = new Set(countries);
   const regionMap = new Map<string, Map<string, string[]>>();
@@ -271,6 +319,7 @@ export async function getSalesQPartAllocationPageData(input: { page?: number; pa
       countries,
       territoryRegions,
       metadataFields: metadataDefinitions.map((definition) => ({ key: definition.key, label: definition.label_en })),
+      hierarchyOptions,
     },
   };
 }
@@ -338,63 +387,9 @@ export async function listFilteredQPartAllocationPartIds(
   const criteria = normalizeCriteria(filterCriteria);
   const [allocations, metadataMap] = await Promise.all([listPartAllocationRows(), listPartMetadataMap()]);
   const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))];
-  const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : countries;
 
-  const rowMap = new Map<number, SalesQPartAllocationRow>();
-  for (const row of allocations) {
-    const partId = Number(row.part_id);
-    const existing =
-      rowMap.get(partId) ??
-      {
-        partId,
-        partNumber: row.part_number,
-        englishTitle: row.default_name,
-        hierarchyLevels: [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7].map(
-          (value) => asTrimmed(value),
-        ),
-        hierarchySummary: '',
-        metadataValues: {},
-        countryStatuses: {},
-        hasBcIds: row.has_bc_ids === true,
-        bcStatus: normalizeBCStatus(row.bc_status, row.has_bc_ids === true),
-      };
-
-    existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
-    existing.bcStatus = existing.bcStatus === 'ok' || normalizeBCStatus(row.bc_status, row.has_bc_ids === true) === 'ok' ? 'ok' : 'nok';
-    existing.countryStatuses[asTrimmed(row.country_code).toUpperCase()] = normalizeStatus(row.active);
-    rowMap.set(partId, existing);
-  }
-
-  return [...rowMap.values()]
-    .map((row) => ({
-      ...row,
-      metadataValues: Object.fromEntries(
-        Object.entries(metadataMap.get(row.partId) ?? {}).map(([key, values]) => [key, [...values]]),
-      ),
-    }))
-    .filter((row) => {
-      if (criteria.partNumberSearch && !row.partNumber.toLowerCase().includes(criteria.partNumberSearch)) return false;
-      if (criteria.titleSearch && !row.englishTitle.toLowerCase().includes(criteria.titleSearch)) return false;
-      if (criteria.bcStatuses.length && !criteria.bcStatuses.includes(row.bcStatus)) return false;
-
-      for (const [level, selectedValues] of Object.entries(criteria.hierarchySelection)) {
-        if (!selectedValues.length) continue;
-        const index = Number(level) - 1;
-        if (!selectedValues.includes(row.hierarchyLevels[index] ?? '')) return false;
-      }
-
-      for (const [key, selectedValues] of Object.entries(criteria.metadataSelection)) {
-        if (!selectedValues.length) continue;
-        const partValues = row.metadataValues[key] ?? [];
-        if (!selectedValues.some((value) => partValues.includes(value))) return false;
-      }
-
-      if (criteria.allocationStatuses.length) {
-        return targetCountries.some((countryCode) => criteria.allocationStatuses.includes(row.countryStatuses[countryCode] ?? 'inactive'));
-      }
-
-      return true;
-    })
+  return buildAllocationRows(allocations, metadataMap, countries)
+    .filter((row) => rowMatchesCriteria(row, criteria, countries))
     .map((row) => row.partId);
 }
 
