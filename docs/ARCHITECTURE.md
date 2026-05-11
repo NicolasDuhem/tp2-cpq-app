@@ -183,3 +183,9 @@ QPart sales allocation behavior:
 - QPart detail header preview resolves from `blob_url` (public CDN URL): preferred `is_primary=true`, fallback lowest `image_index` (including reconciled legacy rows), fallback no image.
 - On image API reads/deletes, the service reconciles Neon metadata with Blob keys under `qparts/<part_number>` for both `qparts/<part_number>.jpg` and `qparts/<part_number>_<n>.jpg`; legacy random-suffix files are also surfaced by hydrating missing Neon rows so **Manage pictures** can list and delete them.
 - Delete flow is Blob-first (`@vercel/blob del` using `blob_url`), then Neon metadata delete, then UI refresh; deleting a current primary image automatically shifts display to the next preferred row via existing primary/lowest-index selection.
+
+## QPart allocation controls
+
+`/sales/qpart-allocation` keeps the existing per-row toggle, per-row external push, and pagination flows, and adds a server-verified **Update all** bulk mode. The client only sends full-filter criteria when Update all is enabled; the API validates the HttpOnly update-all cookie, rebuilds the filtered QPart dataset on the server, and then updates the selected country allocation cells.
+
+QPart external PostgreSQL pushes are page-specific: the QPart route passes `Qpart` for ruleset, forecast country code, and detail id overrides to the shared external variant-table writer. Bike allocation does not pass these overrides and therefore keeps its existing sampler ruleset resolution behavior.

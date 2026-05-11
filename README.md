@@ -117,7 +117,7 @@ External unique indexes are **not required** for the current push path. The app 
 
 Push is allowed only when Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
 
-`variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, hardcoded `"ForecastCtyCode" = 'F_BB'`, deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
+For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, hardcoded `"ForecastCtyCode" = 'F_BB'`, deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. QPart pushes use the QPart-only override (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`). `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
 
 ## Live Neon metadata source of truth
 
@@ -135,3 +135,11 @@ Push is allowed only when Neon `bc_item_variant_map` has both `bc_product_id` an
 - QPart detail header preview resolves from `blob_url` (public CDN URL): preferred `is_primary=true`, fallback lowest `image_index` (including reconciled legacy rows), fallback no image.
 - On image API reads/deletes, the service reconciles Neon metadata with Blob keys under `qparts/<part_number>` for both `qparts/<part_number>.jpg` and `qparts/<part_number>_<n>.jpg`; legacy random-suffix files are also surfaced by hydrating missing Neon rows so **Manage pictures** can list and delete them.
 - Delete flow is Blob-first (`@vercel/blob del` using `blob_url`), then Neon metadata delete, then UI refresh; deleting a current primary image automatically shifts display to the next preferred row via existing primary/lowest-index selection.
+
+### QPart allocation Update all and BC filtering
+
+`/sales/qpart-allocation` supports password-protected **Update all** bulk activate/deactivate. By default, bulk actions keep the existing current-page behavior. When **Update all** is enabled with the server-side password (`QPART_UPDATE_ALL_PASSWORD`, default `Br0mpt0n2026!`), the backend rebuilds the full filtered QPart target set across all pages before updating selected countries.
+
+The page also includes an `OK` / `NOK` BC status filter. This filter is respected by the on-page table and by the backend Update all target rebuild.
+
+QPart external PostgreSQL pushes hardcode QPart-only external mappings (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`) so QPart pushes do not require a bike-style sampler ruleset. Bike allocation push behavior is unchanged.

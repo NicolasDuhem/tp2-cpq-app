@@ -204,13 +204,17 @@ The external Push button uses SELECT-first UPDATE/INSERT logic and does not requ
 - `"Sku"` = pushed SKU / `bc_item_variant_map.sku_code`
 - `"BcVariantId"` = `bc_item_variant_map.bc_variant_id`
 - `"BcProductId"` = `bc_item_variant_map.bc_product_id`
-- `"ForecastCtyCode"` = `F_BB`
-- `"BblRuleSetItem"` = deterministic Neon `cpq_sampler_result.ruleset` lookup by SKU
+- Bike `"ForecastCtyCode"` = `F_BB`; QPart allocation push override = `Qpart`
+- Bike `"BblRuleSetItem"` = deterministic Neon `cpq_sampler_result.ruleset` lookup by SKU; QPart allocation push override = `Qpart`
 - `"CreatedAt"` and `"UpdatedAt"` = Unix-second bigint timestamp, for example `1778151766`
 
 `variant_eligibilities` mapping:
 
 - `"Sku"` = pushed SKU
 - `"CountryCode"` = pushed country
-- `"DetailId"` = current source payload detail ID
+- Bike `"DetailId"` = current source payload detail ID; QPart allocation push override = `Qpart`
 - `"IsActive"` = current bike/QPart allocation active value
+
+## QPart allocation operational filters
+
+The QPart allocation backend derives full filtered bulk targets from the existing `qpart_parts`, `qpart_country_allocation`, `qpart_hierarchy_nodes`, `qpart_part_metadata_values`, `qpart_metadata_definitions`, and `bc_item_variant_map` data. Password-protected Update all operations update only `qpart_country_allocation.active` rows for the selected country codes and the part ids that match the submitted filter criteria.

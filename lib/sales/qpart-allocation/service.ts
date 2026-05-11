@@ -4,6 +4,7 @@ import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { listCountryMappings } from '@/lib/cpq/setup/service';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
+export type QPartBCStatusFilter = 'ok' | 'nok';
 
 export type SalesQPartAllocationRow = {
   partId: number;
@@ -14,6 +15,7 @@ export type SalesQPartAllocationRow = {
   metadataValues: Record<string, string[]>;
   countryStatuses: Record<string, QPartAllocationStatus>;
   hasBcIds: boolean;
+  bcStatus: QPartBCStatusFilter;
 };
 
 export type SalesQPartTerritoryFilterRegion = {
@@ -51,12 +53,20 @@ type PartAllocationRow = {
   hierarchy_6: string | null;
   hierarchy_7: string | null;
   has_bc_ids: boolean | null;
+  bc_status: string | null;
 };
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
 
 function normalizeStatus(value: unknown): QPartAllocationStatus {
   return value === true || value === 'true' || value === 't' || value === 1 || value === '1' ? 'active' : 'inactive';
+}
+
+function normalizeBCStatus(value: unknown, hasBcIds: boolean): QPartBCStatusFilter {
+  const status = asTrimmed(value).toUpperCase();
+  if (status === 'OK') return 'ok';
+  if (status === 'NOK' || status === 'ERR' || status === 'DISABLED' || status === 'UNKNOWN') return 'nok';
+  return hasBcIds ? 'ok' : 'nok';
 }
 
 async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocationRow[]> {
@@ -76,7 +86,8 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
       coalesce(case when n0.level = 5 then n0.label_en end, case when n1.level = 5 then n1.label_en end, case when n2.level = 5 then n2.label_en end, case when n3.level = 5 then n3.label_en end, case when n4.level = 5 then n4.label_en end, case when n5.level = 5 then n5.label_en end, case when n6.level = 5 then n6.label_en end) as hierarchy_5,
       coalesce(case when n0.level = 6 then n0.label_en end, case when n1.level = 6 then n1.label_en end, case when n2.level = 6 then n2.label_en end, case when n3.level = 6 then n3.label_en end, case when n4.level = 6 then n4.label_en end, case when n5.level = 6 then n5.label_en end, case when n6.level = 6 then n6.label_en end) as hierarchy_6,
       coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7,
-      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids
+      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids,
+      map.bc_status
     from qpart_parts p
     join qpart_country_allocation allocation on allocation.part_id = p.id
     left join qpart_hierarchy_nodes n0 on n0.id = p.hierarchy_node_id
@@ -87,7 +98,7 @@ async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocatio
     left join qpart_hierarchy_nodes n5 on n5.id = n4.parent_id
     left join qpart_hierarchy_nodes n6 on n6.id = n5.parent_id
     left join lateral (
-      select bc_product_id, bc_variant_id
+      select bc_product_id, bc_variant_id, bc_status
       from public.bc_item_variant_map map
       where coalesce(trim(map.sku_code), '') = coalesce(trim(p.part_number), '')
       order by updated_at desc nulls last, id desc
@@ -178,9 +189,11 @@ export async function getSalesQPartAllocationPageData(input: { page?: number; pa
         metadataValues: {},
         countryStatuses: {},
         hasBcIds: row.has_bc_ids === true,
+        bcStatus: normalizeBCStatus(row.bc_status, row.has_bc_ids === true),
       };
 
     existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
+    existing.bcStatus = existing.bcStatus === 'ok' || normalizeBCStatus(row.bc_status, row.has_bc_ids === true) === 'ok' ? 'ok' : 'nok';
     existing.countryStatuses[asTrimmed(row.country_code)] = normalizeStatus(row.active);
     rowMap.set(row.part_id, existing);
   }
@@ -284,6 +297,105 @@ export async function toggleQPartCountryAllocation(input: { partId: number; coun
     updatedCount: rows.length,
     targetStatus: input.targetStatus,
   };
+}
+
+export type SalesQPartAllocationBulkFilterCriteria = {
+  partNumberSearch?: string;
+  titleSearch?: string;
+  countryCodes?: string[];
+  allocationStatuses?: QPartAllocationStatus[];
+  hierarchySelection?: Record<string, string[]>;
+  metadataSelection?: Record<string, string[]>;
+  bcStatuses?: QPartBCStatusFilter[];
+};
+
+function normalizeCriteria(input: SalesQPartAllocationBulkFilterCriteria = {}): Required<SalesQPartAllocationBulkFilterCriteria> {
+  const normalizeList = (values: unknown[] | undefined) => [...new Set((values ?? []).map(asTrimmed).filter(Boolean))];
+  return {
+    partNumberSearch: asTrimmed(input.partNumberSearch).toLowerCase(),
+    titleSearch: asTrimmed(input.titleSearch).toLowerCase(),
+    countryCodes: normalizeList(input.countryCodes).map((value) => value.toUpperCase()),
+    allocationStatuses: normalizeList(input.allocationStatuses).filter(
+      (value): value is QPartAllocationStatus => value === 'active' || value === 'inactive',
+    ),
+    hierarchySelection: Object.fromEntries(
+      Object.entries(input.hierarchySelection ?? {}).map(([level, values]) => [level, normalizeList(values)]),
+    ),
+    metadataSelection: Object.fromEntries(
+      Object.entries(input.metadataSelection ?? {}).map(([key, values]) => [key, normalizeList(values)]),
+    ),
+    bcStatuses: normalizeList(input.bcStatuses)
+      .map((value) => value.toLowerCase())
+      .filter((value): value is QPartBCStatusFilter => value === 'ok' || value === 'nok'),
+  };
+}
+
+export async function listFilteredQPartAllocationPartIds(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<number[]> {
+  await syncQPartCountryAllocationRows();
+
+  const criteria = normalizeCriteria(filterCriteria);
+  const [allocations, metadataMap] = await Promise.all([listPartAllocationRows(), listPartMetadataMap()]);
+  const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))];
+  const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : countries;
+
+  const rowMap = new Map<number, SalesQPartAllocationRow>();
+  for (const row of allocations) {
+    const partId = Number(row.part_id);
+    const existing =
+      rowMap.get(partId) ??
+      {
+        partId,
+        partNumber: row.part_number,
+        englishTitle: row.default_name,
+        hierarchyLevels: [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7].map(
+          (value) => asTrimmed(value),
+        ),
+        hierarchySummary: '',
+        metadataValues: {},
+        countryStatuses: {},
+        hasBcIds: row.has_bc_ids === true,
+        bcStatus: normalizeBCStatus(row.bc_status, row.has_bc_ids === true),
+      };
+
+    existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
+    existing.bcStatus = existing.bcStatus === 'ok' || normalizeBCStatus(row.bc_status, row.has_bc_ids === true) === 'ok' ? 'ok' : 'nok';
+    existing.countryStatuses[asTrimmed(row.country_code).toUpperCase()] = normalizeStatus(row.active);
+    rowMap.set(partId, existing);
+  }
+
+  return [...rowMap.values()]
+    .map((row) => ({
+      ...row,
+      metadataValues: Object.fromEntries(
+        Object.entries(metadataMap.get(row.partId) ?? {}).map(([key, values]) => [key, [...values]]),
+      ),
+    }))
+    .filter((row) => {
+      if (criteria.partNumberSearch && !row.partNumber.toLowerCase().includes(criteria.partNumberSearch)) return false;
+      if (criteria.titleSearch && !row.englishTitle.toLowerCase().includes(criteria.titleSearch)) return false;
+      if (criteria.bcStatuses.length && !criteria.bcStatuses.includes(row.bcStatus)) return false;
+
+      for (const [level, selectedValues] of Object.entries(criteria.hierarchySelection)) {
+        if (!selectedValues.length) continue;
+        const index = Number(level) - 1;
+        if (!selectedValues.includes(row.hierarchyLevels[index] ?? '')) return false;
+      }
+
+      for (const [key, selectedValues] of Object.entries(criteria.metadataSelection)) {
+        if (!selectedValues.length) continue;
+        const partValues = row.metadataValues[key] ?? [];
+        if (!selectedValues.some((value) => partValues.includes(value))) return false;
+      }
+
+      if (criteria.allocationStatuses.length) {
+        return targetCountries.some((countryCode) => criteria.allocationStatuses.includes(row.countryStatuses[countryCode] ?? 'inactive'));
+      }
+
+      return true;
+    })
+    .map((row) => row.partId);
 }
 
 export async function bulkUpdateQPartCountryAllocation(input: {

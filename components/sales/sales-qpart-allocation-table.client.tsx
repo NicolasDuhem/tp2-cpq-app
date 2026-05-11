@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   QPartAllocationStatus,
+  QPartBCStatusFilter,
   SalesQPartAllocationFilterOptions,
   SalesQPartAllocationRow,
   SalesQPartTerritoryFilterRegion,
@@ -150,6 +151,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>({});
   const [countrySelection, setCountrySelection] = useState<string[]>([]);
   const [statusSelection, setStatusSelection] = useState<QPartAllocationStatus[]>([]);
+  const [bcStatusSelection, setBcStatusSelection] = useState<QPartBCStatusFilter[]>([]);
+  const [updateAllEnabled, setUpdateAllEnabled] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pushBusyKey, setPushBusyKey] = useState<string | null>(null);
@@ -253,11 +256,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const filteredRows = useMemo(
     () =>
       metadataFilteredRows.filter((row) => {
+        if (bcStatusSelection.length && !bcStatusSelection.includes(row.bcStatus)) return false;
         if (!statusSelection.length) return true;
         const targetCountries = visibleCountries.length ? visibleCountries : countryColumns;
         return targetCountries.some((countryCode) => statusSelection.includes(row.countryStatuses[countryCode]));
       }),
-    [metadataFilteredRows, statusSelection, visibleCountries, countryColumns],
+    [metadataFilteredRows, statusSelection, bcStatusSelection, visibleCountries, countryColumns],
   );
 
   const setHierarchyLevel = (level: number, values: string[]) => {
@@ -279,6 +283,57 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     setCountrySelection([]);
     setTerritorySearch('');
   };
+
+
+  const setBCStatusFilter = (status: QPartBCStatusFilter, checked: boolean) => {
+    setBcStatusSelection((prev) => {
+      if (checked) return prev.includes(status) ? prev : [...prev, status];
+      return prev.filter((value) => value !== status);
+    });
+  };
+
+  const setAllocationStatusFilter = (status: QPartAllocationStatus, checked: boolean) => {
+    setStatusSelection((prev) => {
+      if (checked) return prev.includes(status) ? prev : [...prev, status];
+      return prev.filter((value) => value !== status);
+    });
+  };
+
+  const requestUpdateAllChange = async (checked: boolean) => {
+    if (!checked) {
+      setUpdateAllEnabled(false);
+      return;
+    }
+
+    const password = window.prompt('Enter the Update all password to apply bulk changes across every filtered page.');
+    if (!password) return;
+
+    try {
+      const response = await fetch('/api/sales/qpart-allocation/update-all-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) throw new Error('Invalid update-all password.');
+      setUpdateAllEnabled(true);
+      setMessage({ type: 'success', text: 'Update all enabled for this session.' });
+    } catch (error) {
+      setUpdateAllEnabled(false);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Invalid update-all password.' });
+    }
+  };
+
+  const buildBulkFilterCriteria = () => ({
+    partNumberSearch,
+    titleSearch,
+    countryCodes: countrySelection,
+    allocationStatuses: statusSelection,
+    hierarchySelection: Object.fromEntries(
+      Object.entries(hierarchySelection).map(([level, values]) => [level, values]),
+    ),
+    metadataSelection,
+    bcStatuses: bcStatusSelection,
+  });
 
   const toggleCell = async (row: SalesQPartAllocationRow, countryCode: string, currentStatus: QPartAllocationStatus) => {
     const targetStatus: QPartAllocationStatus = currentStatus === 'active' ? 'inactive' : 'active';
@@ -395,14 +450,16 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          partIds: filteredRows.map((row) => row.partId),
+          partIds: updateAllEnabled ? [] : filteredRows.map((row) => row.partId),
           countryCodes: visibleCountries,
           targetStatus,
+          updateAll: updateAllEnabled,
+          filterCriteria: updateAllEnabled ? buildBulkFilterCriteria() : undefined,
         }),
       });
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
-        result?: { updatedCount: number; partCount: number; countryCount: number; targetStatus: QPartAllocationStatus };
+        result?: { updatedCount: number; partCount: number; countryCount: number; targetStatus: QPartAllocationStatus; mode?: string };
       };
 
       if (!response.ok || !payload.result) {
@@ -411,9 +468,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
       setMessage({
         type: 'success',
-        text: `Bulk ${label.toLowerCase()} complete: ${payload.result.updatedCount} allocation cells updated (${payload.result.partCount} parts × ${payload.result.countryCount} countries).`,
+        text: `Bulk ${label.toLowerCase()} complete: ${payload.result.updatedCount} allocation cells updated (${payload.result.partCount} parts × ${payload.result.countryCount} countries, ${payload.result.mode === 'all-filtered' ? 'all filtered pages' : 'current page'}).`,
       });
-      setToastMessage(`Done — ${filteredRows.length} items updated`);
+      setToastMessage(`Done — ${payload.result.partCount} items updated`);
       setToastVisible(true);
       router.refresh();
     } catch (error) {
@@ -622,8 +679,18 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             </div>
           </div>
           <div className={styles.filterHeaderActions}>
+            <label className={`${styles.updateAllControl} ${updateAllEnabled ? styles.updateAllActive : ''}`}>
+              <input
+                type="checkbox"
+                checked={updateAllEnabled}
+                onChange={(event) => void requestUpdateAllChange(event.target.checked)}
+                disabled={bulkBusy}
+              />
+              <span>Update all</span>
+            </label>
             <div className={styles.bulkSelection}>
-              Countries in scope: <strong>{visibleCountries.length}</strong>
+              Countries in scope: <strong>{visibleCountries.length}</strong> · Mode:{' '}
+              <strong>{updateAllEnabled ? 'all filtered pages' : 'current page'}</strong>
             </div>
             <button type="button" className={styles.bulkActionButton} onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading || bulkBusy}>
               {bcStatusLoading ? 'Checking BC Status...' : 'Check BC Status'}
@@ -745,6 +812,48 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                     <span>English title</span>
                     <input value={titleSearch} onChange={(event) => setTitleSearch(event.target.value)} placeholder="Search title" />
                   </label>
+                  <div className={styles.filterItem}>
+                    <span>BC status</span>
+                    <div className={styles.segmentedFilter} aria-label="BC status filter">
+                      <label className={bcStatusSelection.includes('ok') ? styles.segmentedOptionActive : styles.segmentedOption}>
+                        <input
+                          type="checkbox"
+                          checked={bcStatusSelection.includes('ok')}
+                          onChange={(event) => setBCStatusFilter('ok', event.target.checked)}
+                        />
+                        <span>OK</span>
+                      </label>
+                      <label className={bcStatusSelection.includes('nok') ? styles.segmentedOptionActive : styles.segmentedOption}>
+                        <input
+                          type="checkbox"
+                          checked={bcStatusSelection.includes('nok')}
+                          onChange={(event) => setBCStatusFilter('nok', event.target.checked)}
+                        />
+                        <span>NOK</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className={styles.filterItem}>
+                    <span>Allocation status</span>
+                    <div className={styles.segmentedFilter} aria-label="Allocation status filter">
+                      <label className={statusSelection.includes('active') ? styles.segmentedOptionActive : styles.segmentedOption}>
+                        <input
+                          type="checkbox"
+                          checked={statusSelection.includes('active')}
+                          onChange={(event) => setAllocationStatusFilter('active', event.target.checked)}
+                        />
+                        <span>Active</span>
+                      </label>
+                      <label className={statusSelection.includes('inactive') ? styles.segmentedOptionActive : styles.segmentedOption}>
+                        <input
+                          type="checkbox"
+                          checked={statusSelection.includes('inactive')}
+                          onChange={(event) => setAllocationStatusFilter('inactive', event.target.checked)}
+                        />
+                        <span>Inactive</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
                 <HierarchyFilter
                   level={1}
@@ -782,7 +891,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       <ConfirmModal
         open={pendingBulkStatus !== null}
         title={pendingBulkStatus === 'active' ? 'Bulk activate?' : 'Bulk deactivate?'}
-        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${filteredRows.length} items across all selected markets.`}
+        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${updateAllEnabled ? 'all parts matching the current filters across all pages' : `${filteredRows.length} currently loaded items`} across all selected markets.`}
         confirmLabel="Confirm"
         onConfirm={confirmBulk}
         onCancel={() => setPendingBulkStatus(null)}

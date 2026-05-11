@@ -385,7 +385,7 @@ export async function syncExternalVariantEligibility(
 }
 
 export async function syncExternalVariantTablesForPayload(
-  input: ExternalVariantEligibilityInput,
+  input: ExternalVariantEligibilityInput & { forecastCtyCodeOverride?: string; bblRuleSetItemOverride?: string },
   options: ExternalVariantPushOptions = {},
 ): Promise<ExternalVariantTablesSyncResult> {
   ensureEligibilityInput(input);
@@ -411,10 +411,11 @@ export async function syncExternalVariantTablesForPayload(
     };
   }
 
-  const ruleset = await lookupLatestSamplerRuleset(sku);
+  const ruleset = asTrimmed(input.bblRuleSetItemOverride) || (await lookupLatestSamplerRuleset(sku));
   if (!ruleset) {
     throw new Error(`No cpq_sampler_result ruleset found for SKU ${sku}`);
   }
+  const forecastCtyCode = asTrimmed(input.forecastCtyCodeOverride) || FORECAST_CTY_CODE;
 
   return withExternalPgClient(async (client, schema) => {
     const variantsTableName = qualifiedTableName(schema, "variants");
@@ -431,7 +432,7 @@ export async function syncExternalVariantTablesForPayload(
         sku,
         bcVariantId,
         bcProductId,
-        forecastCtyCode: FORECAST_CTY_CODE,
+        forecastCtyCode,
         bblRuleSetItem: ruleset,
       },
       options,

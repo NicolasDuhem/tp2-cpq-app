@@ -30,3 +30,9 @@ The docs are intentionally code-derived and must be updated with behavior change
 - `STOCK_BIKE_IMG_EXPERIMENT.md` — archived experiment documentation (not active runtime).
 - `CANONICAL_SAVE_CAPABILITY_GAP.md` — historical note about non-active copy capability.
 - `EXTRACTION_REPORT.md` — extraction history/context only.
+
+### QPart allocation update-all operations
+
+The QPart allocation page adds a password-protected **Update all** mode for bulk activate/deactivate. Current-page bulk behavior remains the default. When enabled, the backend validates the update-all cookie and rebuilds the full filtered target set across every page before updating `qpart_country_allocation` rows for the selected countries.
+
+The same page includes a compact `OK` / `NOK` BC status filter, and QPart external PostgreSQL pushes use QPart-only values (`Qpart`) for ruleset, forecast country code, and detail id. Bike allocation external push logic is not changed by this override.
