@@ -132,3 +132,13 @@ Push routes return:
 It does not require or check unique indexes.
 
 `/api/debug/external-postgres-write-test` performs a rollback-safe write diagnostic against `variants` first and `variant_eligibilities` second. It uses the same SELECT-first UPDATE/INSERT helpers as the active push path and rolls the transaction back.
+
+## QPart allocation row-push override
+
+On `/sales/qpart-allocation`, the external PostgreSQL variant-table push intentionally bypasses the bike sampler ruleset lookup for QPart rows. QPart rows do not have bike-style `cpq_sampler_result.ruleset` / detail / forecast values, so the QPart push route sends explicit overrides only from the QPart allocation endpoint:
+
+- `variants."BblRuleSetItem"` = `Qpart`
+- `variants."ForecastCtyCode"` = `Qpart`
+- `variant_eligibilities."DetailId"` = `Qpart`
+
+The shared bike allocation push route remains unchanged and continues to resolve the latest sampler ruleset for bike SKUs before writing external `variants` and `variant_eligibilities` rows.

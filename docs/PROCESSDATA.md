@@ -180,6 +180,21 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 - The external write targets are `${EXTERNAL_PG_SCHEMA}.variants` first and `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` second.
 - Before any external write, the SKU must have both `bc_product_id` and `bc_variant_id` in Neon `bc_item_variant_map`. Missing IDs return a skipped API result and no external write.
 - The current process uses SELECT-first UPDATE/INSERT logic rather than `ON CONFLICT`, so unique indexes are not a prerequisite.
-- `variants` receives BC IDs from Neon, `ForecastCtyCode = F_BB`, `BblRuleSetItem` from Neon `cpq_sampler_result.ruleset`, and Unix-second bigint timestamps.
+- Bike `variants` receives BC IDs from Neon, `ForecastCtyCode = F_BB`, `BblRuleSetItem` from Neon `cpq_sampler_result.ruleset`, and Unix-second bigint timestamps. QPart allocation pushes override `ForecastCtyCode`, `BblRuleSetItem`, and `DetailId` to `Qpart`.
 - `variant_eligibilities` receives SKU/country/detail ID plus `IsActive` from the current allocation row being pushed, not from country mapping metadata.
 - Push buttons are hidden in the Sales bike and QPart allocation tables unless the row SKU/part number has both BigCommerce IDs available in Neon.
+
+## QPart allocation filtered bulk updates
+
+The `/sales/qpart-allocation` page supports two bulk-update modes:
+
+1. **Current page** — default behavior. Bulk activate/deactivate sends the currently loaded, client-visible part ids and selected countries to the API.
+2. **Update all** — password-protected behavior. After the operator enables **Update all**, bulk activate/deactivate sends the current filter criteria to the backend. The backend rebuilds the matching QPart part set across all pages and applies the update only to those filtered rows and selected countries.
+
+The backend filter criteria includes territory/country scope, part-number search, title search, hierarchy selections, metadata selections, allocation status, and the QPart BC status filter. This avoids requiring the browser to load every page before applying a full filtered update.
+
+The **Update all** switch is protected by the `QPART_UPDATE_ALL_PASSWORD` server-side setting. The default operational password is `Br0mpt0n2026!`; set the environment variable in deployed environments to keep the comparison server-side.
+
+## QPart BC status filter
+
+The QPart allocation table now includes a compact **BC status** segmented filter with `OK` and `NOK` options. The filter works with the existing territory, part, hierarchy, metadata, and allocation-status filters and is included in the backend filter rebuild used by password-protected Update all bulk operations.

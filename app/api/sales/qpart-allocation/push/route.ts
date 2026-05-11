@@ -41,8 +41,10 @@ export async function POST(req: NextRequest) {
       {
         sku: payload.ipnCode,
         countryCode: payload.countryCode,
-        detailId: payload.detailId,
+        detailId: "Qpart",
         isActive: payload.active,
+        forecastCtyCodeOverride: "Qpart",
+        bblRuleSetItemOverride: "Qpart",
       },
       { onStage: (name, details) => stage(`external_${name}`, details) },
     );
