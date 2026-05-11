@@ -140,6 +140,6 @@ For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, 
 
 `/sales/qpart-allocation` supports password-protected **Update all** bulk activate/deactivate from the centered bottom pagination control. By default, bulk actions keep the existing current-page behavior. When **Update all** is enabled with the server-side password (`QPART_UPDATE_ALL_PASSWORD`, default `Br0mpt0n2026!`), the backend rebuilds the full filtered QPart target set across all pages before updating the countries selected in the Territory filter.
 
-The page also includes an `OK` / `NOK` BC status filter. This filter is respected by the on-page table and by the backend Update all target rebuild; the Territory filter is the single UI source for selected country columns and bulk country scope.
+The page also includes part-number, title, hierarchy, and `OK` / `NOK` BC status filters. These filters are applied server-side before pagination so row counts and page counts describe the filtered dataset; if a requested page is outside the filtered range, the page is safely clamped back to the first valid page. The same normalized filter criteria are reused by the backend Update all target rebuild; the Territory filter remains the single UI source for selected country columns and bulk country scope.
 
 QPart external PostgreSQL pushes hardcode QPart-only external mappings (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`) so QPart pushes do not require a bike-style sampler ruleset. Bike allocation push behavior is unchanged.
