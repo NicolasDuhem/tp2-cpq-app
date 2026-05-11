@@ -189,12 +189,12 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 The `/sales/qpart-allocation` page supports two bulk-update modes:
 
 1. **Current page** — default behavior. Bulk activate/deactivate sends the currently loaded, client-visible part ids and selected countries to the API.
-2. **Update all** — password-protected behavior. After the operator enables **Update all**, bulk activate/deactivate sends the current filter criteria to the backend. The backend rebuilds the matching QPart part set across all pages and applies the update only to those filtered rows and selected countries.
+2. **Update all** — password-protected behavior. After the operator enables **Update all** from the centered bottom pagination control, bulk activate/deactivate sends the current filter criteria to the backend. The backend rebuilds the matching QPart part set across all pages and applies the update only to those filtered rows and countries selected in the Territory filter.
 
-The backend filter criteria includes territory/country scope, part-number search, title search, hierarchy selections, metadata selections, allocation status, and the QPart BC status filter. This avoids requiring the browser to load every page before applying a full filtered update.
+The backend filter criteria includes territory/country scope, part-number search, title search, hierarchy selections, metadata selections, and the QPart BC status filter. This avoids requiring the browser to load every page before applying a full filtered update.
 
 The **Update all** switch is protected by the `QPART_UPDATE_ALL_PASSWORD` server-side setting. The default operational password is `Br0mpt0n2026!`; set the environment variable in deployed environments to keep the comparison server-side.
 
 ## QPart BC status filter
 
-The QPart allocation table now includes a compact **BC status** segmented filter with `OK` and `NOK` options. The filter works with the existing territory, part, hierarchy, metadata, and allocation-status filters and is included in the backend filter rebuild used by password-protected Update all bulk operations.
+The QPart allocation table includes a compact **BC status** segmented filter with `OK` and `NOK` options. The filter works with the existing territory, part, hierarchy, and metadata filters and is included in the backend filter rebuild used by password-protected Update all bulk operations.

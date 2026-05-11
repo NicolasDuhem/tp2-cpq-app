@@ -186,6 +186,6 @@ QPart sales allocation behavior:
 
 ## QPart allocation controls
 
-`/sales/qpart-allocation` keeps the existing per-row toggle, per-row external push, and pagination flows, and adds a server-verified **Update all** bulk mode. The client only sends full-filter criteria when Update all is enabled; the API validates the HttpOnly update-all cookie, rebuilds the filtered QPart dataset on the server, and then updates the selected country allocation cells.
+`/sales/qpart-allocation` keeps the existing per-row toggle, per-row external push, and pagination flows, and adds a server-verified **Update all** bulk mode controlled from the bottom pagination area. The Territory filter is the single UI source for selected country columns and bulk country scope. The client only sends full-filter criteria when Update all is enabled; the API validates the HttpOnly update-all cookie, rebuilds the filtered QPart dataset on the server, and then updates the selected country allocation cells.
 
 QPart external PostgreSQL pushes are page-specific: the QPart route passes `Qpart` for ruleset, forecast country code, and detail id overrides to the shared external variant-table writer. Bike allocation does not pass these overrides and therefore keeps its existing sampler ruleset resolution behavior.
