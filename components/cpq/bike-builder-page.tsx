@@ -2671,7 +2671,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         <div style={styles.compactControlStrip}>
           <label style={styles.compactField}>
             <span>Account code</span>
-            <select value={accountCode} onChange={(event) => setAccountCode(event.target.value)} style={styles.select}>
+            <select value={accountCode} onChange={(event) => setAccountCode(event.target.value)} style={styles.compactSelect}>
               <option value="" disabled>Select account code</option>
               {accountContexts.map((item) => (
                 <option key={item.id} value={item.account_code}>
@@ -2683,7 +2683,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
           <label style={styles.compactField}>
             <span>Ruleset</span>
-            <select value={ruleset} onChange={(event) => setRuleset(event.target.value)} style={styles.select}>
+            <select value={ruleset} onChange={(event) => setRuleset(event.target.value)} style={styles.compactSelect}>
               {rulesets.map((item) => (
                 <option key={item.id} value={item.cpq_ruleset}>
                   {item.cpq_ruleset}
@@ -2693,34 +2693,39 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           </label>
 
           <div style={styles.actionButtonsWrap}>
-            <button
-              className="bbButtonPrimary"
-              onClick={() => void startNewSessionFromUiAction()}
-              disabled={requestState.loading || bulkProgress.running}
-            >
-              {requestState.loading ? 'Starting…' : 'Start a new session'}
-            </button>
-            <button
-              className="bbButtonSecondary"
-              onClick={() => void saveConfiguration()}
-              disabled={saveStatus === 'saving' || !state || bulkProgress.running}
-            >
-              {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
-            </button>
-            <button
-              className="bbButtonSecondary"
-              onClick={() => void saveCurrentConfigurationToSampler()}
-              disabled={samplerSaveStatus === 'saving' || !lastSamplerSource || bulkProgress.running}
-            >
-              {samplerSaveStatus === 'saving' ? 'Saving sampler row…' : 'Save current configuration to sampler'}
-            </button>
-            <button
-              className="bbButtonTertiary"
-              onClick={generateCombinations}
-              disabled={requestState.loading || !state?.features?.length || bulkProgress.running}
-            >
-              Generate configuration combinations
-            </button>
+            <div style={styles.actionButtonGroup}>
+              <button
+                className="bbButtonPrimary"
+                onClick={() => void startNewSessionFromUiAction()}
+                disabled={requestState.loading || bulkProgress.running}
+              >
+                {requestState.loading ? 'Starting…' : 'Start a new session'}
+              </button>
+              <button
+                className="bbButtonSecondary"
+                onClick={() => void saveConfiguration()}
+                disabled={saveStatus === 'saving' || !state || bulkProgress.running}
+              >
+                {saveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
+              </button>
+            </div>
+            <div style={styles.actionDivider} aria-hidden="true" />
+            <div style={styles.actionButtonGroup}>
+              <button
+                className="bbButtonSecondary"
+                onClick={() => void saveCurrentConfigurationToSampler()}
+                disabled={samplerSaveStatus === 'saving' || !lastSamplerSource || bulkProgress.running}
+              >
+                {samplerSaveStatus === 'saving' ? 'Saving sampler row…' : 'Save current configuration to sampler'}
+              </button>
+              <button
+                className="bbButtonTertiary"
+                onClick={generateCombinations}
+                disabled={requestState.loading || !state?.features?.length || bulkProgress.running}
+              >
+                Generate configuration combinations
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2738,36 +2743,38 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
 
         {isAdminMode ? (
           <div style={styles.statusBlock}>
-            <div>Session: {state?.sessionId ?? 'none (session closed or not started)'}</div>
-            <div>DetailId: {state?.detailId ?? '-'}</div>
-            <div>IPN: {state?.ipnCode ?? '-'}</div>
-            <div>Save status: {saveMessage}</div>
-            <div>
+            <div style={styles.statusLine}>Session: {state?.sessionId ?? 'none (session closed or not started)'}</div>
+            <div style={styles.statusLine}>DetailId: {state?.detailId ?? '-'}</div>
+            <div style={styles.statusLine}>IPN: {state?.ipnCode ?? '-'}</div>
+            <div style={styles.statusLine}>Save status: {saveMessage}</div>
+            <div style={styles.statusLine}>
               Save source tracker: configure={latestConfigureSnapshot ? 'available' : 'none'} / start=
               {latestStartSnapshot ? 'available' : 'none'}
             </div>
-            <div>Last finalize response tracked: {latestFinalizeResponse ? 'yes (kept separate from save payload)' : 'no'}</div>
-            <div>
+            <div style={styles.statusLine}>Last finalize response tracked: {latestFinalizeResponse ? 'yes (kept separate from save payload)' : 'no'}</div>
+            <div style={styles.statusLine}>
               Sampler save status: {samplerSaveMessage}
               {lastSamplerSource ? ` (source: ${lastSamplerSource.source})` : ''}
             </div>
-            {samplerSaveDetail ? <div>Sampler detail: {samplerSaveDetail}</div> : null}
+            {samplerSaveDetail ? <div style={styles.statusLine}>Sampler detail: {samplerSaveDetail}</div> : null}
             {isDebugEnabled && saveTechnicalDetail ? (
-              <details>
-                <summary>Save technical detail</summary>
-                <pre style={styles.debugPre}>{saveTechnicalDetail}</pre>
-              </details>
+              <div style={styles.statusLine}>
+                <details>
+                  <summary>Save technical detail</summary>
+                  <pre style={styles.debugPre}>{saveTechnicalDetail}</pre>
+                </details>
+              </div>
             ) : null}
-            <div>Retrieve status: {retrieveMessage}</div>
-            <div>
+            <div style={styles.statusLine}>Retrieve status: {retrieveMessage}</div>
+            <div style={styles.statusLine}>
               Bulk run: {bulkProgress.message} (rows: {bulkProgress.totalSelectedRows}, assignments: {bulkProgress.totalCountryAssignments},
               executions: {bulkProgress.totalExecutions}, current execution: {bulkProgress.currentExecutionIndex || '-'}, row:{' '}
               {bulkProgress.currentRowIndex || '-'}, country: {bulkProgress.currentCountryCode ?? '-'}, succeeded: {bulkProgress.succeeded}, failed:{' '}
               {bulkProgress.failed}, saved: {bulkProgress.saved})
             </div>
-            <div>Bulk current session: {bulkProgress.currentSessionId ?? '-'}</div>
-            <div>Bulk current feature: {bulkProgress.currentFeatureKey ?? '-'}</div>
-            {requestState.error && <div style={styles.error}>Runtime error: {requestState.error}</div>}
+            <div style={styles.statusLine}>Bulk current session: {bulkProgress.currentSessionId ?? '-'}</div>
+            <div style={requestState.error ? styles.statusLine : styles.statusLineLast}>Bulk current feature: {bulkProgress.currentFeatureKey ?? '-'}</div>
+            {requestState.error && <div style={{ ...styles.error, ...styles.statusErrorLine }}>Runtime error: {requestState.error}</div>}
           </div>
         ) : requestState.error ? (
           <div style={styles.error}>Runtime error: {requestState.error}</div>
@@ -2780,8 +2787,11 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
           <div style={styles.configuratorScrollArea}>
             {!state?.features?.length && <p style={styles.muted}>No active configuration. Start a session first.</p>}
             {state?.features?.map((feature) => (
-              <label key={feature.featureId} style={styles.field}>
-                <span>{feature.featureLabel}</span>
+              <label
+                key={feature.featureId}
+                style={activeFeatureId === feature.featureId ? { ...styles.field, ...styles.featureCardActive } : styles.field}
+              >
+                <span style={styles.featureLabel}>{feature.featureLabel}</span>
                 <select
                   value={feature.selectedOptionId ?? ''}
                   onChange={(event) => {
@@ -2789,7 +2799,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
                     if (nextOption) void configureOption(feature.featureId, nextOption);
                   }}
                   disabled={requestState.loading || activeFeatureId === feature.featureId || bulkProgress.running}
-                  style={styles.select}
+                  style={styles.featureSelect}
                 >
                   {feature.availableOptions.map((option) => (
                     <option key={option.optionId} value={option.optionId}>
@@ -2808,13 +2818,6 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
               <h2 style={styles.previewTitle}>Layered Product Preview</h2>
               <p style={styles.previewSubtitle}>Live composition from current selected options matched against picture management mappings.</p>
             </div>
-            <button
-              style={styles.button}
-              onClick={() => void handleDownloadCurrentPreview()}
-              disabled={orderedPreviewLayers.length === 0 || imageLayerStatus.loading}
-            >
-              Download current preview
-            </button>
           </div>
 
           <div style={styles.previewMetaRow}>
@@ -2822,6 +2825,14 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
             <span style={styles.previewChip}>Matched mappings: {imageLayerResolution.matchedSelections.length}</span>
             <span style={styles.previewChip}>Unmatched selections: {imageLayerResolution.unmatchedSelections.length}</span>
           </div>
+
+          <button
+            style={styles.previewDownloadButton}
+            onClick={() => void handleDownloadCurrentPreview()}
+            disabled={orderedPreviewLayers.length === 0 || imageLayerStatus.loading}
+          >
+            Download current preview
+          </button>
 
           <div style={styles.previewViewport}>
             {imageLayerStatus.loading ? <div style={styles.previewEmpty}>Loading layered preview…</div> : null}
@@ -3371,19 +3382,45 @@ const styles: Record<string, CSSProperties> = {
   compactField: {
     display: 'grid',
     gap: '0.25rem',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#64748b',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  },
+  compactSelect: {
+    minHeight: 36,
+    borderRadius: 8,
+    border: '1px solid #cbd5e1',
+    padding: '0.35rem 0.55rem',
+    background: '#fff',
+    color: '#1e293b',
     fontSize: '0.85rem',
-    fontWeight: 600,
-    color: '#3f3f46',
+    letterSpacing: 0,
+    textTransform: 'none',
   },
   actionButtonsWrap: {
     display: 'flex',
-    gap: '0.45rem',
+    gap: '0.55rem',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
+    alignItems: 'stretch',
+  },
+  actionButtonGroup: {
+    display: 'flex',
+    gap: '0.45rem',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  actionDivider: {
+    width: 1,
+    minHeight: 36,
+    background: '#e2e8f0',
+    alignSelf: 'stretch',
   },
   mainWorkspace: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 1.1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
     gap: '0.75rem',
     alignItems: 'stretch',
   },
@@ -3392,17 +3429,18 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 12,
     padding: '0.75rem',
     display: 'grid',
-    gap: '0.6rem',
-    background: '#fff',
+    gap: '0.7rem',
+    background: '#f8fafc',
     minHeight: 0,
   },
   configuratorScrollArea: {
     maxHeight: '44vh',
     minHeight: 220,
     overflow: 'auto',
-    paddingRight: '0.2rem',
+    padding: '0.15rem 0.25rem 0.15rem 0.05rem',
     display: 'grid',
-    gap: '0.6rem',
+    gap: '0.65rem',
+    alignContent: 'start',
   },
   savedCard: {
     border: '1px solid #d4d4d8',
@@ -3446,6 +3484,30 @@ const styles: Record<string, CSSProperties> = {
     display: 'grid',
     gap: '0.28rem',
     fontSize: '0.85rem',
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: 10,
+    padding: '10px 12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  },
+  featureCardActive: {
+    borderLeft: '3px solid #2563eb',
+  },
+  featureLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#334155',
+    marginBottom: 6,
+  },
+  featureSelect: {
+    display: 'block',
+    width: '100%',
+    padding: '8px 10px',
+    border: '1px solid #cbd5e1',
+    borderRadius: 8,
+    background: '#fff',
+    fontSize: 13,
+    color: '#1e293b',
   },
   row: {
     display: 'flex',
@@ -3457,12 +3519,28 @@ const styles: Record<string, CSSProperties> = {
     gap: '0.5rem',
     flexWrap: 'wrap',
     alignItems: 'center',
+    width: '100%',
   },
   statusBlock: {
     display: 'grid',
-    gap: '0.15rem',
-    fontSize: '0.82rem',
+    background: '#f8faff',
+    borderRadius: 10,
+    border: '1px solid #e2e8f0',
+    padding: 10,
+    fontSize: 11.5,
+    lineHeight: 1.6,
     color: '#475569',
+  },
+  statusLine: {
+    padding: '2px 0',
+    borderBottom: '1px solid #f1f5f9',
+  },
+  statusLineLast: {
+    padding: '2px 0',
+  },
+  statusErrorLine: {
+    borderBottom: 'none',
+    marginTop: 4,
   },
   select: {
     minHeight: 32,
@@ -3473,10 +3551,11 @@ const styles: Record<string, CSSProperties> = {
   },
   input: {
     flex: '1 1 320px',
-    minHeight: 32,
+    minHeight: 36,
     borderRadius: 8,
-    border: '1px solid #a1a1aa',
-    padding: '0.35rem 0.5rem',
+    border: '1px solid #cbd5e1',
+    padding: '0.35rem 0.65rem',
+    background: '#f8faff',
   },
   button: {
     minHeight: 32,
@@ -3493,6 +3572,9 @@ const styles: Record<string, CSSProperties> = {
   },
   error: {
     color: '#b91c1c',
+    background: '#fef2f2',
+    borderRadius: 6,
+    padding: '4px 8px',
   },
   combinationsPanel: {
     border: '1px solid #d4d4d8',
@@ -3703,12 +3785,12 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 12,
     padding: '0.75rem',
     display: 'grid',
-    gap: '0.75rem',
+    gap: '0.7rem',
     background: '#fff',
+    alignContent: 'start',
   },
   previewHeaderRow: {
     display: 'flex',
-    justifyContent: 'space-between',
     gap: '0.75rem',
     alignItems: 'flex-start',
     flexWrap: 'wrap',
@@ -3723,17 +3805,30 @@ const styles: Record<string, CSSProperties> = {
   },
   previewMetaRow: {
     display: 'flex',
-    gap: '0.5rem',
+    gap: '0.45rem',
     flexWrap: 'wrap',
+    alignItems: 'center',
   },
   previewChip: {
     display: 'inline-flex',
-    border: '1px solid #d4d4d8',
+    border: 'none',
     borderRadius: 999,
-    padding: '0.2rem 0.55rem',
-    fontSize: '0.82rem',
-    color: '#27272a',
-    background: '#fafafa',
+    padding: '4px 10px',
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#475569',
+    background: '#f1f5f9',
+  },
+  previewDownloadButton: {
+    justifySelf: 'start',
+    minHeight: 32,
+    borderRadius: 8,
+    border: '1px solid #18181b',
+    padding: '0.25rem 0.65rem',
+    background: '#18181b',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '0.84rem',
   },
   previewViewport: {
     position: 'relative',
