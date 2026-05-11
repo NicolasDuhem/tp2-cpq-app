@@ -150,7 +150,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [hierarchySelection, setHierarchySelection] = useState<LevelSelection>(defaultHierarchySelection);
   const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>({});
   const [countrySelection, setCountrySelection] = useState<string[]>([]);
-  const [statusSelection, setStatusSelection] = useState<QPartAllocationStatus[]>([]);
   const [bcStatusSelection, setBcStatusSelection] = useState<QPartBCStatusFilter[]>([]);
   const [updateAllEnabled, setUpdateAllEnabled] = useState(false);
   const [message, setMessage] = useState<Message>(null);
@@ -160,10 +159,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
-  const [columnsOpen, setColumnsOpen] = useState(false);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(countryColumns.map((countryCode) => [countryCode, true])),
-  );
   const [pendingBulkStatus, setPendingBulkStatus] = useState<QPartAllocationStatus | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -174,10 +169,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     return countryColumns.filter((countryCode) => selected.has(countryCode));
   }, [countryColumns, countrySelection]);
 
-  const renderedCountries = useMemo(
-    () => visibleCountries.filter((countryCode) => columnVisibility[countryCode] !== false),
-    [visibleCountries, columnVisibility],
-  );
+  const renderedCountries = visibleCountries;
 
   const territoryGroups = useMemo(() => {
     const search = territorySearch.trim().toLowerCase();
@@ -255,13 +247,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
   const filteredRows = useMemo(
     () =>
-      metadataFilteredRows.filter((row) => {
-        if (bcStatusSelection.length && !bcStatusSelection.includes(row.bcStatus)) return false;
-        if (!statusSelection.length) return true;
-        const targetCountries = visibleCountries.length ? visibleCountries : countryColumns;
-        return targetCountries.some((countryCode) => statusSelection.includes(row.countryStatuses[countryCode]));
-      }),
-    [metadataFilteredRows, statusSelection, bcStatusSelection, visibleCountries, countryColumns],
+      metadataFilteredRows.filter((row) => !bcStatusSelection.length || bcStatusSelection.includes(row.bcStatus)),
+    [metadataFilteredRows, bcStatusSelection],
   );
 
   const setHierarchyLevel = (level: number, values: string[]) => {
@@ -287,13 +274,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
   const setBCStatusFilter = (status: QPartBCStatusFilter, checked: boolean) => {
     setBcStatusSelection((prev) => {
-      if (checked) return prev.includes(status) ? prev : [...prev, status];
-      return prev.filter((value) => value !== status);
-    });
-  };
-
-  const setAllocationStatusFilter = (status: QPartAllocationStatus, checked: boolean) => {
-    setStatusSelection((prev) => {
       if (checked) return prev.includes(status) ? prev : [...prev, status];
       return prev.filter((value) => value !== status);
     });
@@ -327,7 +307,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     partNumberSearch,
     titleSearch,
     countryCodes: countrySelection,
-    allocationStatuses: statusSelection,
     hierarchySelection: Object.fromEntries(
       Object.entries(hierarchySelection).map(([level, values]) => [level, values]),
     ),
@@ -637,57 +616,8 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 {filteredRows.length} parts shown
               </span>
             )}
-            <div className={styles.columnDropdownWrap}>
-              <button type="button" className={styles.collapseToggle} onClick={() => setColumnsOpen((prev) => !prev)}>
-                Country selection
-              </button>
-              {columnsOpen ? (
-                <div className={styles.columnDropdownPanel}>
-                  <div style={{ display: 'flex', gap: 6, padding: '0 0 6px', borderBottom: '1px solid #e8eef8', marginBottom: 6 }}>
-                    <button
-                      type="button"
-                      className={styles.textButton}
-                      onClick={() => setColumnVisibility(Object.fromEntries(countryColumns.map((countryCode) => [countryCode, true])))}
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.textButton}
-                      onClick={() => setColumnVisibility(Object.fromEntries(countryColumns.map((countryCode) => [countryCode, false])))}
-                    >
-                      None
-                    </button>
-                  </div>
-                  {countryColumns.map((countryCode) => (
-                    <label key={`column-toggle-${countryCode}`} className={styles.checkboxOption}>
-                      <input
-                        type="checkbox"
-                        checked={columnVisibility[countryCode] !== false}
-                        onChange={(event) =>
-                          setColumnVisibility((prev) => ({ ...prev, [countryCode]: event.target.checked }))
-                        }
-                      />
-                      <span className={styles.countryOptionLabel}>
-                        <img src={getCountryFlagUrl(countryCode)} alt="" className={styles.countryFlag} loading="lazy" />
-                        <span>{countryCode}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </div>
           </div>
           <div className={styles.filterHeaderActions}>
-            <label className={`${styles.updateAllControl} ${updateAllEnabled ? styles.updateAllActive : ''}`}>
-              <input
-                type="checkbox"
-                checked={updateAllEnabled}
-                onChange={(event) => void requestUpdateAllChange(event.target.checked)}
-                disabled={bulkBusy}
-              />
-              <span>Update all</span>
-            </label>
             <div className={styles.bulkSelection}>
               Countries in scope: <strong>{visibleCountries.length}</strong> · Mode:{' '}
               <strong>{updateAllEnabled ? 'all filtered pages' : 'current page'}</strong>
@@ -830,27 +760,6 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                           onChange={(event) => setBCStatusFilter('nok', event.target.checked)}
                         />
                         <span>NOK</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className={styles.filterItem}>
-                    <span>Allocation status</span>
-                    <div className={styles.segmentedFilter} aria-label="Allocation status filter">
-                      <label className={statusSelection.includes('active') ? styles.segmentedOptionActive : styles.segmentedOption}>
-                        <input
-                          type="checkbox"
-                          checked={statusSelection.includes('active')}
-                          onChange={(event) => setAllocationStatusFilter('active', event.target.checked)}
-                        />
-                        <span>Active</span>
-                      </label>
-                      <label className={statusSelection.includes('inactive') ? styles.segmentedOptionActive : styles.segmentedOption}>
-                        <input
-                          type="checkbox"
-                          checked={statusSelection.includes('inactive')}
-                          onChange={(event) => setAllocationStatusFilter('inactive', event.target.checked)}
-                        />
-                        <span>Inactive</span>
                       </label>
                     </div>
                   </div>
@@ -998,6 +907,17 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             <span className={styles.paginationSummary}>
               Page {pagination.page} of {pagination.totalPages} ({pagination.totalRows} rows)
             </span>
+            <div className={styles.paginationCenter}>
+              <label className={`${styles.updateAllControl} ${updateAllEnabled ? styles.updateAllActive : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={updateAllEnabled}
+                  onChange={(event) => void requestUpdateAllChange(event.target.checked)}
+                  disabled={bulkBusy}
+                />
+                <span>Update all</span>
+              </label>
+            </div>
             <div className={styles.paginationControls}>
               <button type="button" onClick={() => goToPage(Math.max(1, pagination.page - 1))} disabled={pagination.page <= 1}>
                 Prev
