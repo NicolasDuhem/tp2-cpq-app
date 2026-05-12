@@ -198,3 +198,23 @@ The **Update all** switch is protected by the `QPART_UPDATE_ALL_PASSWORD` server
 ## QPart BC status filter
 
 The QPart allocation table includes a compact **BC status** segmented filter with `OK` and `NOK` options. The filter works with the existing territory, part, hierarchy, and metadata filters and is included in the backend filter rebuild used by password-protected Update all bulk operations.
+
+## Sales allocation external status refresh
+
+The Push/Update button status on `/sales/bike-allocation` and `/sales/qpart-allocation` is display-only awareness from external PostgreSQL. Users click **Refresh external status** when they want the current filtered view to reflect whether external `variant_eligibilities` rows already exist.
+
+Refresh flow:
+
+1. Client sends the current filter context to the page-specific `external-status` API route.
+2. Backend rebuilds the full filtered dataset, including rows on all matching pagination pages.
+3. Backend gathers eligible (`Sku`, `CountryCode`) pairs.
+4. Backend batch-queries external `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` for `"Sku"`, `"CountryCode"`, and `"IsActive"`.
+5. Client updates button labels/colors only.
+
+Button meanings:
+
+- grey **Push**: not refreshed yet, or no external `variant_eligibilities` row exists for the SKU/country.
+- green **Update**: an external row exists and `"IsActive" = true`.
+- orange **Update**: an external row exists and `"IsActive" = false`.
+
+Clicking the button still runs the existing single-cell push/update process. The status refresh does not write external data.

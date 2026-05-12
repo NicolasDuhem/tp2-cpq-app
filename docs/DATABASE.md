@@ -218,3 +218,23 @@ The external Push button uses SELECT-first UPDATE/INSERT logic and does not requ
 ## QPart allocation operational filters
 
 The QPart allocation backend derives full filtered bulk targets from the existing `qpart_parts`, `qpart_country_allocation`, `qpart_hierarchy_nodes`, `qpart_part_metadata_values`, `qpart_metadata_definitions`, and `bc_item_variant_map` data. Password-protected Update all operations update only `qpart_country_allocation.active` rows for the selected country codes and the part ids that match the submitted filter criteria.
+
+## External `variant_eligibilities` status reads
+
+The Sales allocation pages have a manual external status refresh that reads `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` for display-only Push/Update state. The refresh reads these external columns:
+
+- `"Sku"`
+- `"CountryCode"`
+- `"IsActive"`
+
+The business key is (`"Sku"`, `"CountryCode"`). Refresh is manual rather than automatic on page load so normal navigation continues to use internal Neon data only and does not hammer external PostgreSQL. The backend rebuilds the complete filtered dataset and checks all matching SKU/country pairs across all pages in parameterized batches.
+
+Useful duplicate-key check for external administrators:
+
+```sql
+select "Sku", "CountryCode", count(*) as row_count
+from public.variant_eligibilities
+group by "Sku", "CountryCode"
+having count(*) > 1
+order by row_count desc, "Sku", "CountryCode";
+```

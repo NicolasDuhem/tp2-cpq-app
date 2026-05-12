@@ -46,6 +46,8 @@ type BCVariantStatusItem = {
   errorCode?: string;
 };
 type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
+type ExternalStatus = { sku: string; countryCode: string; exists: boolean; isActive: boolean | null };
+type ExternalStatusMap = Record<string, ExternalStatus>;
 
 const defaultHierarchySelection: LevelSelection = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
 
@@ -182,6 +184,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
+  const [externalStatusByKey, setExternalStatusByKey] = useState<ExternalStatusMap>({});
+  const [externalStatusLoading, setExternalStatusLoading] = useState(false);
+  const [externalStatusSummary, setExternalStatusSummary] = useState<{ checkedAt: string; pairCount: number; found: number; active: number; inactive: number } | null>(null);
   const [pendingBulkStatus, setPendingBulkStatus] = useState<QPartAllocationStatus | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -277,7 +282,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const metadataFilteredRows = useMemo(
     () =>
       hierarchyFilteredRows.filter((row) =>
-        Object.entries(metadataSelection).every(([key, selectedValues]) => {
+        (Object.entries(metadataSelection) as Array<[string, string[]]>).every(([key, selectedValues]) => {
           if (!selectedValues.length) return true;
           const partValues = row.metadataValues[key] ?? [];
           return selectedValues.some((value) => partValues.includes(value));
@@ -344,6 +349,17 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     }
   };
 
+  const getExternalStatusKey = (sku: string, countryCode: string) => `${sku}::${countryCode}`;
+
+  const getPushDisplay = (sku: string, countryCode: string) => {
+    const status = externalStatusByKey[getExternalStatusKey(sku, countryCode)];
+    if (!status?.exists) return { label: 'Push', className: styles.pushButton };
+    return {
+      label: 'Update',
+      className: `${styles.pushButton} ${status.isActive ? styles.pushButtonActive : styles.pushButtonInactive}`,
+    };
+  };
+
   const buildBulkFilterCriteria = () => ({
     partNumberSearch,
     titleSearch,
@@ -354,6 +370,42 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
     metadataSelection,
     bcStatuses: bcStatusSelection,
   });
+
+  const refreshExternalStatus = async () => {
+    setExternalStatusLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/qpart-allocation/external-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filterCriteria: buildBulkFilterCriteria() }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { pairCount: number; items: ExternalStatusMap };
+      };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Failed to refresh external status.');
+
+      const items = payload.result.items ?? {};
+      const statuses = Object.values(items);
+      const found = statuses.filter((item) => item.exists).length;
+      const active = statuses.filter((item) => item.exists && item.isActive === true).length;
+      const inactive = statuses.filter((item) => item.exists && item.isActive === false).length;
+      setExternalStatusByKey(items);
+      setExternalStatusSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        pairCount: payload.result.pairCount,
+        found,
+        active,
+        inactive,
+      });
+      setMessage({ type: 'success', text: `External status refreshed for ${payload.result.pairCount} SKU/country pair(s) across all filtered pages.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to refresh external status.' });
+    } finally {
+      setExternalStatusLoading(false);
+    }
+  };
 
   const toggleCell = async (row: SalesQPartAllocationRow, countryCode: string, currentStatus: QPartAllocationStatus) => {
     const targetStatus: QPartAllocationStatus = currentStatus === 'active' ? 'inactive' : 'active';
@@ -428,6 +480,17 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
           ? payload.result.message
           : `${row.partNumber} ${countryCode} pushed (variants ${payload.result.variantResult.action}, eligibility ${payload.result.eligibilityResult.action}).`,
       });
+      if (!payload.result.skipped) {
+        setExternalStatusByKey((prev) => ({
+          ...prev,
+          [getExternalStatusKey(row.partNumber, countryCode)]: {
+            sku: row.partNumber,
+            countryCode,
+            exists: true,
+            isActive: row.countryStatuses[countryCode] === 'active',
+          },
+        }));
+      }
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push allocation' });
     } finally {
@@ -515,7 +578,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
 
   useEffect(() => {
-    const skus: string[] = [...new Set(filteredRows.map((row) => row.partNumber.trim()).filter((sku): sku is string => Boolean(sku)))];
+    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.partNumber.trim()).filter((sku): sku is string => Boolean(sku))));
     if (!skus.length) return;
 
     let cancelled = false;
@@ -554,7 +617,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   }, [filteredRows]);
 
   const runBCStatusCheck = async () => {
-    const skus: string[] = [...new Set(filteredRows.map((row) => row.partNumber.trim()).filter((sku): sku is string => Boolean(sku)))];
+    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.partNumber.trim()).filter((sku): sku is string => Boolean(sku))));
     console.info('[BC status][qpart-allocation]', {
       loadedRowCount: rows.length,
       visibleRowCount: filteredRows.length,
@@ -669,6 +732,14 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             {bcCheckSummary ? (
               <span className={styles.bcCheckMeta}>
                 Last checked: {bcCheckSummary.checkedAt} · Checked {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
+              </span>
+            ) : null}
+            <button type="button" className={styles.bulkActionButton} onClick={() => void refreshExternalStatus()} disabled={externalStatusLoading || bulkBusy}>
+              {externalStatusLoading ? 'Refreshing external status…' : 'Refresh external status'}
+            </button>
+            {externalStatusSummary ? (
+              <span className={styles.bcCheckMeta}>
+                Last refreshed: {externalStatusSummary.checkedAt} · Checked {externalStatusSummary.pairCount} pairs · {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
               </span>
             ) : null}
             <button type="button" className={styles.bulkActionButton} onClick={() => requestBulk('active')} disabled={bulkBusy}>
@@ -814,12 +885,14 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                 <div className={styles.hierarchyCompactGrid}>
                   {Array.from({ length: 6 }).map((_, index) => {
                     const level = index + 2;
+                    const levelOptions = hierarchyOptions[level] ?? [];
+                    const selectedLevel = (hierarchySelection[level] ?? []) as string[];
                     return (
                       <HierarchyFilter
                         key={`h${level}`}
                         level={level}
-                        options={hierarchyOptions[level]}
-                        selected={hierarchySelection[level] ?? []}
+                        options={levelOptions}
+                        selected={selectedLevel}
                         onChange={(values) => setHierarchyLevel(level, values)}
                         compact
                       />
@@ -912,6 +985,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                   {renderedCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
+                    const pushDisplay = getPushDisplay(row.partNumber, countryCode);
                     return (
                       <td key={`${row.partId}-${countryCode}`} className={styles.countryCell}>
                         <div className={styles.cellActions}>
@@ -926,12 +1000,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                           {row.hasBcIds ? (
                             <button
                               type="button"
-                              className={styles.pushButton}
+                              className={pushDisplay.className}
                               onClick={() => void pushCell(row, countryCode)}
                               disabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
-                              title="Push to external PostgreSQL"
+                              title={`${pushDisplay.label} this QPart + country row in external PostgreSQL`}
                             >
-                              {pushBusyKey === cellKey ? 'Pushing…' : '↑ Push'}
+                              {pushBusyKey === cellKey ? 'Pushing…' : pushDisplay.label}
                             </button>
                           ) : null}
                         </div>

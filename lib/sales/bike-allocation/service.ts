@@ -52,6 +52,17 @@ export type SalesBikeAllocationRow = {
   hasBcIds: boolean;
 };
 
+export type SalesBikeAllocationExternalStatusFilterCriteria = {
+  ipnFilter?: string;
+  featureFilters?: Record<string, string>;
+  countryStatusFilters?: Record<string, 'all' | AllocationStatus>;
+};
+
+export type SalesBikeAllocationSkuCountryPair = {
+  sku: string;
+  countryCode: string;
+};
+
 export type SalesBikeAllocationPageData = {
   filters: SalesBikeAllocationFilters;
   filterOptions: SalesBikeAllocationFilterOptions;
@@ -355,16 +366,8 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
   };
 }
 
-export async function getSalesBikeAllocationPageData(
-  filters: SalesBikeAllocationFilters & { page?: number; pageSize?: number },
-): Promise<SalesBikeAllocationPageData> {
-  const normalizedFilters = {
-    ruleset: asTrimmed(filters.ruleset),
-    country_code: asTrimmed(filters.country_code),
-    bike_type: asTrimmed(filters.bike_type),
-  };
-
-  const [filterOptions, sourceRows, rulesetRows] = await Promise.all([
+async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocationFilters): Promise<{ filterOptions: SalesBikeAllocationFilterOptions; availableFeatures: string[]; countryColumns: string[]; rows: SalesBikeAllocationRow[] }> {
+  const [filterOptions, rawSourceRows, rulesetRows] = await Promise.all([
     listFilterOptions(),
     listSamplerRows(normalizedFilters),
     sql`
@@ -373,6 +376,7 @@ export async function getSalesBikeAllocationPageData(
       where coalesce(trim(cpq_ruleset), '') <> ''
     `,
   ]);
+  const sourceRows = rawSourceRows as SamplerRow[];
   const bikeTypeByRuleset = new Map<string, string>();
   for (const row of rulesetRows as Array<{ cpq_ruleset: string | null; bike_type: string | null }>) {
     const ruleset = asTrimmed(row.cpq_ruleset);
@@ -392,7 +396,7 @@ export async function getSalesBikeAllocationPageData(
     const rowRuleset = asTrimmed(row.ruleset);
     if (!ipn || !rowRuleset) continue;
 
-    if (normalizedFilters.country_code && asTrimmed(row.country_code) !== normalizedFilters.country_code) {
+    if (asTrimmed(normalizedFilters.country_code) && asTrimmed(row.country_code) !== asTrimmed(normalizedFilters.country_code)) {
       continue;
     }
 
@@ -444,6 +448,75 @@ export async function getSalesBikeAllocationPageData(
       ) as Record<string, AllocationStatus>,
     }))
     .sort((a, b) => (a.ipnCode === b.ipnCode ? a.rowRuleset.localeCompare(b.rowRuleset) : a.ipnCode.localeCompare(b.ipnCode)));
+
+  return { filterOptions, availableFeatures: orderedFeatures, countryColumns, rows };
+}
+
+function filterBikeAllocationRowsForExternalStatus(
+  rows: SalesBikeAllocationRow[],
+  countryColumns: string[],
+  criteria: SalesBikeAllocationExternalStatusFilterCriteria = {},
+) {
+  const normalizedIpnFilter = asTrimmed(criteria.ipnFilter).toLowerCase();
+  const featureFilters = criteria.featureFilters ?? {};
+  const countryStatusFilters = criteria.countryStatusFilters ?? {};
+
+  return rows.filter((row) => {
+    if (normalizedIpnFilter && !row.ipnCode.toLowerCase().includes(normalizedIpnFilter)) return false;
+
+    for (const [feature, rawFilter] of Object.entries(featureFilters)) {
+      const valueFilter = asTrimmed(rawFilter).toLowerCase();
+      if (!valueFilter) continue;
+      const value = String(row.featureValues[feature] ?? '').toLowerCase();
+      if (!value.includes(valueFilter)) return false;
+    }
+
+    for (const country of countryColumns) {
+      const statusFilter = countryStatusFilters[country] ?? 'all';
+      if (statusFilter === 'all') continue;
+      if (row.countryStatuses[country] !== statusFilter) return false;
+    }
+
+    return true;
+  });
+}
+
+export async function listSalesBikeAllocationExternalStatusPairs(
+  filters: SalesBikeAllocationFilters,
+  criteria: SalesBikeAllocationExternalStatusFilterCriteria = {},
+): Promise<SalesBikeAllocationSkuCountryPair[]> {
+  const normalizedFilters = {
+    ruleset: asTrimmed(filters.ruleset),
+    country_code: asTrimmed(filters.country_code),
+    bike_type: asTrimmed(filters.bike_type),
+  };
+  const { rows, countryColumns } = await buildSalesBikeAllocationRows(normalizedFilters);
+  const filteredRows = filterBikeAllocationRowsForExternalStatus(rows, countryColumns, criteria);
+  const pairs = new Map<string, SalesBikeAllocationSkuCountryPair>();
+
+  for (const row of filteredRows) {
+    if (!row.hasBcIds) continue;
+    for (const countryCode of countryColumns) {
+      const statusFilter = criteria.countryStatusFilters?.[countryCode] ?? 'all';
+      if (statusFilter !== 'all' && row.countryStatuses[countryCode] !== statusFilter) continue;
+      if (row.countryStatuses[countryCode] === 'not_configured') continue;
+      pairs.set(`${row.ipnCode}::${countryCode}`, { sku: row.ipnCode, countryCode });
+    }
+  }
+
+  return [...pairs.values()];
+}
+
+export async function getSalesBikeAllocationPageData(
+  filters: SalesBikeAllocationFilters & { page?: number; pageSize?: number },
+): Promise<SalesBikeAllocationPageData> {
+  const normalizedFilters = {
+    ruleset: asTrimmed(filters.ruleset),
+    country_code: asTrimmed(filters.country_code),
+    bike_type: asTrimmed(filters.bike_type),
+  };
+
+  const { filterOptions, availableFeatures, countryColumns, rows } = await buildSalesBikeAllocationRows(normalizedFilters);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize ?? DEFAULT_PAGE_SIZE)));
   const totalRows = rows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -453,7 +526,7 @@ export async function getSalesBikeAllocationPageData(
   return {
     filters: normalizedFilters,
     filterOptions,
-    availableFeatures: orderedFeatures,
+    availableFeatures,
     countryColumns,
     rows: pagedRows,
     pagination: { page, pageSize, totalRows, totalPages },

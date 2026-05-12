@@ -45,6 +45,8 @@ type BCVariantStatusItem = {
   errorCode?: string;
 };
 type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
+type ExternalStatus = { sku: string; countryCode: string; exists: boolean; isActive: boolean | null };
+type ExternalStatusMap = Record<string, ExternalStatus>;
 const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
 
 function statusLabel(status: AllocationStatus): string {
@@ -84,6 +86,9 @@ export default function SalesBikeAllocationTableClient({
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
+  const [externalStatusByKey, setExternalStatusByKey] = useState<ExternalStatusMap>({});
+  const [externalStatusLoading, setExternalStatusLoading] = useState(false);
+  const [externalStatusSummary, setExternalStatusSummary] = useState<{ checkedAt: string; pairCount: number; found: number; active: number; inactive: number } | null>(null);
   const [pendingBulkStatus, setPendingBulkStatus] = useState<'active' | 'not_active' | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -298,6 +303,17 @@ export default function SalesBikeAllocationTableClient({
           ? payload.result.message
           : `${row.ipnCode} ${countryCode} pushed (variants ${payload.result.variantResult.action}, eligibility ${payload.result.eligibilityResult.action}).`,
       });
+      if (!payload.result.skipped) {
+        setExternalStatusByKey((prev) => ({
+          ...prev,
+          [getExternalStatusKey(row.ipnCode, countryCode)]: {
+            sku: row.ipnCode,
+            countryCode,
+            exists: true,
+            isActive: row.countryStatuses[countryCode] === 'active',
+          },
+        }));
+      }
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push row.' });
     } finally {
@@ -371,9 +387,60 @@ export default function SalesBikeAllocationTableClient({
 
   const dismissToast = useCallback(() => setToastVisible(false), []);
 
+  const getExternalStatusKey = (sku: string, countryCode: string) => `${sku}::${countryCode}`;
+
+  const getPushDisplay = (sku: string, countryCode: string) => {
+    const status = externalStatusByKey[getExternalStatusKey(sku, countryCode)];
+    if (!status?.exists) return { label: 'Push', tone: 'default' as const };
+    return { label: 'Update', tone: status.isActive ? ('active' as const) : ('inactive' as const) };
+  };
+
+  const refreshExternalStatus = async () => {
+    setExternalStatusLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/bike-allocation/external-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filters,
+          filterCriteria: {
+            ipnFilter,
+            featureFilters,
+            countryStatusFilters: countryFilters,
+          },
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { pairCount: number; items: ExternalStatusMap };
+      };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Failed to refresh external status.');
+
+      const items = payload.result.items ?? {};
+      const statuses = Object.values(items);
+      const found = statuses.filter((item) => item.exists).length;
+      const active = statuses.filter((item) => item.exists && item.isActive === true).length;
+      const inactive = statuses.filter((item) => item.exists && item.isActive === false).length;
+      setExternalStatusByKey(items);
+      setExternalStatusSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        pairCount: payload.result.pairCount,
+        found,
+        active,
+        inactive,
+      });
+      setMessage({ type: 'success', text: `External status refreshed for ${payload.result.pairCount} SKU/country pair(s) across all filtered pages.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to refresh external status.' });
+    } finally {
+      setExternalStatusLoading(false);
+    }
+  };
+
 
   useEffect(() => {
-    const skus: string[] = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku)))];
+    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku))));
     if (!skus.length) return;
 
     let cancelled = false;
@@ -419,7 +486,7 @@ export default function SalesBikeAllocationTableClient({
   }, [pagination.page, pagination.totalPages]);
 
   const runBCStatusCheck = async () => {
-    const skus: string[] = [...new Set(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku)))];
+    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku))));
     console.info('[BC status][bike-allocation]', {
       loadedRowCount: rows.length,
       visibleRowCount: filteredRows.length,
@@ -556,6 +623,16 @@ export default function SalesBikeAllocationTableClient({
             </span>
           ) : null}
         </div>
+        <div className={styles.bcCheckActions}>
+          <button type="button" onClick={() => void refreshExternalStatus()} disabled={externalStatusLoading || bulkActionRunning}>
+            {externalStatusLoading ? 'Refreshing external status…' : 'Refresh external status'}
+          </button>
+          {externalStatusSummary ? (
+            <span className={styles.bcCheckMeta}>
+              Last refreshed: {externalStatusSummary.checkedAt} · Checked {externalStatusSummary.pairCount} pairs · {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
+            </span>
+          ) : null}
+        </div>
         <div className={styles.bulkCountryList}>
           {countryColumns.map((countryCode) => (
             <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
@@ -582,7 +659,7 @@ export default function SalesBikeAllocationTableClient({
       </section>
 
       <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>↑ Push</strong> to sync eligible rows into external PostgreSQL variants, then variant eligibility. Push appears only when the SKU has both BigCommerce IDs mapped.
+        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Use <strong>Refresh external status</strong> to check every SKU/country pair in the current filtered dataset across all pages, then use <strong>Push</strong> or <strong>Update</strong> to run the same external PostgreSQL sync action. Green Update = active externally, orange Update = inactive externally, grey Push = not found or not refreshed.
       </div>
 
       {message ? (
@@ -683,6 +760,7 @@ export default function SalesBikeAllocationTableClient({
                     const status = row.countryStatuses[country];
                     const actionKey = `${row.rowRuleset}:${row.ipnCode}:${country}`;
                     const isBusy = cellActionKey === actionKey;
+                    const pushDisplay = getPushDisplay(row.ipnCode, country);
                     return (
                       <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`}>
                         <StatusCell
@@ -692,9 +770,10 @@ export default function SalesBikeAllocationTableClient({
                           disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
                           pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
                           statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
-                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : '↑ Push'}
+                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : pushDisplay.label}
+                          pushTone={pushDisplay.tone}
                           title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
-                          pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : 'Push this bike + country row to external PostgreSQL'}
+                          pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : `${pushDisplay.label} this bike + country row in external PostgreSQL`}
                         />
                       </td>
                     );

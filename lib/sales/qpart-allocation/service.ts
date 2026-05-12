@@ -33,6 +33,11 @@ export type SalesQPartAllocationFilterOptions = {
   hierarchyOptions: Record<number, string[]>;
 };
 
+export type SalesQPartAllocationSkuCountryPair = {
+  sku: string;
+  countryCode: string;
+};
+
 export type SalesQPartAllocationPageData = {
   rows: SalesQPartAllocationRow[];
   countries: string[];
@@ -379,18 +384,44 @@ function normalizeCriteria(input: SalesQPartAllocationBulkFilterCriteria = {}): 
   };
 }
 
-export async function listFilteredQPartAllocationPartIds(
+async function listFilteredQPartAllocationRows(
   filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
-): Promise<number[]> {
+): Promise<{ rows: SalesQPartAllocationRow[]; countries: string[] }> {
   await syncQPartCountryAllocationRows();
 
   const criteria = normalizeCriteria(filterCriteria);
   const [allocations, metadataMap] = await Promise.all([listPartAllocationRows(), listPartMetadataMap()]);
   const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))];
+  const rows = buildAllocationRows(allocations, metadataMap, countries).filter((row) =>
+    rowMatchesCriteria(row, criteria, countries),
+  );
 
-  return buildAllocationRows(allocations, metadataMap, countries)
-    .filter((row) => rowMatchesCriteria(row, criteria, countries))
-    .map((row) => row.partId);
+  return { rows, countries };
+}
+
+export async function listFilteredQPartAllocationPartIds(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<number[]> {
+  const { rows } = await listFilteredQPartAllocationRows(filterCriteria);
+  return rows.map((row) => row.partId);
+}
+
+export async function listSalesQPartAllocationExternalStatusPairs(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<SalesQPartAllocationSkuCountryPair[]> {
+  const criteria = normalizeCriteria(filterCriteria);
+  const { rows, countries } = await listFilteredQPartAllocationRows(filterCriteria);
+  const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : countries;
+  const pairs = new Map<string, SalesQPartAllocationSkuCountryPair>();
+
+  for (const row of rows) {
+    if (!row.hasBcIds) continue;
+    for (const countryCode of targetCountries) {
+      pairs.set(`${row.partNumber}::${countryCode}`, { sku: row.partNumber, countryCode });
+    }
+  }
+
+  return [...pairs.values()];
 }
 
 export async function bulkUpdateQPartCountryAllocation(input: {
