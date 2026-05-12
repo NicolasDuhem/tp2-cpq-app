@@ -14,11 +14,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
-  - Includes per-cell **Push** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `CPQ_sampler_result` remains the internal allocation source.
+  - Includes per-cell **Push/Update** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `CPQ_sampler_result` remains the internal allocation source. A manual **Refresh external status** action checks external `variant_eligibilities` for the full current filtered dataset before changing the button label/color.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
-  - Includes per-cell **Push** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `qpart_country_allocation` remains the internal allocation source.
+  - Includes per-cell **Push/Update** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `qpart_country_allocation` remains the internal allocation source. A manual **Refresh external status** action checks external `variant_eligibilities` for the full current filtered dataset before changing the button label/color.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
@@ -114,6 +114,27 @@ Required environment variables:
 - `EXTERNAL_PG_SCHEMA` (default `public`)
 
 External unique indexes are **not required** for the current push path. The app uses SELECT-first logic, then UPDATE or INSERT, because the external tables may not have unique indexes yet.
+
+### Manual external status refresh
+
+The Sales bike and QPart allocation pages do **not** query external PostgreSQL automatically on page load. Operators can click **Refresh external status** when they need display awareness for the current filters. The refresh rebuilds the complete filtered allocation dataset on the backend and checks every eligible (`Sku`, `CountryCode`) pair across all filtered pages, not just the visible page or the currently rendered rows.
+
+The refresh reads only `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` columns `"Sku"`, `"CountryCode"`, and `"IsActive"` using batched, parameterized lookups. Button display rules after refresh are:
+
+- no refresh yet, or no external match: grey **Push**
+- external row exists with `"IsActive" = true`: green **Update**
+- external row exists with `"IsActive" = false`: orange **Update**
+
+Clicking **Push** or **Update** uses the same existing row push API/action; only the label and color change. Operationally, (`"Sku"`, `"CountryCode"`) should be unique in `variant_eligibilities` even if the database has not enforced that with an index yet. A quick external check is:
+
+```sql
+select "Sku", "CountryCode", count(*)
+from public.variant_eligibilities
+group by "Sku", "CountryCode"
+having count(*) > 1
+order by count(*) desc, "Sku", "CountryCode";
+```
+
 
 Push is allowed only when Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
 

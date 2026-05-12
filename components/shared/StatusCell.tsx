@@ -10,6 +10,7 @@ type StatusCellProps = {
   pushLabel?: string;
   title?: string;
   pushTitle?: string;
+  pushTone?: 'default' | 'active' | 'inactive';
 };
 
 export default function StatusCell({
@@ -22,6 +23,7 @@ export default function StatusCell({
   pushLabel = '↑ Push',
   title,
   pushTitle,
+  pushTone = 'default',
 }: StatusCellProps) {
   const badgeClass = status === 'active' ? 'statusCellBadge statusCellActive' : status === 'inactive' ? 'statusCellBadge statusCellInactive' : 'statusCellBadge statusCellNotConfigured';
   const fallbackLabel = status === 'active' ? 'Active' : status === 'inactive' ? 'Inactive' : 'Not configured';
@@ -31,7 +33,7 @@ export default function StatusCell({
         {statusLabel ?? fallbackLabel}
       </button>
       {onPush ? (
-        <button type="button" className="statusCellPush" onClick={onPush} disabled={pushDisabled ?? disabled} title={pushTitle ?? 'Push to external PostgreSQL'}>
+        <button type="button" className={`statusCellPush statusCellPush-${pushTone}`} onClick={onPush} disabled={pushDisabled ?? disabled} title={pushTitle ?? 'Push to external PostgreSQL'}>
           {pushLabel}
         </button>
       ) : null}

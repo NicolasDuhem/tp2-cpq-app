@@ -189,3 +189,14 @@ QPart sales allocation behavior:
 `/sales/qpart-allocation` keeps the existing per-row toggle, per-row external push, and pagination flows, and adds a server-verified **Update all** bulk mode controlled from the bottom pagination area. The Territory filter is the single UI source for selected country columns and bulk country scope. The client only sends full-filter criteria when Update all is enabled; the API validates the HttpOnly update-all cookie, rebuilds the filtered QPart dataset on the server, and then updates the selected country allocation cells.
 
 QPart external PostgreSQL pushes are page-specific: the QPart route passes `Qpart` for ruleset, forecast country code, and detail id overrides to the shared external variant-table writer. Bike allocation does not pass these overrides and therefore keeps its existing sampler ruleset resolution behavior.
+
+## Sales external status refresh architecture
+
+The Sales allocation pages separate internal allocation reads from external PostgreSQL status awareness. Initial page render for `/sales/bike-allocation` and `/sales/qpart-allocation` remains internal-data-only. A manual **Refresh external status** action calls:
+
+- `POST /api/sales/bike-allocation/external-status`
+- `POST /api/sales/qpart-allocation/external-status`
+
+Each route rebuilds the current filtered dataset on the server, expands it to eligible SKU/country pairs across every matching pagination page, then calls the shared external `variant_eligibilities` status lookup. This avoids external PostgreSQL traffic on normal page opens and prevents N+1 button/cell queries.
+
+The lookup reads (`"Sku"`, `"CountryCode"`, `"IsActive"`) from `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` in JSON-recordset batches with SQL parameters. The client stores the returned status map for button rendering only; push routes and push payload logic are unchanged.

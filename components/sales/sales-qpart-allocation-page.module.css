@@ -588,6 +588,30 @@
   color: #002FA7;
 }
 
+.pushButtonActive {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.pushButtonActive:hover:not(:disabled) {
+  background: #bbf7d0;
+  border-color: #22c55e;
+  color: #14532d;
+}
+
+.pushButtonInactive {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.pushButtonInactive:hover:not(:disabled) {
+  background: #ffedd5;
+  border-color: #f97316;
+  color: #7c2d12;
+}
+
 .pushButton:disabled {
   opacity: 0.65;
   cursor: not-allowed;

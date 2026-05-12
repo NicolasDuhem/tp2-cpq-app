@@ -15,6 +15,21 @@ export type ExternalVariantEligibilityInput = {
   isActive: boolean;
 };
 
+export type ExternalVariantEligibilityStatusInput = {
+  sku: string;
+  countryCode: string;
+};
+
+export type ExternalVariantEligibilityStatus = {
+  sku: string;
+  countryCode: string;
+  exists: boolean;
+  isActive: boolean | null;
+};
+
+const EXTERNAL_ELIGIBILITY_STATUS_CHUNK_SIZE = 1000;
+
+
 export type ExternalVariantInput = {
   sku: string;
   bcVariantId: number;
@@ -527,5 +542,97 @@ export async function runExternalVariantTablesWriteDiagnostic(
       });
       throw normalizeExternalPgError(error, { stage: "write_diagnostic_execute" });
     }
+  }, options);
+}
+
+
+export async function lookupExternalVariantEligibilityStatuses(
+  pairs: ExternalVariantEligibilityStatusInput[],
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantEligibilityStatus[]> {
+  const normalizedPairs = new Map<string, ExternalVariantEligibilityStatusInput>();
+  for (const pair of pairs) {
+    const sku = asTrimmed(pair.sku);
+    const countryCode = asTrimmed(pair.countryCode);
+    if (!sku || !countryCode) continue;
+    normalizedPairs.set(`${sku}::${countryCode}`, { sku, countryCode });
+  }
+
+  const requestedPairs = [...normalizedPairs.values()];
+  if (!requestedPairs.length) return [];
+
+  return withExternalPgClient(async (client, schema) => {
+    const tableName = qualifiedTableName(schema, "variant_eligibilities");
+    const results = new Map<string, ExternalVariantEligibilityStatus>();
+
+    for (let index = 0; index < requestedPairs.length; index += EXTERNAL_ELIGIBILITY_STATUS_CHUNK_SIZE) {
+      const chunk = requestedPairs.slice(index, index + EXTERNAL_ELIGIBILITY_STATUS_CHUNK_SIZE);
+      options.onStage?.("select_start", {
+        table: tableName,
+        offset: index,
+        pairCount: chunk.length,
+      });
+
+      const response = await client.query(
+        `
+          with requested as (
+            select
+              nullif(trim(input."Sku"), '') as sku,
+              nullif(trim(input."CountryCode"), '') as country_code
+            from jsonb_to_recordset($1::jsonb) as input("Sku" text, "CountryCode" text)
+          ),
+          matched as (
+            select
+              trim(eligibility."Sku") as sku,
+              trim(eligibility."CountryCode") as country_code,
+              bool_or(eligibility."IsActive" is true) as is_active
+            from ${tableName} eligibility
+            join requested
+              on trim(eligibility."Sku") = requested.sku
+             and trim(eligibility."CountryCode") = requested.country_code
+            group by trim(eligibility."Sku"), trim(eligibility."CountryCode")
+          )
+          select
+            requested.sku as "Sku",
+            requested.country_code as "CountryCode",
+            matched.is_active as "IsActive",
+            (matched.sku is not null) as "Exists"
+          from requested
+          left join matched
+            on matched.sku = requested.sku
+           and matched.country_code = requested.country_code
+          where requested.sku is not null
+            and requested.country_code is not null
+        `,
+        [JSON.stringify(chunk.map((pair) => ({ Sku: pair.sku, CountryCode: pair.countryCode })))],
+      );
+
+      for (const row of response.rows as Array<{ Sku: string; CountryCode: string; IsActive: boolean | null; Exists: boolean }>) {
+        const sku = asTrimmed(row.Sku);
+        const countryCode = asTrimmed(row.CountryCode);
+        if (!sku || !countryCode) continue;
+        results.set(`${sku}::${countryCode}`, {
+          sku,
+          countryCode,
+          exists: row.Exists === true,
+          isActive: row.Exists === true ? row.IsActive === true : null,
+        });
+      }
+
+      options.onStage?.("select_success", {
+        table: tableName,
+        offset: index,
+        pairCount: chunk.length,
+      });
+    }
+
+    return requestedPairs.map((pair) =>
+      results.get(`${pair.sku}::${pair.countryCode}`) ?? {
+        sku: pair.sku,
+        countryCode: pair.countryCode,
+        exists: false,
+        isActive: null,
+      },
+    );
   }, options);
 }

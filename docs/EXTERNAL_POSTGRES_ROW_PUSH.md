@@ -142,3 +142,56 @@ On `/sales/qpart-allocation`, the external PostgreSQL variant-table push intenti
 - `variant_eligibilities."DetailId"` = `Qpart`
 
 The shared bike allocation push route remains unchanged and continues to resolve the latest sampler ruleset for bike SKUs before writing external `variants` and `variant_eligibilities` rows.
+
+## Manual external status refresh for Sales allocation buttons
+
+`/sales/bike-allocation` and `/sales/qpart-allocation` intentionally keep initial page load sourced from internal Neon data only. They do not automatically query external PostgreSQL because a page can represent many pages of SKU/country cells and an automatic external lookup on every navigation would create unnecessary load.
+
+Operators can click **Refresh external status** on either allocation page. That action calls a status-only API endpoint and reads external `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` columns:
+
+- `"Sku"`
+- `"CountryCode"`
+- `"IsActive"`
+
+The matching key is (`"Sku"`, `"CountryCode"`). The status refresh does not call the push route and does not write to external PostgreSQL.
+
+### Scope and performance
+
+The refresh scope is the full current filter context rebuilt on the backend:
+
+- Bike allocation: ruleset, country, bike type, IPN contains filter, feature-value filters, and per-country allocation-status filters.
+- QPart allocation: part/title search, Territory country filter, hierarchy filters, metadata filters, and BC status filter.
+
+The backend gathers every eligible SKU/country pair across all matching rows in the filtered dataset, including rows on later pagination pages. It then performs a batched, parameterized external lookup; it does not perform one external query per table cell.
+
+### Button display rules
+
+Before refresh, or when no external match is found, the row action remains grey **Push**. After refresh:
+
+- external row exists and `"IsActive" = true` → green **Update**
+- external row exists and `"IsActive" = false` → orange **Update**
+- external row does not exist → grey **Push**
+
+The click behavior is unchanged. **Push** and **Update** both run the same existing single-cell push process described above.
+
+### Operations SQL
+
+Confirm a specific external status:
+
+```sql
+select "Sku", "CountryCode", "IsActive"
+from public.variant_eligibilities
+where "Sku" = 'YOUR-SKU'
+  and "CountryCode" = 'GB';
+```
+
+Check for duplicate business keys. The application uses SELECT-first update/insert logic and can run without a unique index, but operationally (`"Sku"`, `"CountryCode"`) should be unique for deterministic status display:
+
+```sql
+select "Sku", "CountryCode", count(*) as row_count,
+       bool_or("IsActive" is true) as any_active
+from public.variant_eligibilities
+group by "Sku", "CountryCode"
+having count(*) > 1
+order by row_count desc, "Sku", "CountryCode";
+```
