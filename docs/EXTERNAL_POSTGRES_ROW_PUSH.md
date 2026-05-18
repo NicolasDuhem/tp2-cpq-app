@@ -195,3 +195,39 @@ group by "Sku", "CountryCode"
 having count(*) > 1
 order by row_count desc, "Sku", "CountryCode";
 ```
+
+## Integrated allocation push behavior (2026-05)
+
+The sales allocation workflow is no longer a strictly two-step operator process. On both `/sales/bike-allocation` and `/sales/qpart-allocation`, changing a configured cell to **Active** or **Inactive** now performs the operational sync sequence automatically:
+
+1. write the internal Neon allocation state (`CPQ_sampler_result.active` for bikes, `qpart_country_allocation.active` for QParts),
+2. read the latest Neon `bc_item_variant_map` row for the SKU,
+3. if `bc_status = OK` and both `bc_product_id` and `bc_variant_id` are present, run the existing external PostgreSQL `variants` then `variant_eligibilities` sync,
+4. if BC is `NOK`, `ERR`, `DISABLED`, unknown, or IDs are missing, skip external PostgreSQL and report **Pending BC**.
+
+External write errors do not roll back the successful internal Neon allocation update. They are surfaced as **Error** in the external sync state so operators can retry after the external issue is resolved.
+
+### External sync state model
+
+Each allocation cell keeps the allocation state separate from the external sync state:
+
+- allocation state: **Active**, **Inactive**, or bike-only **Not configured**;
+- BC state: **OK**, **NOK**, **ERR**, **DISABLED**, or not checked/cached;
+- external sync state:
+  - **Pushed** — external `variant_eligibilities."IsActive"` is known to match the internal allocation state, or the integrated push just completed;
+  - **Pending BC** — the internal allocation changed, but the external push was skipped because BC status is not OK or required BC IDs are missing;
+  - **Error** — the internal allocation changed, but the external PostgreSQL write failed;
+  - **Unknown** — external status has not been refreshed and no action result is available;
+  - **Out of sync** — refreshed external status exists but does not match the internal Active/Inactive state.
+
+### Push all BC OK
+
+Both sales allocation pages now include a **Push all BC OK** action. It does not change Neon allocation state. It only retries external PostgreSQL sync for rows in the current scope whose latest cached BC status is OK.
+
+Scope rules:
+
+- Bike allocation currently uses the visible/current-page filtered rows and the selected country checkboxes in the bulk toolbar.
+- QPart allocation uses current page mode by default and, when password-protected **Update all** is enabled, rebuilds all filtered part IDs across every filtered page before pushing.
+- QPart **Push all BC OK** uses the same filter criteria and country scope as QPart bulk activate/deactivate, so it is not a whole-database push.
+
+The manual per-cell external sync pill remains available as a retry/diagnostic action and uses the same BC OK gate.

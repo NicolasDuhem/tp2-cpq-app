@@ -504,3 +504,12 @@ tbody tr:hover td { background:#f0f4ff; }
 .nokTooltipWrap { position:relative; display:inline-flex; }
 .nokTooltip { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:4px; display:none; background:#1f2937; color:#fff; font-size:12px; border-radius:4px; padding:4px 8px; white-space:nowrap; z-index:20; }
 .nokTooltipWrap:hover .nokTooltip { display:block; }
+.statusCellSync { border:1px solid #cbd5e1; background:#f8fafc; color:#475569; border-radius:999px; font-size:10px; line-height:1.2; font-weight:800; padding:2px 7px; margin-left:4px; text-decoration:none; white-space:nowrap; }
+button.statusCellSync { cursor:pointer; }
+button.statusCellSync:hover:not(:disabled) { filter:brightness(.98); }
+.statusCellSync-pushed { background:#dcfce7; border-color:#86efac; color:#166534; }
+.statusCellSync-pending { background:#ffedd5; border-color:#fdba74; color:#9a3412; }
+.statusCellSync-error { background:#fee2e2; border-color:#fca5a5; color:#991b1b; }
+.statusCellSync-unknown { background:#f1f5f9; border-color:#cbd5e1; color:#64748b; }
+.statusCellSync-outOfSync { background:#ede9fe; border-color:#c4b5fd; color:#5b21b6; }
+.statusCellSync:disabled { opacity:.65; cursor:not-allowed; }

@@ -200,3 +200,14 @@ The Sales allocation pages separate internal allocation reads from external Post
 Each route rebuilds the current filtered dataset on the server, expands it to eligible SKU/country pairs across every matching pagination page, then calls the shared external `variant_eligibilities` status lookup. This avoids external PostgreSQL traffic on normal page opens and prevents N+1 button/cell queries.
 
 The lookup reads (`"Sku"`, `"CountryCode"`, `"IsActive"`) from `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` in JSON-recordset batches with SQL parameters. The client stores the returned status map for button rendering only; push routes and push payload logic are unchanged.
+
+## Sales allocation integrated external sync
+
+The allocation pages use a server-side integration layer (`lib/sales/allocation-external-sync.ts`) to keep the internal allocation write path separate from the existing external PostgreSQL variant-table writer.
+
+- Bike internal source: `CPQ_sampler_result.active`.
+- QPart internal source: `qpart_country_allocation.active`.
+- BC gate source: latest Neon `bc_item_variant_map` row by SKU; external writes require `bc_status = OK` and both BC IDs.
+- External target order remains `variants` first, then `variant_eligibilities`.
+
+The integration layer returns a non-throwing sync result for allocation mutations so a successful Neon update is not undone by BC pending state or an external PostgreSQL error. Bulk routes summarize pushed, pending-BC, and error counts for the UI.

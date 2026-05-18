@@ -1,5 +1,9 @@
 import { sql } from '@/lib/db/client';
 import { listAccountContexts } from '@/lib/cpq/setup/service';
+import {
+  syncBikeAllocationToExternalIfBcOk,
+  summarizeAllocationExternalSync,
+} from '@/lib/sales/allocation-external-sync';
 
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
@@ -247,9 +251,14 @@ export async function updateAllocationCellStatus(input: {
     returning id
   `) as Array<{ id: number }>;
 
+  const externalSync = updatedRows.length
+    ? await syncBikeAllocationToExternalIfBcOk({ ruleset, ipnCode, countryCode })
+    : null;
+
   return {
     updatedCount: updatedRows.length,
     targetStatus: input.targetStatus,
+    externalSync,
   };
 }
 
@@ -283,14 +292,79 @@ export async function bulkUpdateAllocationStatus(input: {
     where coalesce(trim(sr.ruleset), '') = ${ruleset}
       and coalesce(trim(sr.ipn_code), '') in (select ipn_code from target_ipns)
       and coalesce(trim(sr.country_code), '') in (select country_code from target_countries)
-    returning id
-  `) as Array<{ id: number }>;
+    returning coalesce(trim(sr.ruleset), '') as ruleset, coalesce(trim(sr.ipn_code), '') as ipn_code, coalesce(trim(sr.country_code), '') as country_code
+  `) as Array<{ ruleset: string; ipn_code: string; country_code: string }>;
+
+  const uniqueTargets = [
+    ...new Map(
+      updatedRows.map((row) => [
+        `${row.ruleset}::${row.ipn_code}::${row.country_code}`,
+        { ruleset: row.ruleset, ipnCode: row.ipn_code, countryCode: row.country_code },
+      ]),
+    ).values(),
+  ];
+  const externalSyncResults = [];
+  for (const target of uniqueTargets) {
+    externalSyncResults.push(await syncBikeAllocationToExternalIfBcOk(target));
+  }
 
   return {
     updatedCount: updatedRows.length,
     ipnCount: ipnCodes.length,
     countryCount: countryCodes.length,
     targetStatus: input.targetStatus,
+    externalSync: summarizeAllocationExternalSync(externalSyncResults),
+  };
+}
+
+export async function pushBikeAllocationBcOk(input: {
+  ruleset: string;
+  ipnCodes: string[];
+  countryCodes: string[];
+}) {
+  const ruleset = asTrimmed(input.ruleset);
+  const ipnCodes = [...new Set(input.ipnCodes.map(asTrimmed).filter(Boolean))];
+  const countryCodes = [...new Set(input.countryCodes.map(asTrimmed).filter(Boolean))];
+
+  if (!ruleset) throw new Error('ruleset is required');
+  if (!ipnCodes.length) throw new Error('ipnCodes is required');
+  if (!countryCodes.length) throw new Error('countryCodes is required');
+
+  const rows = (await sql`
+    with target_ipns as (
+      select value::text as ipn_code
+      from jsonb_array_elements_text(${JSON.stringify(ipnCodes)}::jsonb)
+    ),
+    target_countries as (
+      select value::text as country_code
+      from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
+    )
+    select distinct
+      coalesce(trim(sr.ruleset), '') as ruleset,
+      coalesce(trim(sr.ipn_code), '') as ipn_code,
+      coalesce(trim(sr.country_code), '') as country_code
+    from CPQ_sampler_result sr
+    where coalesce(trim(sr.ruleset), '') = ${ruleset}
+      and coalesce(trim(sr.ipn_code), '') in (select ipn_code from target_ipns)
+      and coalesce(trim(sr.country_code), '') in (select country_code from target_countries)
+      and coalesce(trim(sr.ipn_code), '') <> ''
+      and coalesce(trim(sr.country_code), '') <> ''
+  `) as Array<{ ruleset: string; ipn_code: string; country_code: string }>;
+
+  const externalSyncResults = [];
+  for (const row of rows) {
+    externalSyncResults.push(await syncBikeAllocationToExternalIfBcOk({
+      ruleset: row.ruleset,
+      ipnCode: row.ipn_code,
+      countryCode: row.country_code,
+    }));
+  }
+
+  return {
+    ipnCount: ipnCodes.length,
+    countryCount: countryCodes.length,
+    targetCount: rows.length,
+    externalSync: summarizeAllocationExternalSync(externalSyncResults),
   };
 }
 

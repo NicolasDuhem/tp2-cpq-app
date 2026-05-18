@@ -48,6 +48,9 @@ type BCVariantStatusItem = {
 type BCCheckSummary = { checkedAt: string; checkedCount: number; ok: number; nok: number; err: number } | null;
 type ExternalStatus = { sku: string; countryCode: string; exists: boolean; isActive: boolean | null };
 type ExternalStatusMap = Record<string, ExternalStatus>;
+type ExternalSyncState = 'pushed' | 'pending_bc' | 'error';
+type ExternalSyncResult = { state: ExternalSyncState; sku: string; countryCode: string; message: string; skipped: boolean; variantAction?: string; eligibilityAction?: string };
+type ExternalSyncSummary = { attempted: number; pushed: number; pendingBc: number; errors: number };
 
 const defaultHierarchySelection: LevelSelection = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
 
@@ -185,6 +188,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
   const [externalStatusByKey, setExternalStatusByKey] = useState<ExternalStatusMap>({});
+  const [syncStateByKey, setSyncStateByKey] = useState<Record<string, ExternalSyncState>>({});
   const [externalStatusLoading, setExternalStatusLoading] = useState(false);
   const [externalStatusSummary, setExternalStatusSummary] = useState<{ checkedAt: string; pairCount: number; found: number; active: number; inactive: number } | null>(null);
   const [pendingBulkStatus, setPendingBulkStatus] = useState<QPartAllocationStatus | null>(null);
@@ -351,13 +355,20 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
   const getExternalStatusKey = (sku: string, countryCode: string) => `${sku}::${countryCode}`;
 
-  const getPushDisplay = (sku: string, countryCode: string) => {
-    const status = externalStatusByKey[getExternalStatusKey(sku, countryCode)];
-    if (!status?.exists) return { label: 'Push', className: styles.pushButton };
-    return {
-      label: 'Update',
-      className: `${styles.pushButton} ${status.isActive ? styles.pushButtonActive : styles.pushButtonInactive}`,
-    };
+  const getSyncDisplay = (sku: string, countryCode: string, status: QPartAllocationStatus) => {
+    const key = getExternalStatusKey(sku, countryCode);
+    const transient = syncStateByKey[key];
+    if (transient === 'pending_bc') return { label: 'Pending BC', className: `${styles.syncPill} ${styles.syncPending}` };
+    if (transient === 'error') return { label: 'Error', className: `${styles.syncPill} ${styles.syncError}` };
+    if (transient === 'pushed') return { label: 'Pushed', className: `${styles.syncPill} ${styles.syncPushed}` };
+    const bcStatus = bcStatusBySku[sku]?.status;
+    if (bcStatus && bcStatus !== 'OK') return { label: 'Pending BC', className: `${styles.syncPill} ${styles.syncPending}` };
+    const external = externalStatusByKey[key];
+    if (!external?.exists) return { label: 'Unknown', className: `${styles.syncPill} ${styles.syncUnknown}` };
+    const internalActive = status === 'active';
+    return external.isActive === internalActive
+      ? { label: 'Pushed', className: `${styles.syncPill} ${styles.syncPushed}` }
+      : { label: 'Out of sync', className: `${styles.syncPill} ${styles.syncOutOfSync}` };
   };
 
   const buildBulkFilterCriteria = () => ({
@@ -421,16 +432,25 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       });
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
-        result?: { updatedCount: number; targetStatus: QPartAllocationStatus };
+        result?: { updatedCount: number; targetStatus: QPartAllocationStatus; externalSync?: ExternalSyncResult | null };
       };
 
       if (!response.ok || !payload.result) {
         throw new Error(payload.error ?? 'Failed to update allocation');
       }
 
+      if (payload.result.externalSync) {
+        setSyncStateByKey((prev) => ({ ...prev, [getExternalStatusKey(row.partNumber, countryCode)]: payload.result!.externalSync!.state }));
+        if (payload.result.externalSync.state === 'pushed') {
+          setExternalStatusByKey((prev) => ({
+            ...prev,
+            [getExternalStatusKey(row.partNumber, countryCode)]: { sku: row.partNumber, countryCode, exists: true, isActive: payload.result!.targetStatus === 'active' },
+          }));
+        }
+      }
       setMessage({
         type: 'success',
-        text: `${row.partNumber} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Inactive'}.`,
+        text: `${row.partNumber} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Inactive'}. ${payload.result.externalSync?.message ?? ''}`.trim(),
       });
       router.refresh();
     } catch (error) {
@@ -480,6 +500,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
           ? payload.result.message
           : `${row.partNumber} ${countryCode} pushed (variants ${payload.result.variantResult.action}, eligibility ${payload.result.eligibilityResult.action}).`,
       });
+      setSyncStateByKey((prev) => ({ ...prev, [getExternalStatusKey(row.partNumber, countryCode)]: payload.result!.skipped ? 'pending_bc' : 'pushed' }));
       if (!payload.result.skipped) {
         setExternalStatusByKey((prev) => ({
           ...prev,
@@ -492,6 +513,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
         }));
       }
     } catch (error) {
+      setSyncStateByKey((prev) => ({ ...prev, [getExternalStatusKey(row.partNumber, countryCode)]: 'error' }));
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to push allocation' });
     } finally {
       setPushBusyKey(null);
@@ -542,7 +564,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
       });
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
-        result?: { updatedCount: number; partCount: number; countryCount: number; targetStatus: QPartAllocationStatus; mode?: string };
+        result?: { updatedCount: number; partCount: number; countryCount: number; targetStatus: QPartAllocationStatus; mode?: string; externalSync?: ExternalSyncSummary };
       };
 
       if (!response.ok || !payload.result) {
@@ -551,13 +573,47 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
 
       setMessage({
         type: 'success',
-        text: `Bulk ${label.toLowerCase()} complete: ${payload.result.updatedCount} allocation cells updated (${payload.result.partCount} parts × ${payload.result.countryCount} countries, ${payload.result.mode === 'all-filtered' ? 'all filtered pages' : 'current page'}).`,
+        text: `Bulk ${label.toLowerCase()} complete: ${payload.result.updatedCount} allocation cells updated (${payload.result.partCount} parts × ${payload.result.countryCount} countries, ${payload.result.mode === 'all-filtered' ? 'all filtered pages' : 'current page'}). External sync: ${payload.result.externalSync?.pushed ?? 0} pushed, ${payload.result.externalSync?.pendingBc ?? 0} pending BC, ${payload.result.externalSync?.errors ?? 0} errors.`,
       });
       setToastMessage(`Done — ${payload.result.partCount} items updated`);
       setToastVisible(true);
       router.refresh();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Bulk update failed' });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const runBulkPushBcOk = async () => {
+    if (!filteredRows.length) {
+      setMessage({ type: 'error', text: 'No visible parts to push.' });
+      return;
+    }
+    if (!visibleCountries.length) {
+      setMessage({ type: 'error', text: 'Select at least one target country for Push all BC OK.' });
+      return;
+    }
+
+    setBulkBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/qpart-allocation/bulk-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partIds: updateAllEnabled ? [] : filteredRows.map((row) => row.partId),
+          countryCodes: visibleCountries,
+          updateAll: updateAllEnabled,
+          filterCriteria: updateAllEnabled ? buildBulkFilterCriteria() : undefined,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; result?: { targetCount: number; mode?: string; externalSync: ExternalSyncSummary } };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Push all BC OK failed');
+      setMessage({ type: 'success', text: `Push all BC OK complete (${payload.result.mode === 'all-filtered' ? 'all filtered pages' : 'current page'}): ${payload.result.targetCount} cells checked, ${payload.result.externalSync.pushed} pushed, ${payload.result.externalSync.pendingBc} pending BC, ${payload.result.externalSync.errors} errors.` });
+      await refreshExternalStatus();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Push all BC OK failed' });
     } finally {
       setBulkBusy(false);
     }
@@ -747,6 +803,9 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
             </button>
             <button type="button" className={styles.bulkActionButton} onClick={() => requestBulk('inactive')} disabled={bulkBusy}>
               {bulkBusy ? 'Working…' : 'Bulk deactivate'}
+            </button>
+            <button type="button" className={styles.bulkActionButton} onClick={() => void runBulkPushBcOk()} disabled={bulkBusy}>
+              {bulkBusy ? 'Working…' : 'Push all BC OK'}
             </button>
           </div>
         </div>
@@ -985,7 +1044,7 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                   {renderedCountries.map((countryCode) => {
                     const status = row.countryStatuses[countryCode] ?? 'inactive';
                     const cellKey = `${row.partId}:${countryCode}`;
-                    const pushDisplay = getPushDisplay(row.partNumber, countryCode);
+                    const syncDisplay = getSyncDisplay(row.partNumber, countryCode, status);
                     return (
                       <td key={`${row.partId}-${countryCode}`} className={styles.countryCell}>
                         <div className={styles.cellActions}>
@@ -1000,12 +1059,12 @@ export default function SalesQPartAllocationTableClient({ rows, countryColumns, 
                           {row.hasBcIds ? (
                             <button
                               type="button"
-                              className={pushDisplay.className}
+                              className={syncDisplay.className}
                               onClick={() => void pushCell(row, countryCode)}
                               disabled={busyKey === cellKey || pushBusyKey === cellKey || bulkBusy}
-                              title={`${pushDisplay.label} this QPart + country row in external PostgreSQL`}
+                              title={`${syncDisplay.label}: click to manually retry external PostgreSQL sync for this QPart + country row`}
                             >
-                              {pushBusyKey === cellKey ? 'Pushing…' : pushDisplay.label}
+                              {pushBusyKey === cellKey ? 'Pushing…' : syncDisplay.label}
                             </button>
                           ) : null}
                         </div>
