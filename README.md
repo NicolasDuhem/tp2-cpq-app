@@ -14,11 +14,11 @@ Next.js CPQ operations app for bike configuration, setup management, sampler ana
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
-  - Includes per-cell **Push/Update** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `CPQ_sampler_result` remains the internal allocation source. A manual **Refresh external status** action checks external `variant_eligibilities` for the full current filtered dataset before changing the button label/color.
+  - Active/Inactive now updates Neon `CPQ_sampler_result.active` and then automatically pushes external PostgreSQL `variants` and `variant_eligibilities` when BC status is OK. The cell also shows a compact external sync state (`Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync`), and **Push all BC OK** retries eligible current-scope rows.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
-  - Includes per-cell **Push/Update** action to sync external PostgreSQL `variants` and then `variant_eligibilities` rows; Neon `qpart_country_allocation` remains the internal allocation source. A manual **Refresh external status** action checks external `variant_eligibilities` for the full current filtered dataset before changing the button label/color.
+  - Active/Inactive now updates Neon `qpart_country_allocation.active` and then automatically pushes external PostgreSQL `variants` and `variant_eligibilities` when BC status is OK. The cell also shows a compact external sync state (`Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync`), and **Push all BC OK** retries eligible rows in current-page or Update-all filtered scope.
   - Active/Inactive only (no Not configured state).
   - Part and territory matrix state is stored in `qpart_country_allocation.active`.
   - Toggle/bulk mutations revalidate + refresh the route so UI updates immediately.
@@ -97,7 +97,7 @@ See `docs/README.md` for the full documentation map, including deep architecture
 
 ## External PostgreSQL row push configuration
 
-The row-level **Push** action on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variants` first and `variant_eligibilities` second. The old external `cpq_sampler_result` push is removed from active usage; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
+The integrated allocation push on `/sales/bike-allocation` and `/sales/qpart-allocation` writes server-side to external PostgreSQL `variants` first and `variant_eligibilities` second after the internal Active/Inactive update succeeds and BC status is OK. The manual per-cell sync pill and **Push all BC OK** reuse the same writer. The old external `cpq_sampler_result` push is removed from active usage; Neon `CPQ_sampler_result` remains in use internally for sampler persistence and bike allocation state.
 
 Runtime dependency requirement:
 
@@ -125,7 +125,7 @@ The refresh reads only `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` columns `"S
 - external row exists with `"IsActive" = true`: green **Update**
 - external row exists with `"IsActive" = false`: orange **Update**
 
-Clicking **Push** or **Update** uses the same existing row push API/action; only the label and color change. Operationally, (`"Sku"`, `"CountryCode"`) should be unique in `variant_eligibilities` even if the database has not enforced that with an index yet. A quick external check is:
+The external sync pill uses the same row push API/action as the integrated Active/Inactive workflow; its label reports `Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync` rather than hiding the internal Active/Inactive state. Operationally, (`"Sku"`, `"CountryCode"`) should be unique in `variant_eligibilities` even if the database has not enforced that with an index yet. A quick external check is:
 
 ```sql
 select "Sku", "CountryCode", count(*)
@@ -136,7 +136,7 @@ order by count(*) desc, "Sku", "CountryCode";
 ```
 
 
-Push is allowed only when Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
+Push is allowed only when Neon `bc_item_variant_map` has `bc_status = 'OK'` plus both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
 
 For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, hardcoded `"ForecastCtyCode" = 'F_BB'`, deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. QPart pushes use the QPart-only override (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`). `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
 
@@ -159,8 +159,15 @@ For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, 
 
 ### QPart allocation Update all and BC filtering
 
-`/sales/qpart-allocation` supports password-protected **Update all** bulk activate/deactivate from the centered bottom pagination control. By default, bulk actions keep the existing current-page behavior. When **Update all** is enabled with the server-side password (`QPART_UPDATE_ALL_PASSWORD`, default `Br0mpt0n2026!`), the backend rebuilds the full filtered QPart target set across all pages before updating the countries selected in the Territory filter.
+`/sales/qpart-allocation` supports password-protected **Update all** bulk activate/deactivate and **Push all BC OK** from the centered bottom pagination control. By default, bulk actions keep the existing current-page behavior. When **Update all** is enabled with the server-side password (`QPART_UPDATE_ALL_PASSWORD`, default `Br0mpt0n2026!`), the backend rebuilds the full filtered QPart target set across all pages before updating the countries selected in the Territory filter.
 
-The page also includes part-number, title, hierarchy, and `OK` / `NOK` BC status filters. These filters are applied server-side before pagination so row counts and page counts describe the filtered dataset; if a requested page is outside the filtered range, the page is safely clamped back to the first valid page. The same normalized filter criteria are reused by the backend Update all target rebuild; the Territory filter remains the single UI source for selected country columns and bulk country scope.
+The page also includes part-number, title, hierarchy, and `OK` / `NOK` BC status filters. These filters are applied server-side before pagination so row counts and page counts describe the filtered dataset; if a requested page is outside the filtered range, the page is safely clamped back to the first valid page. The same normalized filter criteria are reused by the backend Update all target rebuild and the Push all BC OK target rebuild; the Territory filter remains the single UI source for selected country columns and bulk country scope.
 
-QPart external PostgreSQL pushes hardcode QPart-only external mappings (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`) so QPart pushes do not require a bike-style sampler ruleset. Bike allocation push behavior is unchanged.
+QPart external PostgreSQL pushes hardcode QPart-only external mappings (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`) so QPart pushes do not require a bike-style sampler ruleset. Bike allocation uses the same integrated BC-gated push sequence without QPart overrides.
+
+
+### Integrated allocation push and Pending BC
+
+The old allocation handoff was operationally two steps: set Active/Inactive in Neon, then manually Push/Update to external PostgreSQL. The current behavior integrates those steps safely. A single-cell or bulk Active/Inactive action first saves the internal Neon state, then checks the latest `bc_item_variant_map` row. If BC status is `OK` and the BC product/variant IDs are present, the app runs the existing external PostgreSQL variant-table push. If BC is `NOK`, `ERR`, `DISABLED`, unknown, or IDs are missing, the external write is skipped and the UI shows **Pending BC**.
+
+The cell status is now two-level: the main availability pill remains **Active** or **Inactive** (bike rows can still be **Not configured**), while the adjacent external sync pill shows **Pushed**, **Pending BC**, **Error**, **Unknown**, or **Out of sync**. **Push all BC OK** retries external sync for eligible rows without changing allocation state. On QPart allocation it respects current-page vs password-protected Update-all filtered scope; on bike allocation it respects the current page/client filters and selected bulk country columns.

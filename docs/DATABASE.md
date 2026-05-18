@@ -238,3 +238,13 @@ group by "Sku", "CountryCode"
 having count(*) > 1
 order by row_count desc, "Sku", "CountryCode";
 ```
+
+## Allocation external sync status notes
+
+No new database tables or columns are required for the 2026-05 allocation workflow change. External sync state is derived at runtime from:
+
+- the internal allocation boolean (`CPQ_sampler_result.active` or `qpart_country_allocation.active`),
+- latest cached BC status and IDs in `bc_item_variant_map`, and
+- optional refreshed external `variant_eligibilities` status.
+
+`bc_item_variant_map.bc_status = 'OK'` is now the explicit gate for integrated allocation pushes. Rows with non-OK/unknown status or missing `bc_product_id`/`bc_variant_id` remain internally updated but externally **Pending BC** until BC status is refreshed and **Push all BC OK** is run.

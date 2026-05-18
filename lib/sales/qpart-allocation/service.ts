@@ -2,6 +2,10 @@ import { sql } from '@/lib/db/client';
 import { listMetadataDefinitions } from '@/lib/qpart/metadata/service';
 import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { listCountryMappings } from '@/lib/cpq/setup/service';
+import {
+  syncQPartAllocationToExternalIfBcOk,
+  summarizeAllocationExternalSync,
+} from '@/lib/sales/allocation-external-sync';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
 export type QPartBCStatusFilter = 'ok' | 'nok';
@@ -347,9 +351,14 @@ export async function toggleQPartCountryAllocation(input: { partId: number; coun
     returning id
   `) as Array<{ id: number }>;
 
+  const externalSync = rows.length
+    ? await syncQPartAllocationToExternalIfBcOk({ partId, countryCode })
+    : null;
+
   return {
     updatedCount: rows.length,
     targetStatus: input.targetStatus,
+    externalSync,
   };
 }
 
@@ -449,13 +458,68 @@ export async function bulkUpdateQPartCountryAllocation(input: {
         updated_at = now()
     where allocation.part_id in (select part_id from target_parts)
       and allocation.country_code in (select country_code from target_countries)
-    returning id
-  `) as Array<{ id: number }>;
+    returning allocation.part_id, allocation.country_code
+  `) as Array<{ part_id: number; country_code: string }>;
+
+  const uniqueTargets = [
+    ...new Map(
+      rows.map((row) => [
+        `${row.part_id}::${row.country_code}`,
+        { partId: row.part_id, countryCode: row.country_code },
+      ]),
+    ).values(),
+  ];
+  const externalSyncResults = [];
+  for (const target of uniqueTargets) {
+    externalSyncResults.push(await syncQPartAllocationToExternalIfBcOk(target));
+  }
 
   return {
     updatedCount: rows.length,
     partCount: partIds.length,
     countryCount: countryCodes.length,
     targetStatus: input.targetStatus,
+    externalSync: summarizeAllocationExternalSync(externalSyncResults),
+  };
+}
+
+export async function pushQPartAllocationBcOk(input: {
+  partIds: number[];
+  countryCodes: string[];
+}) {
+  const partIds = [...new Set(input.partIds.map((value) => Number(value)).filter(Number.isFinite))];
+  const countryCodes = [...new Set(input.countryCodes.map((value) => asTrimmed(value).toUpperCase()).filter(Boolean))];
+
+  if (!partIds.length) throw new Error('partIds is required');
+  if (!countryCodes.length) throw new Error('countryCodes is required');
+
+  const rows = (await sql`
+    with target_parts as (
+      select value::bigint as part_id
+      from jsonb_array_elements_text(${JSON.stringify(partIds)}::jsonb)
+    ),
+    target_countries as (
+      select value::text as country_code
+      from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
+    )
+    select distinct allocation.part_id, allocation.country_code
+    from qpart_country_allocation allocation
+    where allocation.part_id in (select part_id from target_parts)
+      and allocation.country_code in (select country_code from target_countries)
+  `) as Array<{ part_id: number; country_code: string }>;
+
+  const externalSyncResults = [];
+  for (const row of rows) {
+    externalSyncResults.push(await syncQPartAllocationToExternalIfBcOk({
+      partId: row.part_id,
+      countryCode: row.country_code,
+    }));
+  }
+
+  return {
+    partCount: partIds.length,
+    countryCount: countryCodes.length,
+    targetCount: rows.length,
+    externalSync: summarizeAllocationExternalSync(externalSyncResults),
   };
 }

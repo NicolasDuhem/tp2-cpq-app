@@ -67,10 +67,10 @@ export const PAGE_DATA_CONTRACTS: PageContract[] = [
     access: 'Visible to all users.',
     dataPoints: [
       { label: 'Ruleset/country/bike-type filters', componentType: 'list filters', behavior: 'Narrows matrix rows and columns.', source: 'URL query params + server loader options from setup tables/sampler', target: 'server-side filtered query in sales service', process: 'Focused operations by territory or bike family.', readOnly: false, dynamic: true },
-      { label: 'Matrix status cell', componentType: 'table cell/pill', behavior: 'Shows Active/Inactive/Not configured.', source: 'CPQ_sampler_result.active; no row => Not configured', target: 'toggle API writes active true/false', process: 'POST /api/sales/bike-allocation/toggle', readOnly: false, dynamic: true, derived: true },
-      { label: 'Bulk update controls', componentType: 'multi-select + action', behavior: 'Bulk set status across selected rows/countries.', source: 'current matrix selection', target: 'POST /api/sales/bike-allocation/bulk-update', process: 'Mass status operation.', readOnly: false, dynamic: true },
+      { label: 'Matrix status cell', componentType: 'table cell/pill', behavior: 'Shows Active/Inactive/Not configured plus external sync state.', source: 'CPQ_sampler_result.active; no row => Not configured', target: 'toggle API writes active true/false', process: 'POST /api/sales/bike-allocation/toggle; saves Neon then pushes externally when BC OK', readOnly: false, dynamic: true, derived: true },
+      { label: 'Bulk update controls', componentType: 'multi-select + action', behavior: 'Bulk set status across selected rows/countries, then sync externally when BC OK.', source: 'current matrix selection', target: 'POST /api/sales/bike-allocation/bulk-update', process: 'Mass status operation.', readOnly: false, dynamic: true },
       { label: 'Launch CPQ action', componentType: 'button/link', behavior: 'Resolves launch context and replay payload then opens /cpq.', source: 'launch-context API resolves account + selectedOptions from sampler json_result', target: 'sessionStorage replay payload consumed by /cpq', process: 'Not configured/on-demand correction workflow.', readOnly: false, dynamic: true, derived: true },
-      { label: 'External Push', componentType: 'button', behavior: 'Upserts one row-country record into external postgres.', source: 'selected matrix cell payload', target: 'external pg variant_eligibilities + variants via /api/sales/bike-allocation/push', process: 'Downstream synchronization.', readOnly: false, dynamic: true },
+      { label: 'External Push', componentType: 'button', behavior: 'Retries one row-country external sync when BC OK; Push all BC OK handles scoped bulk retry.', source: 'selected matrix cell payload', target: 'external pg variant_eligibilities + variants via /api/sales/bike-allocation/push', process: 'Downstream synchronization.', readOnly: false, dynamic: true },
     ],
   },
   {
@@ -79,9 +79,9 @@ export const PAGE_DATA_CONTRACTS: PageContract[] = [
     purpose: 'Matrix of spare part x country active/inactive allocation with external push.',
     access: 'Visible to all users.',
     dataPoints: [
-      { label: 'Part/country matrix', componentType: 'table', behavior: 'Shows active/inactive only; no not-configured state.', source: 'qpart_country_allocation joined with qpart_parts + active cpq_country_mappings', target: 'toggle/bulk APIs write qpart_country_allocation.active', process: 'Territory publishing control.', readOnly: false, dynamic: true },
-      { label: 'Bulk action controls', componentType: 'toolbar action', behavior: 'Set statuses over selected part-country cells.', source: 'client selection state', target: 'POST /api/sales/qpart-allocation/bulk-update', process: 'Mass edit.', readOnly: false, dynamic: true },
-      { label: 'External Push', componentType: 'button', behavior: 'Pushes qpart row-country to external postgres variant_eligibilities + variants.', source: 'cell payload (namespace/ipn/country/status)', target: '/api/sales/qpart-allocation/push -> external pg variant_eligibilities + variants', process: 'Downstream replication.', readOnly: false, dynamic: true },
+      { label: 'Part/country matrix', componentType: 'table', behavior: 'Shows active/inactive plus external sync state; no not-configured state.', source: 'qpart_country_allocation joined with qpart_parts + active cpq_country_mappings', target: 'toggle/bulk APIs write qpart_country_allocation.active', process: 'Territory publishing control.', readOnly: false, dynamic: true },
+      { label: 'Bulk action controls', componentType: 'toolbar action', behavior: 'Set statuses over selected part-country cells, then sync externally when BC OK.', source: 'client selection state', target: 'POST /api/sales/qpart-allocation/bulk-update', process: 'Mass edit.', readOnly: false, dynamic: true },
+      { label: 'External Push', componentType: 'button', behavior: 'Retries qpart row-country external sync when BC OK; Push all BC OK handles scoped bulk retry.', source: 'cell payload (namespace/ipn/country/status)', target: '/api/sales/qpart-allocation/push -> external pg variant_eligibilities + variants', process: 'Downstream replication.', readOnly: false, dynamic: true },
     ],
   },
   {

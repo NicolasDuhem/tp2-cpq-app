@@ -218,3 +218,19 @@ Button meanings:
 - orange **Update**: an external row exists and `"IsActive" = false`.
 
 Clicking the button still runs the existing single-cell push/update process. The status refresh does not write external data.
+
+## Sales allocation integrated push process (2026-05)
+
+Old operational model: operators first toggled Active/Inactive in Neon, then separately clicked Push/Update to sync the external PostgreSQL `variants` and `variant_eligibilities` tables when BC status allowed it.
+
+New operational model for `/sales/bike-allocation` and `/sales/qpart-allocation`:
+
+1. **Single-cell Active/Inactive** updates the internal allocation state first.
+2. The server checks the latest `bc_item_variant_map` status for the SKU.
+3. If BC is **OK** and both BigCommerce IDs exist, the existing external PostgreSQL row push runs immediately.
+4. If BC is not OK, the external push is skipped and the cell is shown as **Pending BC**.
+5. If the external PostgreSQL write fails, the internal state remains saved and the cell is shown as **Error**.
+
+Bulk activate and bulk deactivate apply the same sequence to every row/country in scope. The new **Push all BC OK** bulk action only performs step 2 onward; it does not change Active/Inactive state.
+
+QPart scope is controlled by the Territory filter and the current-page vs password-protected Update-all mode. Bike scope remains the current page/client-filtered rows plus selected bulk countries.
