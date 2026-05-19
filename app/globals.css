@@ -515,3 +515,31 @@ button.statusCellSync:hover:not(:disabled) { filter:brightness(.98); }
 .statusCellSync:disabled { opacity:.65; cursor:not-allowed; }
 .userStatus { position: relative; }
 .userMenu { position: absolute; right: 0; top: 34px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px; display:grid; gap:8px; min-width:220px; z-index:5; }
+
+.appNavWrap { margin-left: 12px; display:flex; align-items:center; gap:10px; position:relative; }
+.menuTrigger { border:1px solid rgba(255,255,255,.72); background:transparent; color:#fff; border-radius:999px; padding:8px 14px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:8px; }
+.menuTrigger:hover { background:rgba(255,255,255,.14); }
+.menuTrigger.isOpen { background:rgba(255,255,255,.24); }
+.megaMenuBackdrop { position:fixed; inset:0; background:rgba(5, 15, 40, 0.2); z-index:15; }
+.megaMenuPanel { position:absolute; top:calc(100% + 12px); left:0; width:min(900px, calc(100vw - 24px)); background:#fff; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.12); z-index:30; padding:14px; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:12px; border:1px solid #e6ecf7; animation:menuIn .15s ease-out; }
+@keyframes menuIn { from { opacity:0; transform:translateY(-8px);} to { opacity:1; transform:translateY(0);} }
+.megaMenuSection { display:grid; gap:8px; }
+.megaMenuSectionTitle { width:100%; text-align:left; text-transform:uppercase; letter-spacing:.04em; font-size:11px; color:#1a56db; font-weight:700; border-left:2px solid #1a56db; border-radius:0; padding:4px 0 4px 8px; background:transparent; }
+.megaMenuLinks { display:grid; gap:6px; }
+.megaMenuLink { display:flex; justify-content:space-between; align-items:center; padding:12px 10px; border-radius:6px; color:#1b2c50; font-size:13px; font-weight:600; }
+.megaMenuLink:hover { background:#f5f7fa; }
+.megaMenuLink.isActive { color:#1a56db; background:#e9f1ff; }
+.menuChevron { opacity:0; transform:translateX(-3px); transition:all .12s ease; }
+.megaMenuLink:hover .menuChevron { opacity:1; transform:translateX(0); }
+
+@media (max-width: 900px) {
+  .brandbar { flex-wrap:wrap; }
+  .adminModeActions { margin-left:0; }
+}
+@media (max-width: 768px) {
+  .appNavWrap { margin-left:auto; width:100%; justify-content:space-between; }
+  .megaMenuPanel { width:100%; left:0; right:0; grid-template-columns:1fr; max-height:70vh; overflow:auto; }
+  .megaMenuSectionTitle { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .megaMenuLinks { display:none; padding:0 4px; }
+  .megaMenuLinks.isOpen { display:grid; }
+}
