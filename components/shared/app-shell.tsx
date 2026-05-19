@@ -13,8 +13,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               Brompton <span className="brandSubtitle">Operations</span>
             </div>
           </div>
+          <AppNavigation />
         </header>
-        <AppNavigation />
         {children}
       </div>
     </AdminModeProvider>
