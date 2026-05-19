@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PAGE_KEYS, requirePageEdit } from '@/lib/auth/page-access';
+import { PAGE_KEYS } from '@/lib/auth/page-keys';
+import { requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { updateAllocationCellStatus } from '@/lib/sales/bike-allocation/service';
 
