@@ -190,3 +190,7 @@ User management, local login/session foundation, and per-page permissions were a
 - Global route-level login enforcement is intentionally not active yet.
 
 - 2026-05-19: Added auth session refresh fixes and direct permission enforcement for Bike/QPart allocation pages and APIs (no global lock yet).
+
+
+### Allocation audit
+- Active/Inactive status changes on Sales Bike Allocation and Sales QPart Allocation are written to `app_allocation_audit_log` with before/after values and actor metadata.

@@ -9,6 +9,7 @@ import {
   type SalesQPartAllocationBulkFilterCriteria,
 } from '@/lib/sales/qpart-allocation/service';
 import { QPART_UPDATE_ALL_COOKIE, verifyQPartUpdateAllToken } from '@/lib/sales/qpart-allocation/update-all-auth';
+import { getCurrentUser } from '@/lib/auth/session';
 
 export async function POST(req: NextRequest) {
   const forbidden = await requirePageEdit(PAGE_KEYS.qpart);
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const actor = await getCurrentUser();
     const countryCodes = Array.isArray(body.countryCodes) ? body.countryCodes.map((value) => String(value ?? '')) : [];
     const partIds = updateAll
       ? await listFilteredQPartAllocationPartIds((body.filterCriteria ?? {}) as SalesQPartAllocationBulkFilterCriteria)
@@ -42,6 +44,8 @@ export async function POST(req: NextRequest) {
       partIds,
       countryCodes,
       targetStatus,
+      actor: actor ? { userId: actor.id, email: actor.email, displayName: actor.displayName } : null,
+      scope: updateAll ? 'all_filtered_pages' : 'current_page',
     });
 
     revalidatePath('/sales/qpart-allocation');

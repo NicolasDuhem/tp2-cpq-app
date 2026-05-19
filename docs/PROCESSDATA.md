@@ -257,3 +257,8 @@ User management, local login/session foundation, and per-page permissions were a
 
 ## Permission enforcement update (2026-05-19)
 Bike and QPart allocation pages now enforce page permissions directly (without global app lock): read required for page data access, edit required for mutation/sync actions. Server APIs return 403 for insufficient permissions.
+
+
+### Allocation audit behavior
+- Allocation Active/Inactive changes now write audit rows into `app_allocation_audit_log` for bike and qpart single/bulk toggles.
+- Bulk actions create one audit row per changed item/country only.
