@@ -211,3 +211,16 @@ The allocation pages use a server-side integration layer (`lib/sales/allocation-
 - External target order remains `variants` first, then `variant_eligibilities`.
 
 The integration layer returns a non-throwing sync result for allocation mutations so a successful Neon update is not undone by BC pending state or an external PostgreSQL error. Bulk routes summarize pushed, pending-BC, and error counts for the UI.
+
+## Batched allocation external sync architecture
+
+The integrated allocation sync for `/sales/bike-allocation` and `/sales/qpart-allocation` now has separate single-row and bulk execution paths. Single-row actions keep the straightforward BC-gated writer. Bulk actions use `lib/sales/allocation-external-sync.ts` to normalize targets, batch Neon reads, and call `lib/external-pg/variant-tables.ts` once for the external batch.
+
+Bulk architecture details:
+
+- Neon BC gate: unique SKUs are loaded from `bc_item_variant_map` in one query and evaluated in memory.
+- Bike ruleset lookup: unique SKUs are loaded from `cpq_sampler_result` in one deterministic grouped/ranked query. QPart uses the fixed `Qpart` override and bypasses sampler ruleset lookup.
+- External connection lifecycle: one external PostgreSQL client is opened for the bulk operation and reused for batched existence reads plus writes.
+- External existence checks: `variants` is checked by SKU and `variant_eligibilities` by SKU/country using JSONB recordsets, chunked at 1,000 requested keys.
+- External writes: UPDATE/INSERT remains SELECT-first rather than `ON CONFLICT`; writes are bounded by `EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY` (default `5`) to avoid unbounded `Promise.all` pressure.
+- Observability: bulk stages log timing for target collection, BC map load, ruleset map load where applicable, external batch sync, and completion; external client/query stages are also logged through the existing stage callback.

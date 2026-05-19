@@ -19,11 +19,9 @@ Implemented now:
 
 - Single-cell Push from `/sales/bike-allocation`.
 - Single-cell Push from `/sales/qpart-allocation`.
+- Bulk Active/Inactive integrated external sync for bike and QPart allocation.
+- Bulk **Push all BC OK** external sync for bike and QPart allocation.
 - Diagnostics for connection, table existence/readability, and rollback-safe writes to the new target tables.
-
-Not implemented now:
-
-- Bulk external sync. Future bulk work should compare external rows to Neon rows that have BC IDs, then sync `variants` first and `variant_eligibilities` second.
 
 ## Preconditions
 
@@ -231,3 +229,26 @@ Scope rules:
 - QPart **Push all BC OK** uses the same filter criteria and country scope as QPart bulk activate/deactivate, so it is not a whole-database push.
 
 The manual per-cell external sync pill remains available as a retry/diagnostic action and uses the same BC OK gate.
+
+## Bulk allocation sync optimization
+
+Bulk Active/Inactive and **Push all BC OK** now use a batched allocation-to-external path instead of opening the external PostgreSQL writer once per SKU/country target.
+
+The behavior and table order are unchanged:
+
+1. The internal Neon allocation mutation completes first.
+2. The latest Neon `bc_item_variant_map` row must have `bc_status = 'OK'` and both `bc_product_id` and `bc_variant_id`.
+3. External `variants` is written before `variant_eligibilities`.
+4. QPart still maps `BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` to `Qpart`.
+5. External write failures do not roll back the successful Neon allocation update.
+
+The bulk path reduces repeated work as follows:
+
+- It collects unique target SKUs and reads the latest `bc_item_variant_map` rows in one Neon query.
+- Bike allocation collects unique SKUs and reads deterministic latest sampler rulesets in one Neon query; QPart does not query sampler rulesets and continues to use the hardcoded `Qpart` mapping.
+- It opens one external PostgreSQL connection for the batch through `withExternalPgClient`, reuses it for all external table reads/writes, and closes it once.
+- It performs SELECT-first existence checks in batches: all requested `variants` SKUs, then all requested `variant_eligibilities` SKU/country pairs.
+- It still does not use `ON CONFLICT` because the external database may not have the required unique indexes on `variants("Sku")` or `variant_eligibilities("Sku", "CountryCode")`.
+- Row writes remain parameterized UPDATE/INSERT statements with bounded concurrency. The default limit is `5`, tunable with `EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY`.
+
+Bulk responses include compact aggregate counts under `result.externalSync`: `attempted`, `totalTargets`, `pushed`, `pendingBc`, `errors`, `variantsInserted`, `variantsUpdated`, `eligibilityInserted`, `eligibilityUpdated`, `skipped`, and `timingsMs`. Per-row payloads are intentionally not returned by bulk routes to keep large operations lightweight.

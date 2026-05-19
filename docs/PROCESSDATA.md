@@ -234,3 +234,13 @@ New operational model for `/sales/bike-allocation` and `/sales/qpart-allocation`
 Bulk activate and bulk deactivate apply the same sequence to every row/country in scope. The new **Push all BC OK** bulk action only performs step 2 onward; it does not change Active/Inactive state.
 
 QPart scope is controlled by the Territory filter and the current-page vs password-protected Update-all mode. Bike scope remains the current page/client-filtered rows plus selected bulk countries.
+
+## Allocation to external PostgreSQL bulk process
+
+The Sales bike and QPart allocation bulk process now batches the expensive lookup and external sync stages while preserving the existing business sequence. Bulk activate/deactivate first updates Neon allocation state, then the external sync helper collects unique SKU/country targets from the current page or filtered Update-all scope.
+
+For all bulk operations, the helper reads latest BC status and BC IDs from Neon `bc_item_variant_map` once for the unique SKU set. Bike allocation also reads deterministic latest `cpq_sampler_result.ruleset` values once for the unique SKU set; QPart allocation never reads sampler rulesets for external mapping and continues to send `Qpart` for `BblRuleSetItem`, `ForecastCtyCode`, and `DetailId`.
+
+The external writer reuses one PostgreSQL client for the batch. It batches SELECT-first existence checks for `variants` and `variant_eligibilities`, then writes rows with the configured bounded concurrency (`EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY`, default `5`). `ON CONFLICT` is still avoided because the external PostgreSQL target may not enforce the unique indexes that would make conflict handling safe.
+
+Operational constraints remain: external writes are still row-level UPDATE/INSERT operations after the batched existence reads, the mandatory table order remains `variants` before `variant_eligibilities`, and external failures do not roll back already completed Neon allocation changes.
