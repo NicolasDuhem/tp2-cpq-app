@@ -224,3 +224,6 @@ Bulk architecture details:
 - External existence checks: `variants` is checked by SKU and `variant_eligibilities` by SKU/country using JSONB recordsets, chunked at 1,000 requested keys.
 - External writes: UPDATE/INSERT remains SELECT-first rather than `ON CONFLICT`; writes are bounded by `EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY` (default `5`) to avoid unbounded `Promise.all` pressure.
 - Observability: bulk stages log timing for target collection, BC map load, ruleset map load where applicable, external batch sync, and completion; external client/query stages are also logged through the existing stage callback.
+
+## Auth and permission foundation (May 19, 2026)
+User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.

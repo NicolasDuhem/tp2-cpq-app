@@ -177,3 +177,6 @@ The cell status is now two-level: the main availability pill remains **Active** 
 Bulk Active/Inactive and **Push all BC OK** on `/sales/bike-allocation` and `/sales/qpart-allocation` now use an optimized bulk external-sync path. The internal Neon allocation update still happens first, and the BC gate is unchanged: external PostgreSQL writes happen only when the latest `bc_item_variant_map` row has `bc_status = 'OK'` plus both BC IDs.
 
 The optimized path batches Neon BC-ID lookups by unique SKU, batches bike ruleset lookup by unique SKU, reuses one external PostgreSQL connection per bulk operation, batches SELECT-first existence checks for `variants` and `variant_eligibilities`, and writes with bounded concurrency (`EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY`, default `5`). `ON CONFLICT` is still not used because the external target database may not enforce the unique indexes required for safe conflict handling.
+
+## Auth and permission foundation (May 19, 2026)
+User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.
