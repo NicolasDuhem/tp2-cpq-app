@@ -446,13 +446,10 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
   const resolveActiveRuleset = (requestedRuleset?: string) => {
     const targetRuleset = (requestedRuleset ?? rulesetRef.current).trim();
     if (!targetRuleset) return null;
-    return (
-    <div {...readOnlyActionGuard} title={!canEdit ? 'You need Edit access for this action.' : undefined}>
-      rulesets.find((entry) => entry.cpq_ruleset === targetRuleset) ?? {
-        ...fallbackRuleset,
-        cpq_ruleset: targetRuleset,
-      }
-    );
+    return rulesets.find((entry) => entry.cpq_ruleset === targetRuleset) ?? {
+      ...fallbackRuleset,
+      cpq_ruleset: targetRuleset,
+    };
   };
   useEffect(() => {
     accountCodeRef.current = accountCode;
@@ -2671,7 +2668,11 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
   };
 
   return (
-    <main style={styles.page}>
+    <main
+      {...readOnlyActionGuard}
+      style={styles.page}
+      title={!canEdit ? 'You need Edit access for this action.' : undefined}
+    >
       <section style={styles.controls}>
         <div style={styles.controlsHeader}>
           <PageHeader
@@ -3340,7 +3341,6 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
         </div>
       ) : null}
     </main>
-    </div>
   );
 }
 

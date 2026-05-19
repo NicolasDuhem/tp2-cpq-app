@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const forbidden = await requirePageEdit('cpq.setup');
   if (forbidden) return forbidden;
- {
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   try {
