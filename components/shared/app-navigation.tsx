@@ -98,16 +98,51 @@ export default function AppNavigation() {
     <>
       {isMenuOpen ? <div className="megaMenuBackdrop" onClick={() => setIsMenuOpen(false)} /> : null}
       <div className="appNavWrap" ref={containerRef}>
-        <button
-          className={`menuTrigger ${isMenuOpen ? 'isOpen' : ''}`}
-          type="button"
-          aria-expanded={isMenuOpen}
-          aria-controls="mega-menu-panel"
-          aria-label="Open navigation menu"
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-        >
-          <span aria-hidden="true">⊞</span> Menu
-        </button>
+        <div className="menuAnchor">
+          <button
+            className={`menuTrigger ${isMenuOpen ? 'isOpen' : ''}`}
+            type="button"
+            aria-expanded={isMenuOpen}
+            aria-controls="mega-menu-panel"
+            aria-label="Open navigation menu"
+            onClick={() => setIsMenuOpen((prev) => !prev)}
+          >
+            <span aria-hidden="true">⊞</span> Menu
+          </button>
+          {isMenuOpen ? (
+            <nav id="mega-menu-panel" className="megaMenuPanel" role="navigation" aria-label="Primary navigation">
+              {groupedLinks.map(({ section, links: sectionLinks }) => (
+                <section key={section} className="megaMenuSection">
+                  <button
+                    type="button"
+                    className={`mega-menu-section-header ${openMobileSection === section ? 'isExpanded' : ''}`}
+                    onClick={() => setOpenMobileSection((prev) => (prev === section ? null : section))}
+                  >
+                    {section}
+                  </button>
+                  <div className={`megaMenuLinks ${openMobileSection === section ? 'isOpen' : ''}`}>
+                    {sectionLinks.map((link) => {
+                      const isActive = pathname === link.href.split('?')[0];
+                      return (
+                        <Link
+                          className={`megaMenuLink ${isActive ? 'isActive' : ''}`}
+                          key={link.href}
+                          href={link.href}
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <span>{link.label}</span>
+                          <span className="menuChevron" aria-hidden="true">
+                            ›
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </nav>
+          ) : null}
+        </div>
         <div className="adminModeActions">
           <UserStatus />
           {!isAdminMode ? (
@@ -124,39 +159,6 @@ export default function AppNavigation() {
           )}
         </div>
 
-        {isMenuOpen ? (
-          <nav id="mega-menu-panel" className="megaMenuPanel" role="navigation" aria-label="Primary navigation">
-            {groupedLinks.map(({ section, links: sectionLinks }) => (
-              <section key={section} className="megaMenuSection">
-                <button
-                  type="button"
-                  className={`megaMenuSectionTitle ${openMobileSection === section ? 'isExpanded' : ''}`}
-                  onClick={() => setOpenMobileSection((prev) => (prev === section ? null : section))}
-                >
-                  {section}
-                </button>
-                <div className={`megaMenuLinks ${openMobileSection === section ? 'isOpen' : ''}`}>
-                  {sectionLinks.map((link) => {
-                    const isActive = pathname === link.href.split('?')[0];
-                    return (
-                      <Link
-                        className={`megaMenuLink ${isActive ? 'isActive' : ''}`}
-                        key={link.href}
-                        href={link.href}
-                        onClick={() => setIsMenuOpen(false)}
-                      >
-                        <span>{link.label}</span>
-                        <span className="menuChevron" aria-hidden="true">
-                          ›
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </nav>
-        ) : null}
       </div>
 
       {adminPromptOpen ? (
