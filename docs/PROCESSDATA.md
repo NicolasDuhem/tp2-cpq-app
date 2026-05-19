@@ -262,3 +262,5 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 ### Allocation audit behavior
 - Allocation Active/Inactive changes now write audit rows into `app_allocation_audit_log` for bike and qpart single/bulk toggles.
 - Bulk actions create one audit row per changed item/country only.
+- Allocation audit rows also persist `bigcommerce_status` using already-loaded/cached BC map data (`bc_item_variant_map`) where available; if unavailable, audit stores `null` (or `UNKNOWN` if explicitly provided by upstream status data).
+- Bulk audit logging must not do one BigCommerce API call per row just to populate audit status.

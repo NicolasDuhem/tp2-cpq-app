@@ -255,13 +255,16 @@ User management, local login/session foundation, and per-page permissions were a
 
 ## Allocation Active/Inactive Audit Log
 - Table: `app_allocation_audit_log` (migration `sql/migrations/2026-05-19_allocation_audit_log.sql`).
-- Captures actor (id/email/display), page/source/entity/item/country, action type, `status_before`, `status_after`, and json metadata.
+- Captures actor (id/email/display), page/source/entity/item/country, action type, `status_before`, `status_after`, `bigcommerce_status`, and json metadata.
+- `bigcommerce_status` stores the latest known BC map status (`OK|NOK|ERR|DISABLED|UNKNOWN`) when available from existing Neon-side data; otherwise it is `null`.
+- Canonical searchable status is `app_allocation_audit_log.bigcommerce_status` (metadata may still also include `bigcommerceStatus` for compatibility).
+- Indexes include `created_at desc` and `bigcommerce_status` for history filtering.
 - Audited writes: bike single/bulk active toggle, QPart single/bulk active toggle. Only real status changes are logged.
 - Creation auditing (CSV/manual/CPQ-created) should write `status_before = null` and creation action types when those creation paths insert allocation rows.
 - Not audited: filter/search/pagination/read-only status checks/pushes that do not modify Active/create allocation rows.
 - Query example:
 ```sql
-select created_at, actor_display_name, actor_email, page_key, source_process, entity_type, item_code, country_code, action_type, status_before, status_after, metadata
+select created_at, actor_display_name, actor_email, page_key, source_process, entity_type, item_code, country_code, bigcommerce_status, action_type, status_before, status_after, metadata
 from app_allocation_audit_log
 order by created_at desc
 limit 200;
