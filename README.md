@@ -194,3 +194,5 @@ User management, local login/session foundation, and per-page permissions were a
 
 ### Allocation audit
 - Active/Inactive status changes on Sales Bike Allocation and Sales QPart Allocation are written to `app_allocation_audit_log` with before/after values and actor metadata.
+
+- `/sales/allocation-audit` → read-only audit history lookup by item code (bike IPN/SKU or QPart code), with permission key `sales.allocation_audit`.

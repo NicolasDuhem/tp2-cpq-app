@@ -269,3 +269,5 @@ from app_allocation_audit_log
 order by created_at desc
 limit 200;
 ```
+
+- Allocation audit lookup route reads `app_allocation_audit_log` by case-insensitive `item_code` with optional `entity_type`, `country_code`, and date range filters; indexes include `(item_code, created_at desc)` and `(item_code, country_code, created_at desc)`.

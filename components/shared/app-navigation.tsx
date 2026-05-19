@@ -13,6 +13,7 @@ const links: NavLink[] = [
   { href: '/cpq/process', label: 'Process' },
   { href: '/sales/bike-allocation', label: 'Bike Allocation', pageKey: 'sales.bike_allocation' },
   { href: '/sales/qpart-allocation', label: 'QPart Allocation', pageKey: 'sales.qpart_allocation' },
+  { href: '/sales/allocation-audit', label: 'Allocation audit', pageKey: 'sales.allocation_audit' },
   { href: '/cpq', label: 'Bike Builder', pageKey: 'cpq.configure' },
   { href: '/cpq/setup?tab=accounts', label: 'Setup Accounts', pageKey: 'cpq.setup.accounts' },
   { href: '/cpq/setup?tab=rulesets', label: 'Setup Rulesets', pageKey: 'cpq.setup.rulesets' },
