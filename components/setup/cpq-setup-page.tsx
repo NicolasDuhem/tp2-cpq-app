@@ -940,17 +940,22 @@ export default function CpqSetupPage({
                 </label>
                 <div className="modalActions">
                   <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => setPictureDraft(null)}>Cancel</button>
-                  <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined}
+                  <button
+                    disabled={!canEdit || savingImageId === pictureDraft.id}
+                    title={!canEdit ? 'You need Edit access for this action.' : undefined}
                     className="primary"
-                    disabled={savingImageId === pictureDraft.id}
-                    onClick={() => void savePictureRow(pictureDraft.id, {
-                      picture_link_1: pictureDraft.picture_link_1,
-                      picture_link_2: pictureDraft.picture_link_2,
-                      picture_link_3: pictureDraft.picture_link_3,
-                      picture_link_4: pictureDraft.picture_link_4,
-                      is_active: pictureDraft.is_active,
-                      ignore_during_configure: pictureDraft.ignore_during_configure,
-                    })}
+                    onClick={() => {
+                      if (!canEdit || savingImageId === pictureDraft.id) return;
+
+                      void savePictureRow(pictureDraft.id, {
+                        picture_link_1: pictureDraft.picture_link_1,
+                        picture_link_2: pictureDraft.picture_link_2,
+                        picture_link_3: pictureDraft.picture_link_3,
+                        picture_link_4: pictureDraft.picture_link_4,
+                        is_active: pictureDraft.is_active,
+                        ignore_during_configure: pictureDraft.ignore_during_configure,
+                      });
+                    }}
                   >
                     {savingImageId === pictureDraft.id ? 'Saving…' : 'Save'}
                   </button>
