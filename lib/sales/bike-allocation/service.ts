@@ -27,6 +27,7 @@ type SamplerRow = {
   active: boolean | string | number | null;
   json_result: unknown;
   has_bc_ids: boolean | null;
+  bc_status: string | null;
 };
 
 type ParsedOption = {
@@ -201,10 +202,11 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
       detail_id,
       active,
       json_result,
-      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids
+      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids,
+      map.bc_status
     from CPQ_sampler_result
     left join lateral (
-      select bc_product_id, bc_variant_id
+      select bc_product_id, bc_variant_id, bc_status
       from public.bc_item_variant_map map
       where coalesce(trim(map.sku_code), '') = coalesce(trim(CPQ_sampler_result.ipn_code), '')
       order by updated_at desc nulls last, id desc
@@ -243,10 +245,18 @@ export async function updateAllocationCellStatus(input: {
   if (!countryCode) throw new Error('countryCode is required');
 
   const targetActive = toStatusBoolean(input.targetStatus);
+  const bcStatusRows = (await sql`
+    select bc_status
+    from public.bc_item_variant_map
+    where coalesce(trim(sku_code), '') = ${ipnCode}
+    order by updated_at desc nulls last, id desc
+    limit 1
+  `) as Array<{ bc_status: string | null }>;
+  const bigcommerceStatus = asTrimmed(bcStatusRows[0]?.bc_status).toUpperCase() || null;
   const priorRows = (await sql`select active from CPQ_sampler_result where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode}`) as Array<{active:boolean|null}>;
   const statusBefore = priorRows[0]?.active ?? null;
   const updatedRows = (await sql`update CPQ_sampler_result set active = ${targetActive}, updated_at = now() where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode} and coalesce(active,false) <> ${targetActive} returning id`) as Array<{ id: number }>;
-  if (updatedRows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_single_toggle', entityType: 'bike', itemCode: ipnCode, countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore, statusAfter: targetActive }]);
+  if (updatedRows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_single_toggle', entityType: 'bike', itemCode: ipnCode, countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore, statusAfter: targetActive, bigcommerceStatus }]);
 
   const externalSync = updatedRows.length
     ? await syncBikeAllocationToExternalIfBcOk({ ruleset, ipnCode, countryCode })
@@ -292,7 +302,32 @@ export async function bulkUpdateAllocationStatus(input: {
       and coalesce(sr.active,false) <> ${targetActive}
     returning coalesce(trim(sr.ruleset), '') as ruleset, coalesce(trim(sr.ipn_code), '') as ipn_code, coalesce(trim(sr.country_code), '') as country_code, (not ${targetActive}) as status_before
   `) as Array<{ ruleset: string; ipn_code: string; country_code: string; status_before: boolean }>;
-  if (changedRows.length) await insertAllocationAuditRows(changedRows.map((row) => ({ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_bulk_toggle', entityType: 'bike', itemCode: row.ipn_code, countryCode: row.country_code, actionType: targetActive ? 'bulk_activated' : 'bulk_deactivated', statusBefore: row.status_before, statusAfter: targetActive, metadata: { bulk: true, operation: targetActive ? 'bulk_activate' : 'bulk_deactivate', affectedCount: changedRows.length, scope: input.scope ?? 'current_page' } })));
+  const bcStatusBySku = new Map<string, string | null>();
+  if (changedRows.length) {
+    const skuRows = [...new Set(changedRows.map((row) => row.ipn_code))];
+    const bcRows = (await sql`
+      with target_skus as (
+        select value::text as sku_code
+        from jsonb_array_elements_text(${JSON.stringify(skuRows)}::jsonb)
+      ),
+      ranked as (
+        select
+          coalesce(trim(map.sku_code), '') as sku_code,
+          map.bc_status,
+          row_number() over (
+            partition by coalesce(trim(map.sku_code), '')
+            order by map.updated_at desc nulls last, map.id desc
+          ) as rn
+        from public.bc_item_variant_map map
+        join target_skus on coalesce(trim(map.sku_code), '') = target_skus.sku_code
+      )
+      select sku_code, bc_status
+      from ranked
+      where rn = 1
+    `) as Array<{ sku_code: string; bc_status: string | null }>;
+    for (const row of bcRows) bcStatusBySku.set(row.sku_code, asTrimmed(row.bc_status).toUpperCase() || null);
+  }
+  if (changedRows.length) await insertAllocationAuditRows(changedRows.map((row) => ({ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_bulk_toggle', entityType: 'bike', itemCode: row.ipn_code, countryCode: row.country_code, bigcommerceStatus: bcStatusBySku.get(row.ipn_code) ?? null, actionType: targetActive ? 'bulk_activated' : 'bulk_deactivated', statusBefore: row.status_before, statusAfter: targetActive, metadata: { bulk: true, operation: targetActive ? 'bulk_activate' : 'bulk_deactivate', affectedCount: changedRows.length, scope: input.scope ?? 'current_page' } })));
 
   const uniqueTargets = [
     ...new Map(
