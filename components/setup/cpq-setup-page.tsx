@@ -748,7 +748,17 @@ export default function CpqSetupPage({
       {tab === 'pictures' && (
         <section className="compactCard compactSection">
           <div className="toolbar compactToolbar">
-            <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={() => void syncPictures()} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync from sampler results'}</button>
+            <button
+              disabled={!canEdit || syncing}
+              title={!canEdit ? 'You need Edit access for this action.' : undefined}
+              className="primary"
+              onClick={() => {
+                if (!canEdit || syncing) return;
+                void syncPictures();
+              }}
+            >
+              {syncing ? 'Syncing…' : 'Sync from sampler results'}
+            </button>
             <label className="pictureSearchField">
               Search feature, option, or value
               <input value={pictureSearch} onChange={(e) => setPictureSearch(e.target.value)} placeholder="Type to filter picture mappings" />
