@@ -1,5 +1,5 @@
 import { sql } from '@/lib/db/client';
-import type { BCStatus } from '@/lib/bigcommerce/item-map';
+import { normalizeBCStatus, type BCStatus } from '@/lib/bigcommerce/item-map';
 
 export type AllocationAuditActor = {
   userId?: string | null;
@@ -23,13 +23,6 @@ export type AllocationAuditRowInput = {
 
 const asTrim = (v: unknown) => String(v ?? '').trim();
 
-const normalizeBCStatus = (value: unknown): BCStatus | null => {
-  const status = asTrim(value).toUpperCase();
-  if (status === 'OK' || status === 'NOK' || status === 'ERR' || status === 'DISABLED' || status === 'UNKNOWN') {
-    return status;
-  }
-  return null;
-};
 
 export async function insertAllocationAuditRows(rows: AllocationAuditRowInput[]) {
   if (!rows.length) return { insertedCount: 0 };
@@ -43,7 +36,7 @@ export async function insertAllocationAuditRows(rows: AllocationAuditRowInput[])
     entity_type: row.entityType,
     item_code: asTrim(row.itemCode),
     country_code: asTrim(row.countryCode).toUpperCase() || null,
-    bigcommerce_status: normalizeBCStatus(row.bigcommerceStatus),
+    bigcommerce_status: row.bigcommerceStatus == null ? null : normalizeBCStatus(row.bigcommerceStatus),
     action_type: asTrim(row.actionType),
     status_before: row.statusBefore,
     status_after: row.statusAfter,
