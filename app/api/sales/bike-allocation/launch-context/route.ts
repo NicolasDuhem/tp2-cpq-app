@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PAGE_KEYS, requirePageRead } from '@/lib/auth/page-access';
+import { PAGE_KEYS } from '@/lib/auth/page-keys';
+import { requirePageRead } from '@/lib/auth/page-access';
 import { resolveConfiguratorLaunchContext } from '@/lib/sales/bike-allocation/service';
 
 export async function POST(req: NextRequest) {
