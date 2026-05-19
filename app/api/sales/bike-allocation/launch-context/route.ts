@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PAGE_KEYS, requirePageRead } from '@/lib/auth/page-access';
 import { resolveConfiguratorLaunchContext } from '@/lib/sales/bike-allocation/service';
 
 export async function POST(req: NextRequest) {
+  const forbidden = await requirePageRead(PAGE_KEYS.bike);
+  if (forbidden) return forbidden;
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   try {

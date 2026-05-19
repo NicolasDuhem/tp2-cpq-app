@@ -50,3 +50,10 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
 2. Enter email/password and click **Login**.
 3. Click **Test current login** to call `/api/auth/me` and inspect current user payload.
 4. Header user menu (`👤`) shows logged-in identity and allows **Logout**.
+
+## 2026-05-19 auth/session + allocation permission enforcement updates
+- Fixed auth endpoints and client fetches to use no-store + credentials include and explicit auth refresh events.
+- Added strict page-key enforcement for sales.bike_allocation and sales.qpart_allocation on allocation APIs (read vs edit).
+- Added page-level login/access denied handling on Bike Allocation and QPart Allocation pages.
+- Added temporary access-level debug text in Bike Allocation page header.
+- Global middleware lock and audit trail remain intentionally out of scope.

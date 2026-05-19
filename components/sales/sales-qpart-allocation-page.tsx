@@ -1,3 +1,6 @@
+import Link from 'next/link';
+import { getCurrentUser } from '@/lib/auth/session';
+import { canReadPage } from '@/lib/auth/permissions';
 import { getSalesQPartAllocationPageData, QPartBCStatusFilter } from '@/lib/sales/qpart-allocation/service';
 import SalesQPartAllocationTableClient from './sales-qpart-allocation-table.client';
 import styles from './sales-qpart-allocation-page.module.css';
@@ -29,6 +32,10 @@ function parseBCStatuses(value: string | undefined): QPartBCStatusFilter[] {
 }
 
 export default async function SalesQPartAllocationPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const user = await getCurrentUser();
+  const pageKey = 'sales.qpart_allocation';
+  if (!user) return <div className='card'><h3>Please login</h3><p>You must be logged in to access this page.</p><Link href='/login'>Go to login</Link></div>;
+  if (!canReadPage(user, pageKey)) return <div className='card'><h3>Access denied</h3><p>You do not have permission to view this page.</p></div>;
   const resolved = (await searchParams) ?? {};
   const hierarchySelection = Object.fromEntries(
     Array.from({ length: 7 }).map((_, index) => {

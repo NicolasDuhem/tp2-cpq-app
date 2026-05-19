@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PAGE_KEYS, requirePageRead } from '@/lib/auth/page-access';
 import { lookupExternalVariantEligibilityStatuses } from '@/lib/external-pg/variant-tables';
 import { toExternalPgApiError } from '@/lib/external-pg/errors';
 import {
@@ -9,6 +10,9 @@ import {
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const forbidden = await requirePageRead(PAGE_KEYS.qpart);
+  if (forbidden) return forbidden;
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   let currentStage = 'request_received';
 

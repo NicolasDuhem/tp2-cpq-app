@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PAGE_KEYS, requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { toggleQPartCountryAllocation } from '@/lib/sales/qpart-allocation/service';
 
 export async function POST(req: NextRequest) {
+  const forbidden = await requirePageEdit(PAGE_KEYS.qpart);
+  if (forbidden) return forbidden;
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const targetStatus = String(body.targetStatus ?? '').trim();
 

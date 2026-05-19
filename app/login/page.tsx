@@ -11,15 +11,16 @@ export default function LoginPage() {
 
   const submit = async () => {
     setError('');
-    const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const res = await fetch('/api/auth/login', { method: 'POST', cache: 'no-store', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     const json = await res.json();
     if (!res.ok) return setError(json.error || 'Login failed');
+    window.dispatchEvent(new Event('auth:changed'));
     router.push('/sales/bike-allocation');
     router.refresh();
   };
 
   const testLogin = async () => {
-    const res = await fetch('/api/auth/me', { cache: 'no-store' });
+    const res = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' });
     setMe(await res.json());
   };
 
