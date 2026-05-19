@@ -1,0 +1,24 @@
+"table_schema","table_name","estimated_live_rows","estimated_dead_rows","last_vacuum","last_autovacuum","last_analyze","last_autoanalyze"
+"public","qpart_country_allocation",49112,2284,,"2026-05-12 08:26:25.42641+00",,"2026-05-12 08:26:25.486152+00"
+"public","qpart_part_metadata_values",7042,46,,"2026-04-24 15:00:15.20259+00",,"2026-04-24 15:01:15.238027+00"
+"public","qpart_part_translations",5280,60,,"2026-04-24 15:00:15.223692+00",,"2026-04-24 15:01:15.250569+00"
+"public","bc_item_variant_map",1860,0,,"2026-05-19 15:01:11.302406+00",,"2026-05-19 15:01:11.313377+00"
+"public","qpart_parts",1756,18,,"2026-04-24 15:00:15.241599+00",,"2026-04-24 15:01:15.26276+00"
+"public","qpart_hierarchy_nodes",276,1,,"2026-04-24 14:35:14.892766+00",,"2026-04-24 14:36:14.9159+00"
+"public","cpq_configuration_references",139,0,,,,"2026-04-21 10:32:16.02928+00"
+"public","cpq_image_management",134,56,,,,"2026-04-16 10:31:39.662353+00"
+"public","cpq_sampler_result",117,52,,"2026-04-22 15:54:50.139548+00",,"2026-05-19 08:48:50.015598+00"
+"public","cpq_country_mappings",28,0,,,,
+"public","app_user_page_permissions",28,12,,,,"2026-05-19 09:07:50.259282+00"
+"public","qpart_part_images",23,1,,,,
+"public","app_allocation_audit_log",23,0,,,,
+"public","qpart_metadata_definitions",14,14,,,,
+"public","qpart_part_channel_assignment",13,16,,,,
+"public","app_permission_pages",11,0,,,,
+"public","cpq_setup_ruleset",9,0,,,,
+"public","app_sessions",8,15,,,,
+"public","cpq_setup_account_context",6,15,,,,
+"public","app_users",4,11,,,,
+"public","qpart_part_compatibility_rules",4,41,,,,"2026-04-24 12:39:28.051808+00"
+"public","qpart_part_bike_type_compatibility",3,22,,,,
+"public","qpart_compatibility_reference_values",0,0,,,,

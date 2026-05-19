@@ -1,0 +1,261 @@
+"table_schema","table_name","constraint_name","constraint_type","column_name","ordinal_position","check_clause"
+"public","app_allocation_audit_log","2200_573441_11_not_null","CHECK",,,"action_type IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_14_not_null","CHECK",,,"metadata IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_2_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_6_not_null","CHECK",,,"page_key IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_7_not_null","CHECK",,,"source_process IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_8_not_null","CHECK",,,"entity_type IS NOT NULL"
+"public","app_allocation_audit_log","2200_573441_9_not_null","CHECK",,,"item_code IS NOT NULL"
+"public","app_allocation_audit_log","app_allocation_audit_log_pkey","PRIMARY KEY","id",1,
+"public","app_permission_pages","2200_565261_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","app_permission_pages","2200_565261_2_not_null","CHECK",,,"page_key IS NOT NULL"
+"public","app_permission_pages","2200_565261_3_not_null","CHECK",,,"page_label IS NOT NULL"
+"public","app_permission_pages","2200_565261_4_not_null","CHECK",,,"route_path IS NOT NULL"
+"public","app_permission_pages","2200_565261_6_not_null","CHECK",,,"display_order IS NOT NULL"
+"public","app_permission_pages","2200_565261_7_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","app_permission_pages","2200_565261_8_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","app_permission_pages","2200_565261_9_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","app_permission_pages","app_permission_pages_pkey","PRIMARY KEY","id",1,
+"public","app_permission_pages","app_permission_pages_page_key_key","UNIQUE","page_key",1,
+"public","app_sessions","2200_565298_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","app_sessions","2200_565298_2_not_null","CHECK",,,"user_id IS NOT NULL"
+"public","app_sessions","2200_565298_3_not_null","CHECK",,,"session_token_hash IS NOT NULL"
+"public","app_sessions","2200_565298_4_not_null","CHECK",,,"expires_at IS NOT NULL"
+"public","app_sessions","2200_565298_5_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","app_sessions","app_sessions_user_id_fkey","FOREIGN KEY","user_id",1,
+"public","app_sessions","app_sessions_pkey","PRIMARY KEY","id",1,
+"public","app_sessions","app_sessions_session_token_hash_key","UNIQUE","session_token_hash",1,
+"public","app_user_page_permissions","2200_565275_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","app_user_page_permissions","2200_565275_2_not_null","CHECK",,,"user_id IS NOT NULL"
+"public","app_user_page_permissions","2200_565275_3_not_null","CHECK",,,"page_key IS NOT NULL"
+"public","app_user_page_permissions","2200_565275_4_not_null","CHECK",,,"permission_level IS NOT NULL"
+"public","app_user_page_permissions","2200_565275_5_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","app_user_page_permissions","2200_565275_6_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","app_user_page_permissions","app_user_page_permissions_permission_level_check","CHECK",,,"(permission_level = ANY (ARRAY['none'::text, 'read'::text, 'edit'::text, 'admin'::text]))"
+"public","app_user_page_permissions","app_user_page_permissions_page_key_fkey","FOREIGN KEY","page_key",1,
+"public","app_user_page_permissions","app_user_page_permissions_user_id_fkey","FOREIGN KEY","user_id",1,
+"public","app_user_page_permissions","app_user_page_permissions_pkey","PRIMARY KEY","id",1,
+"public","app_user_page_permissions","app_user_page_permissions_user_id_page_key_key","UNIQUE","user_id",1,
+"public","app_user_page_permissions","app_user_page_permissions_user_id_page_key_key","UNIQUE","page_key",2,
+"public","app_users","2200_565248_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","app_users","2200_565248_2_not_null","CHECK",,,"email IS NOT NULL"
+"public","app_users","2200_565248_3_not_null","CHECK",,,"display_name IS NOT NULL"
+"public","app_users","2200_565248_4_not_null","CHECK",,,"password_hash IS NOT NULL"
+"public","app_users","2200_565248_5_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","app_users","2200_565248_6_not_null","CHECK",,,"is_system_admin IS NOT NULL"
+"public","app_users","2200_565248_8_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","app_users","2200_565248_9_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","app_users","app_users_pkey","PRIMARY KEY","id",1,
+"public","bc_item_variant_map","2200_516097_16_not_null","CHECK",,,"bc_channel_status IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_24_not_null","CHECK",,,"source_system IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_25_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_26_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_2_not_null","CHECK",,,"sku_code IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_3_not_null","CHECK",,,"item_type IS NOT NULL"
+"public","bc_item_variant_map","2200_516097_7_not_null","CHECK",,,"bc_status IS NOT NULL"
+"public","bc_item_variant_map","bc_item_variant_map_channel_status_check","CHECK",,,"(bc_channel_status = ANY (ARRAY['OK'::text, 'NOK'::text, 'ERR'::text, 'DISABLED'::text, 'UNKNOWN'::text]))"
+"public","bc_item_variant_map","bc_item_variant_map_item_type_check","CHECK",,,"(item_type = ANY (ARRAY['BIKE'::text, 'QPART'::text, 'PNA'::text, 'UNKNOWN'::text]))"
+"public","bc_item_variant_map","bc_item_variant_map_status_check","CHECK",,,"(bc_status = ANY (ARRAY['OK'::text, 'NOK'::text, 'ERR'::text, 'DISABLED'::text, 'UNKNOWN'::text]))"
+"public","bc_item_variant_map","bc_item_variant_map_pkey","PRIMARY KEY","id",1,
+"public","bc_item_variant_map","bc_item_variant_map_sku_code_key","UNIQUE","sku_code",1,
+"public","cpq_configuration_references","2200_139265_12_not_null","CHECK",,,"json_snapshot IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_13_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_14_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_15_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_2_not_null","CHECK",,,"configuration_reference IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_30_not_null","CHECK",,,"finalize_response_json IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_3_not_null","CHECK",,,"canonical_header_id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_4_not_null","CHECK",,,"canonical_detail_id IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_5_not_null","CHECK",,,"ruleset IS NOT NULL"
+"public","cpq_configuration_references","2200_139265_6_not_null","CHECK",,,"namespace IS NOT NULL"
+"public","cpq_configuration_references","cpq_configuration_references_pkey","PRIMARY KEY","id",1,
+"public","cpq_configuration_references","cpq_configuration_references_configuration_reference_key","UNIQUE","configuration_reference",1,
+"public","cpq_country_mappings","2200_466945_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_2_not_null","CHECK",,,"region IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_3_not_null","CHECK",,,"sub_region IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_4_not_null","CHECK",,,"country_code IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_5_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_6_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_country_mappings","2200_466945_7_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_country_mappings","cpq_country_mappings_country_code_chk","CHECK",,,"(country_code ~ '^[A-Z]{2}$'::text)"
+"public","cpq_country_mappings","cpq_country_mappings_pkey","PRIMARY KEY","id",1,
+"public","cpq_country_mappings","cpq_country_mappings_uniq","UNIQUE","region",1,
+"public","cpq_country_mappings","cpq_country_mappings_uniq","UNIQUE","sub_region",2,
+"public","cpq_country_mappings","cpq_country_mappings_uniq","UNIQUE","country_code",3,
+"public","cpq_image_management","2200_16559_10_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_image_management","2200_16559_11_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_image_management","2200_16559_12_not_null","CHECK",,,"ignore_during_configure IS NOT NULL"
+"public","cpq_image_management","2200_16559_13_not_null","CHECK",,,"feature_layer_order IS NOT NULL"
+"public","cpq_image_management","2200_16559_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_image_management","2200_16559_2_not_null","CHECK",,,"feature_label IS NOT NULL"
+"public","cpq_image_management","2200_16559_3_not_null","CHECK",,,"option_label IS NOT NULL"
+"public","cpq_image_management","2200_16559_4_not_null","CHECK",,,"option_value IS NOT NULL"
+"public","cpq_image_management","2200_16559_9_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","cpq_image_management","cpq_image_management_feature_layer_order_chk","CHECK",,,"((feature_layer_order >= 1) AND (feature_layer_order <= 20))"
+"public","cpq_image_management","cpq_image_management_pkey","PRIMARY KEY","id",1,
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE","feature_label",1,
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE","option_label",2,
+"public","cpq_image_management","cpq_image_management_feature_label_option_label_option_valu_key","UNIQUE","option_value",3,
+"public","cpq_sampler_result","2200_16544_13_not_null","CHECK",,,"json_result IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_14_not_null","CHECK",,,"processed_for_image_sync IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_16_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_17_not_null","CHECK",,,"active IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_18_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_3_not_null","CHECK",,,"ruleset IS NOT NULL"
+"public","cpq_sampler_result","2200_16544_4_not_null","CHECK",,,"account_code IS NOT NULL"
+"public","cpq_sampler_result","cpq_sampler_result_pkey","PRIMARY KEY","id",1,
+"public","cpq_setup_account_context","2200_16512_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_2_not_null","CHECK",,,"account_code IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_3_not_null","CHECK",,,"customer_id IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_4_not_null","CHECK",,,"currency IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_5_not_null","CHECK",,,"language IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_6_not_null","CHECK",,,"country_code IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_7_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_8_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_setup_account_context","2200_16512_9_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_setup_account_context","cpq_setup_account_context_country_code_chk","CHECK",,,"(country_code ~ '^[A-Z]{2}$'::text)"
+"public","cpq_setup_account_context","cpq_setup_account_context_region_sub_region_country_fk","FOREIGN KEY","region",1,
+"public","cpq_setup_account_context","cpq_setup_account_context_region_sub_region_country_fk","FOREIGN KEY","sub_region",2,
+"public","cpq_setup_account_context","cpq_setup_account_context_region_sub_region_country_fk","FOREIGN KEY","country_code",3,
+"public","cpq_setup_account_context","cpq_setup_account_context_pkey","PRIMARY KEY","id",1,
+"public","cpq_setup_account_context","cpq_setup_account_context_account_code_key","UNIQUE","account_code",1,
+"public","cpq_setup_ruleset","2200_16527_10_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_2_not_null","CHECK",,,"cpq_ruleset IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_5_not_null","CHECK",,,"namespace IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_6_not_null","CHECK",,,"header_id IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_7_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_8_not_null","CHECK",,,"sort_order IS NOT NULL"
+"public","cpq_setup_ruleset","2200_16527_9_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","cpq_setup_ruleset","cpq_setup_ruleset_pkey","PRIMARY KEY","id",1,
+"public","cpq_setup_ruleset","cpq_setup_ruleset_cpq_ruleset_key","UNIQUE","cpq_ruleset",1,
+"public","qpart_compatibility_reference_values","2200_475282_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_2_not_null","CHECK",,,"bike_type IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_3_not_null","CHECK",,,"feature_label IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_4_not_null","CHECK",,,"option_value IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_6_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_7_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_compatibility_reference_values","2200_475282_8_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_compatibility_reference_values","qpart_compatibility_reference_values_pkey","PRIMARY KEY","id",1,
+"public","qpart_compatibility_reference_values","qpart_compatibility_reference_bike_type_feature_label_optio_key","UNIQUE","bike_type",1,
+"public","qpart_compatibility_reference_values","qpart_compatibility_reference_bike_type_feature_label_optio_key","UNIQUE","feature_label",2,
+"public","qpart_compatibility_reference_values","qpart_compatibility_reference_bike_type_feature_label_optio_key","UNIQUE","option_value",3,
+"public","qpart_country_allocation","2200_483329_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_country_allocation","2200_483329_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_country_allocation","2200_483329_3_not_null","CHECK",,,"country_code IS NOT NULL"
+"public","qpart_country_allocation","2200_483329_4_not_null","CHECK",,,"active IS NOT NULL"
+"public","qpart_country_allocation","2200_483329_5_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_country_allocation","2200_483329_6_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_country_allocation","qpart_country_allocation_country_code_chk","CHECK",,,"(country_code ~ '^[A-Z]{2}$'::text)"
+"public","qpart_country_allocation","qpart_country_allocation_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_country_allocation","qpart_country_allocation_pkey","PRIMARY KEY","id",1,
+"public","qpart_country_allocation","qpart_country_allocation_part_country_uniq","UNIQUE","part_id",1,
+"public","qpart_country_allocation","qpart_country_allocation_part_country_uniq","UNIQUE","country_code",2,
+"public","qpart_hierarchy_nodes","2200_475137_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_2_not_null","CHECK",,,"level IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_3_not_null","CHECK",,,"code IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_4_not_null","CHECK",,,"label_en IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_6_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_7_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_hierarchy_nodes","2200_475137_8_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_hierarchy_nodes","qpart_hierarchy_nodes_level_check","CHECK",,,"((level >= 1) AND (level <= 7))"
+"public","qpart_hierarchy_nodes","qpart_hierarchy_nodes_parent_id_fkey","FOREIGN KEY","parent_id",1,
+"public","qpart_hierarchy_nodes","qpart_hierarchy_nodes_pkey","PRIMARY KEY","id",1,
+"public","qpart_metadata_definitions","2200_475181_10_not_null","CHECK",,,"options_json IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_11_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_12_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_2_not_null","CHECK",,,"key IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_3_not_null","CHECK",,,"label_en IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_4_not_null","CHECK",,,"field_type IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_5_not_null","CHECK",,,"is_translatable IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_6_not_null","CHECK",,,"is_required IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_7_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_8_not_null","CHECK",,,"display_order IS NOT NULL"
+"public","qpart_metadata_definitions","2200_475181_9_not_null","CHECK",,,"validation_json IS NOT NULL"
+"public","qpart_metadata_definitions","qpart_metadata_definitions_field_type_check","CHECK",,,"(field_type = ANY (ARRAY['text'::text, 'long_text'::text, 'number'::text, 'boolean'::text, 'date'::text, 'single_select'::text, 'multi_select'::text]))"
+"public","qpart_metadata_definitions","qpart_metadata_definitions_pkey","PRIMARY KEY","id",1,
+"public","qpart_metadata_definitions","qpart_metadata_definitions_key_key","UNIQUE","key",1,
+"public","qpart_part_bike_type_compatibility","2200_475243_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_bike_type_compatibility","2200_475243_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_bike_type_compatibility","2200_475243_3_not_null","CHECK",,,"bike_type IS NOT NULL"
+"public","qpart_part_bike_type_compatibility","2200_475243_4_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_bike_type_compatibility","2200_475243_5_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_bike_type_compatibility","qpart_part_bike_type_compatibility_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_bike_type_compatibility","qpart_part_bike_type_compatibility_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_bike_type_compatibility","qpart_part_bike_type_compatibility_part_id_bike_type_key","UNIQUE","part_id",1,
+"public","qpart_part_bike_type_compatibility","qpart_part_bike_type_compatibility_part_id_bike_type_key","UNIQUE","bike_type",2,
+"public","qpart_part_channel_assignment","2200_499713_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_channel_assignment","2200_499713_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_channel_assignment","2200_499713_3_not_null","CHECK",,,"channel IS NOT NULL"
+"public","qpart_part_channel_assignment","2200_499713_4_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_channel_assignment","2200_499713_5_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_channel_assignment","qpart_part_channel_assignment_channel_chk","CHECK",,,"(channel = ANY (ARRAY['Ecom'::text, 'Dealer'::text, 'Junction'::text, 'Subscription'::text]))"
+"public","qpart_part_channel_assignment","qpart_part_channel_assignment_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_channel_assignment","qpart_part_channel_assignment_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_channel_assignment","qpart_part_channel_assignment_part_channel_uniq","UNIQUE","part_id",1,
+"public","qpart_part_channel_assignment","qpart_part_channel_assignment_part_channel_uniq","UNIQUE","channel",2,
+"public","qpart_part_compatibility_rules","2200_475261_10_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_3_not_null","CHECK",,,"bike_type IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_4_not_null","CHECK",,,"feature_label IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_5_not_null","CHECK",,,"option_value IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_7_not_null","CHECK",,,"source IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_8_not_null","CHECK",,,"is_active IS NOT NULL"
+"public","qpart_part_compatibility_rules","2200_475261_9_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rules_source_check","CHECK",,,"(source = ANY (ARRAY['derived'::text, 'reference'::text, 'manual'::text]))"
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rules_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rules_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rule_part_id_bike_type_feature_lab_key","UNIQUE","part_id",1,
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rule_part_id_bike_type_feature_lab_key","UNIQUE","bike_type",2,
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rule_part_id_bike_type_feature_lab_key","UNIQUE","feature_label",3,
+"public","qpart_part_compatibility_rules","qpart_part_compatibility_rule_part_id_bike_type_feature_lab_key","UNIQUE","option_value",4,
+"public","qpart_part_images","2200_524289_10_not_null","CHECK",,,"image_index IS NOT NULL"
+"public","qpart_part_images","2200_524289_11_not_null","CHECK",,,"is_primary IS NOT NULL"
+"public","qpart_part_images","2200_524289_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_images","2200_524289_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_images","2200_524289_3_not_null","CHECK",,,"part_number IS NOT NULL"
+"public","qpart_part_images","2200_524289_4_not_null","CHECK",,,"blob_url IS NOT NULL"
+"public","qpart_part_images","2200_524289_5_not_null","CHECK",,,"blob_path IS NOT NULL"
+"public","qpart_part_images","2200_524289_6_not_null","CHECK",,,"mime_type IS NOT NULL"
+"public","qpart_part_images","2200_524289_7_not_null","CHECK",,,"file_size_bytes IS NOT NULL"
+"public","qpart_part_images","2200_524289_8_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_images","2200_524289_9_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_images","qpart_part_images_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_images","qpart_part_images_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_metadata_values","2200_475201_10_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_metadata_values","2200_475201_11_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_metadata_values","2200_475201_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_metadata_values","2200_475201_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_metadata_values","2200_475201_3_not_null","CHECK",,,"metadata_definition_id IS NOT NULL"
+"public","qpart_part_metadata_values","2200_475201_4_not_null","CHECK",,,"locale IS NOT NULL"
+"public","qpart_part_metadata_values","qpart_part_metadata_values_metadata_definition_id_fkey","FOREIGN KEY","metadata_definition_id",1,
+"public","qpart_part_metadata_values","qpart_part_metadata_values_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_metadata_values","qpart_part_metadata_values_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_metadata_values","qpart_part_metadata_values_part_id_metadata_definition_id_l_key","UNIQUE","part_id",1,
+"public","qpart_part_metadata_values","qpart_part_metadata_values_part_id_metadata_definition_id_l_key","UNIQUE","metadata_definition_id",2,
+"public","qpart_part_metadata_values","qpart_part_metadata_values_part_id_metadata_definition_id_l_key","UNIQUE","locale",3,
+"public","qpart_part_translations","2200_475225_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_part_translations","2200_475225_2_not_null","CHECK",,,"part_id IS NOT NULL"
+"public","qpart_part_translations","2200_475225_3_not_null","CHECK",,,"locale IS NOT NULL"
+"public","qpart_part_translations","2200_475225_6_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_part_translations","2200_475225_7_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_part_translations","qpart_part_translations_part_id_fkey","FOREIGN KEY","part_id",1,
+"public","qpart_part_translations","qpart_part_translations_pkey","PRIMARY KEY","id",1,
+"public","qpart_part_translations","qpart_part_translations_part_id_locale_key","UNIQUE","part_id",1,
+"public","qpart_part_translations","qpart_part_translations_part_id_locale_key","UNIQUE","locale",2,
+"public","qpart_parts","2200_475160_10_not_null","CHECK",,,"updated_at IS NOT NULL"
+"public","qpart_parts","2200_475160_1_not_null","CHECK",,,"id IS NOT NULL"
+"public","qpart_parts","2200_475160_2_not_null","CHECK",,,"part_number IS NOT NULL"
+"public","qpart_parts","2200_475160_3_not_null","CHECK",,,"status IS NOT NULL"
+"public","qpart_parts","2200_475160_4_not_null","CHECK",,,"default_name IS NOT NULL"
+"public","qpart_parts","2200_475160_9_not_null","CHECK",,,"created_at IS NOT NULL"
+"public","qpart_parts","qpart_parts_status_check","CHECK",,,"(status = ANY (ARRAY['active'::text, 'inactive'::text, 'draft'::text]))"
+"public","qpart_parts","qpart_parts_hierarchy_node_id_fkey","FOREIGN KEY","hierarchy_node_id",1,
+"public","qpart_parts","qpart_parts_pkey","PRIMARY KEY","id",1,
+"public","qpart_parts","qpart_parts_part_number_key","UNIQUE","part_number",1,

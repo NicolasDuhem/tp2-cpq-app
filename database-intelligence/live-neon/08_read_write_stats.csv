@@ -1,0 +1,24 @@
+"table_schema","table_name","seq_scan","seq_tup_read","idx_scan","idx_tup_fetch","n_tup_ins","n_tup_upd","n_tup_del","n_tup_hot_upd","n_live_tup","n_dead_tup","last_vacuum","last_autovacuum","last_analyze","last_autoanalyze"
+"public","bc_item_variant_map",740891,1235398869,5524,3958,1860,3302,0,0,1860,0,,"2026-05-19 15:01:11.302406+00",,"2026-05-19 15:01:11.313377+00"
+"public","qpart_country_allocation",2479,74298980,770029,21781554,49112,217771,0,1502,49112,2284,,"2026-05-12 08:26:25.42641+00",,"2026-05-12 08:26:25.486152+00"
+"public","qpart_hierarchy_nodes",84987,22760711,24490,24608,340,0,0,0,276,1,,"2026-04-24 14:35:14.892766+00",,"2026-04-24 14:36:14.9159+00"
+"public","qpart_parts",8502,5272819,84092,873159,1757,34,0,24,1756,18,,"2026-04-24 15:00:15.241599+00",,"2026-04-24 15:01:15.26276+00"
+"public","qpart_part_metadata_values",577,2181595,3744,8967,7167,0,137,0,7042,46,,"2026-04-24 15:00:15.20259+00",,"2026-04-24 15:01:15.238027+00"
+"public","cpq_image_management",1686,166120,373,1383,157,138,23,106,134,56,,,,"2026-04-16 10:31:39.662353+00"
+"public","qpart_part_translations",359,72815,3721,6491,5368,49,96,44,5280,60,,"2026-04-24 15:00:15.223692+00",,"2026-04-24 15:01:15.250569+00"
+"public","cpq_country_mappings",2763,77308,56,352,28,0,0,0,28,0,,,,
+"public","cpq_sampler_result",679,58353,445,7352,373,263,151,95,117,52,,"2026-04-22 15:54:50.139548+00",,"2026-05-19 08:48:50.015598+00"
+"public","qpart_part_compatibility_rules",13488,53907,58,168,45,0,41,0,4,41,,,,"2026-04-24 12:39:28.051808+00"
+"public","app_user_page_permissions",853,20004,146,568,28,68,0,68,28,12,,,,"2026-05-19 09:07:50.259282+00"
+"public","cpq_setup_account_context",3319,16712,52,189,11,10,0,2,6,15,,,,
+"public","qpart_metadata_definitions",837,9681,7198,7203,14,14,0,14,14,14,,,,
+"public","cpq_setup_ruleset",1270,11358,76,289,9,0,0,0,9,0,,,,
+"public","qpart_part_images",13,4,429,3140,24,7,1,7,23,1,,,,
+"public","cpq_configuration_references",56,557,296,589,237,2,30,2,139,0,,,,"2026-04-21 10:32:16.02928+00"
+"public","qpart_part_bike_type_compatibility",428,1220,10927,128,25,0,22,0,3,22,,,,
+"public","app_users",75,178,1013,1013,4,34,0,34,4,11,,,,
+"public","app_sessions",2,0,893,900,23,0,15,0,8,15,,,,
+"public","qpart_part_channel_assignment",3,0,400,210,29,0,16,0,13,16,,,,
+"public","app_permission_pages",7,50,46,102,11,0,0,0,11,0,,,,
+"public","app_allocation_audit_log",10,105,1,1,23,0,0,0,23,0,,,,
+"public","qpart_compatibility_reference_values",10,0,22,0,0,0,0,0,0,0,,,,
