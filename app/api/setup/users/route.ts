@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createUser, listUsers } from '@/lib/auth/user-service';
 import { getCurrentUser } from '@/lib/auth/session';
-import { canAdminPage } from '@/lib/auth/permissions';
+import { canEditPage } from '@/lib/auth/permissions';
 
 export const dynamic = 'force-dynamic';
 
 async function canManage() {
   const user = await getCurrentUser();
   if (!user) return true;
-  return canAdminPage(user, 'setup.users') || user.isSystemAdmin;
+  return canEditPage(user, 'setup.users') || user.isSystemAdmin;
 }
 
 export async function GET() {

@@ -1,7 +1,11 @@
+import { requirePageEdit, requirePageRead } from '@/lib/auth/page-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { setImageFeatureSettings } from '@/lib/cpq/setup/service';
 
 export async function PUT(req: NextRequest) {
+  const forbidden = await requirePageEdit('cpq.setup');
+  if (forbidden) return forbidden;
+ {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const featureLabel = String(body.feature_label ?? '').trim();
   const includeIgnore = Object.prototype.hasOwnProperty.call(body, 'ignore_during_configure');
