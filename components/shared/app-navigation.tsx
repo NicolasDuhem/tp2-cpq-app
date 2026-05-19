@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
+import UserStatus from '@/components/auth/user-status';
 
 type NavLink = { href: string; label: string; adminOnly?: boolean };
 
@@ -79,6 +80,7 @@ export default function AppNavigation() {
           </div>
         ))}
         <div className="adminModeActions">
+          <UserStatus />
           {!isAdminMode ? (
             <button className="tab tabAdminAction" type="button" onClick={() => setAdminPromptOpen(true)}>
               Open as admin

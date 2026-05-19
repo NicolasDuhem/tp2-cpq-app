@@ -247,3 +247,10 @@ Operational constraints remain: external writes are still row-level UPDATE/INSER
 
 ## Auth and permission foundation (May 19, 2026)
 User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.
+
+## 10) Auth setup + login verification flow (temporary phase)
+
+- Setup user creation/testing route is available at `/setup/users` while global lock is disabled.
+- Login verification route is `/login` with a built-in **Test current login** action calling `/api/auth/me`.
+- Main header shows current auth status (`Login` link when logged out, `👤` menu + logout when logged in).
+- This is transitional and designed for safe auth/session validation before global enforcement middleware is added.

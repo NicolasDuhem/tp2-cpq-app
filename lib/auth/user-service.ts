@@ -5,8 +5,8 @@ import type { PermissionLevel } from '@/lib/auth/permissions';
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const PERMS: PermissionLevel[] = ['none', 'read', 'edit', 'admin'];
 
-export async function listPermissionPages() { return sql`select page_key, page_label, route_path, nav_group, display_order from app_permission_pages where is_active=true order by nav_group nulls last, display_order, page_label`; }
-export async function listUsers() { return sql`select id, email, display_name, is_active, is_system_admin, last_login_at, created_at from app_users order by created_at desc`; }
+export async function listPermissionPages() { return sql`select page_key as "pageKey", page_label as "pageLabel", route_path as "routePath", nav_group as "navGroup", display_order as "displayOrder", is_active as "isActive" from app_permission_pages order by nav_group nulls last, display_order, page_label`; }
+export async function listUsers() { return sql`select id, email, display_name as "displayName", is_active as "isActive", is_system_admin as "isSystemAdmin", last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt" from app_users order by created_at desc`; }
 export async function getUserByEmail(email: string) { const rows = await sql`select * from app_users where lower(email)=${normalizeEmail(email)} limit 1`; return rows[0]; }
 export async function createUser(input: any) {
   if (!input.displayName?.trim()) throw new Error('Display name is required');
