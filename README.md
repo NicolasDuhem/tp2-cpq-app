@@ -180,3 +180,11 @@ The optimized path batches Neon BC-ID lookups by unique SKU, batches bike rulese
 
 ## Auth and permission foundation (May 19, 2026)
 User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.
+
+## Auth quick test (current transition phase)
+
+- Create/update users at `/setup/users`.
+- Login at `/login`.
+- Use **Test current login** on `/login` to verify `/api/auth/me` session resolution.
+- Use header `👤` menu to confirm logged-in identity and run logout.
+- Global route-level login enforcement is intentionally not active yet.

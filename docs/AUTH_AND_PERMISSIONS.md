@@ -34,3 +34,19 @@ The script only inserts a user if `app_users` is empty.
 
 ## Future audit trail integration
 Use current session actor (`app_users.id`), `page_key`, old/new values, timestamp and action metadata for Active/Inactive changes on sales allocation pages.
+
+## Temporary transition behavior (May 19, 2026)
+- Global login lock is intentionally **not** enabled yet.
+- During this phase, `/setup/users` APIs/pages remain testable when no session exists.
+- When a valid session exists, setup-user admin permission model still applies.
+
+## API response contracts used by UI
+- `GET /api/setup/users` → `{ users: [...] }`
+- `GET /api/setup/permission-pages` → `{ pages: [...] }`
+- `GET /api/auth/me` → `{ user: null | { id, email, displayName, isSystemAdmin, permissions } }`
+
+## Login test flow
+1. Open `/login`.
+2. Enter email/password and click **Login**.
+3. Click **Test current login** to call `/api/auth/me` and inspect current user payload.
+4. Header user menu (`👤`) shows logged-in identity and allows **Logout**.
