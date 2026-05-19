@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { createHash, randomBytes } from 'crypto';
 import { sql } from '@/lib/db/client';
-import type { PermissionLevel } from '@/lib/auth/permissions';
+import { normalizePermissionLevel, type PermissionLevel } from '@/lib/auth/permission-level';
 
 export const AUTH_COOKIE_NAME = 'tp2_session';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -30,8 +30,8 @@ export async function clearSession() {
 }
 
 export async function getUserPermissions(userId: string) {
-  const rows = await sql`select page_key, permission_level from app_user_page_permissions where user_id = ${userId}` as Array<{ page_key: string; permission_level: PermissionLevel }>;
-  return Object.fromEntries(rows.map((r) => [r.page_key, r.permission_level])) as Record<string, PermissionLevel>;
+  const rows = await sql`select page_key, permission_level from app_user_page_permissions where user_id = ${userId}` as Array<{ page_key: string; permission_level: string }>;
+  return Object.fromEntries(rows.map((r) => [r.page_key, normalizePermissionLevel(r.permission_level)])) as Record<string, PermissionLevel>;
 }
 
 export async function getCurrentUser() {
