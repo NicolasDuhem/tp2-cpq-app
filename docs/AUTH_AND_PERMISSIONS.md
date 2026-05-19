@@ -62,3 +62,5 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
 ### Allocation audit permissions context
 - Audit rows capture actor id/email/display from authenticated session when available; nullable actor fields are allowed for no-session flows.
 - Allocation audit rows for Bike/QPart toggles also include nullable `bigcommerce_status` (`OK|NOK|ERR|DISABLED|UNKNOWN`) sourced from existing Neon-side BC mapping data, without additional per-row BigCommerce API calls.
+
+- New page key: `sales.allocation_audit` (read-only page; read/edit/admin/system-admin can view, none cannot).

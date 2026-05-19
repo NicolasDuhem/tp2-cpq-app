@@ -264,3 +264,5 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - Bulk actions create one audit row per changed item/country only.
 - Allocation audit rows also persist `bigcommerce_status` using already-loaded/cached BC map data (`bc_item_variant_map`) where available; if unavailable, audit stores `null` (or `UNKNOWN` if explicitly provided by upstream status data).
 - Bulk audit logging must not do one BigCommerce API call per row just to populate audit status.
+
+- `/sales/allocation-audit` provides read-only timeline search for allocation audit events using `GET /api/sales/allocation-audit` with required `itemCode` and optional filters (`entityType`, `countryCode`, date range, sort, pagination).

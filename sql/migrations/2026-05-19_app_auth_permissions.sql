@@ -46,6 +46,7 @@ insert into app_permission_pages (page_key, page_label, route_path, nav_group, d
 values
 ('sales.bike_allocation','Sales Bike Allocation','/sales/bike-allocation','Sales',10),
 ('sales.qpart_allocation','Sales QPart Allocation','/sales/qpart-allocation','Sales',20),
+('sales.allocation_audit','Sales Allocation Audit','/sales/allocation-audit','Sales',30),
 ('qpart.parts','QPart Parts','/qpart/parts','QPart',30),
 ('setup.users','Setup User','/setup/users','Setup',40),
 ('setup.rulesets','Setup Rulesets','/cpq/setup?tab=rulesets','Setup',50),

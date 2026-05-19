@@ -1,0 +1,16 @@
+'use client';
+import { useEffect, useMemo, useState } from 'react';
+
+type Row = { id:number; createdAt:string; actorDisplayName:string|null; actorEmail:string|null; pageKey:string; sourceProcess:string; entityType:string; itemCode:string; countryCode:string|null; actionType:string; statusBefore:boolean|null; statusAfter:boolean|null; bigcommerceStatus:string|null; metadata:Record<string, unknown>; };
+
+export default function AllocationAuditPageClient({ initialItemCode }: { initialItemCode: string }) {
+  const [itemCode, setItemCode] = useState(initialItemCode);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [entityType, setEntityType] = useState('all');
+  const [sort, setSort] = useState<'asc'|'desc'>('desc');
+  async function runSearch() { if (!itemCode.trim()) return; setLoading(true); const qs = new URLSearchParams({ itemCode: itemCode.trim(), entityType, sort }); const res = await fetch(`/api/sales/allocation-audit?${qs.toString()}`); const data = await res.json(); setRows(data.rows ?? []); setLoading(false); }
+  useEffect(() => { if (initialItemCode.trim()) void runSearch(); }, []);
+  const summary = useMemo(() => ({ count: rows.length, first: rows[rows.length-1]?.createdAt ?? null, last: rows[0]?.createdAt ?? null }), [rows]);
+  return <div className='card'><h2>Allocation audit history</h2><p>Search a bike or QPart code to see Active/Inactive and creation history.</p><div style={{display:'flex', gap:8, flexWrap:'wrap'}}><input value={itemCode} onChange={(e)=>setItemCode(e.target.value)} placeholder='Enter bike IPN/SKU or QPart code' /><select value={entityType} onChange={(e)=>setEntityType(e.target.value)}><option value='all'>All</option><option value='bike'>Bike</option><option value='qpart'>QPart</option></select><select value={sort} onChange={(e)=>setSort(e.target.value as 'asc'|'desc')}><option value='desc'>Newest first</option><option value='asc'>Oldest first</option></select><button className='primary' onClick={()=>void runSearch()}>Search</button><button onClick={()=>{setItemCode('');setRows([]);}}>Clear</button></div>{!rows.length && !loading ? <p style={{marginTop:12}}>Enter an item code to view its audit history.</p> : null}{loading ? <p>Loading…</p> : null}{rows.length ? <><p>Item: {itemCode} • Records: {summary.count} • First event: {summary.first ?? '—'} • Last event: {summary.last ?? '—'}</p><div style={{overflow:'auto'}}><table><thead><tr><th>Date/time</th><th>Item code</th><th>Type</th><th>Country</th><th>Action</th><th>Before</th><th>After</th><th>BC status</th><th>User</th><th>Source</th><th>Page</th><th>Metadata</th></tr></thead><tbody>{rows.map((r)=><tr key={r.id}><td>{new Date(r.createdAt).toLocaleString()}</td><td>{r.itemCode}</td><td>{r.entityType}</td><td>{r.countryCode ?? '—'}</td><td>{r.actionType}</td><td>{r.statusBefore == null ? '—' : r.statusBefore ? 'Active':'Inactive'}</td><td>{r.statusAfter == null ? '—' : r.statusAfter ? 'Active':'Inactive'}</td><td>{r.bigcommerceStatus ?? '—'}</td><td>{r.actorDisplayName ?? 'System / Unknown'}<br/>{r.actorEmail ?? ''}</td><td>{r.sourceProcess}</td><td>{r.pageKey}</td><td><details><summary>View</summary><pre>{JSON.stringify(r.metadata ?? {}, null, 2)}</pre></details></td></tr>)}</tbody></table></div></> : null}</div>;
+}
