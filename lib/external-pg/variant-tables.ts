@@ -28,7 +28,8 @@ export type ExternalVariantEligibilityStatus = {
 };
 
 const EXTERNAL_ELIGIBILITY_STATUS_CHUNK_SIZE = 1000;
-
+export const EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY = Number(process.env.EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY ?? 5);
+const EXTERNAL_VARIANT_TABLE_SYNC_CHUNK_SIZE = 1000;
 
 export type ExternalVariantInput = {
   sku: string;
@@ -61,6 +62,26 @@ export type ExternalVariantTablesSyncResult = {
   message: string;
   variantResult: ExternalVariantSyncResult;
   eligibilityResult: ExternalVariantEligibilitySyncResult;
+};
+
+export type ExternalVariantTablesBatchInput = ExternalVariantEligibilityInput & {
+  bcVariantId: number;
+  bcProductId: number;
+  forecastCtyCode: string;
+  bblRuleSetItem: string;
+};
+
+export type ExternalVariantTablesBatchSummary = {
+  variantsInserted: number;
+  variantsUpdated: number;
+  eligibilityInserted: number;
+  eligibilityUpdated: number;
+  skipped: number;
+};
+
+export type ExternalVariantTablesBatchResult = {
+  results: ExternalVariantTablesSyncResult[];
+  summary: ExternalVariantTablesBatchSummary;
 };
 
 export type ExternalVariantWriteDiagnosticResult = {
@@ -190,6 +211,213 @@ export async function lookupLatestSamplerRuleset(
   `) as Array<{ ruleset: string | null }>;
 
   return asTrimmed(rows[0]?.ruleset) || null;
+}
+
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const concurrency = Math.max(1, Math.trunc(limit));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
+function normalizeWriteConcurrency(value: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 5;
+}
+
+async function lookupExistingVariantsWithClient(
+  client: ExternalPgClient,
+  tableName: string,
+  skus: string[],
+  options: ExternalVariantPushOptions,
+): Promise<Set<string>> {
+  const existing = new Set<string>();
+  const uniqueSkus = [...new Set(skus.map(asTrimmed).filter(Boolean))];
+  for (let index = 0; index < uniqueSkus.length; index += EXTERNAL_VARIANT_TABLE_SYNC_CHUNK_SIZE) {
+    const chunk = uniqueSkus.slice(index, index + EXTERNAL_VARIANT_TABLE_SYNC_CHUNK_SIZE);
+    options.onStage?.("select_start", { tableName, offset: index, skuCount: chunk.length, batch: true });
+    const response = await client.query(
+      `
+        with requested as (
+          select nullif(trim(value::text), '') as sku
+          from jsonb_array_elements_text($1::jsonb)
+        )
+        select distinct trim(variant."Sku") as "Sku"
+        from ${tableName} variant
+        join requested on trim(variant."Sku") = requested.sku
+        where requested.sku is not null
+      `,
+      [JSON.stringify(chunk)],
+    );
+    for (const row of response.rows as Array<{ Sku: string | null }>) {
+      const sku = asTrimmed(row.Sku);
+      if (sku) existing.add(sku);
+    }
+    options.onStage?.("select_success", { tableName, offset: index, skuCount: chunk.length, foundCount: existing.size, batch: true });
+  }
+  return existing;
+}
+
+async function lookupExistingEligibilitiesWithClient(
+  client: ExternalPgClient,
+  tableName: string,
+  pairs: Array<{ sku: string; countryCode: string }>,
+  options: ExternalVariantPushOptions,
+): Promise<Set<string>> {
+  const existing = new Set<string>();
+  const normalizedPairMap = new Map<string, { sku: string; countryCode: string }>();
+  for (const pair of pairs) {
+    const sku = asTrimmed(pair.sku);
+    const countryCode = asTrimmed(pair.countryCode).toUpperCase();
+    if (!sku || !countryCode) continue;
+    normalizedPairMap.set(`${sku}::${countryCode}`, { sku, countryCode });
+  }
+  const normalizedPairs = [...normalizedPairMap.values()];
+
+  for (let index = 0; index < normalizedPairs.length; index += EXTERNAL_VARIANT_TABLE_SYNC_CHUNK_SIZE) {
+    const chunk = normalizedPairs.slice(index, index + EXTERNAL_VARIANT_TABLE_SYNC_CHUNK_SIZE);
+    options.onStage?.("select_start", { tableName, offset: index, pairCount: chunk.length, batch: true });
+    const response = await client.query(
+      `
+        with requested as (
+          select
+            nullif(trim(input."Sku"), '') as sku,
+            nullif(trim(input."CountryCode"), '') as country_code
+          from jsonb_to_recordset($1::jsonb) as input("Sku" text, "CountryCode" text)
+        )
+        select distinct
+          trim(eligibility."Sku") as "Sku",
+          trim(eligibility."CountryCode") as "CountryCode"
+        from ${tableName} eligibility
+        join requested
+          on trim(eligibility."Sku") = requested.sku
+         and trim(eligibility."CountryCode") = requested.country_code
+        where requested.sku is not null
+          and requested.country_code is not null
+      `,
+      [JSON.stringify(chunk.map((pair) => ({ Sku: pair.sku, CountryCode: pair.countryCode })))],
+    );
+    for (const row of response.rows as Array<{ Sku: string | null; CountryCode: string | null }>) {
+      const sku = asTrimmed(row.Sku);
+      const countryCode = asTrimmed(row.CountryCode).toUpperCase();
+      if (sku && countryCode) existing.add(`${sku}::${countryCode}`);
+    }
+    options.onStage?.("select_success", { tableName, offset: index, pairCount: chunk.length, foundCount: existing.size, batch: true });
+  }
+  return existing;
+}
+
+async function writeExternalVariantWithKnownExistence(
+  client: ExternalPgClient,
+  tableName: string,
+  input: ExternalVariantInput,
+  exists: boolean,
+  options: ExternalVariantPushOptions,
+): Promise<ExternalVariantSyncResult> {
+  ensureVariantInput(input);
+  const payload = {
+    sku: asTrimmed(input.sku),
+    bcVariantId: input.bcVariantId,
+    bcProductId: input.bcProductId,
+    forecastCtyCode: asTrimmed(input.forecastCtyCode),
+    bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
+  };
+  const timestamp = currentExternalTimestamp();
+  const businessKey = { sku: payload.sku };
+  try {
+    if (exists) {
+      options.onStage?.("update_start", { tableName, businessKey, batch: true });
+      await client.query(
+        `
+        update ${tableName}
+        set
+          "BcVariantId" = $2,
+          "BcProductId" = $3,
+          "ForecastCtyCode" = $4,
+          "BblRuleSetItem" = $5,
+          "UpdatedAt" = $6
+        where "Sku" = $1
+        `,
+        [payload.sku, payload.bcVariantId, payload.bcProductId, payload.forecastCtyCode, payload.bblRuleSetItem, timestamp],
+      );
+      const result = { action: "updated" as const, businessKey };
+      options.onStage?.("update_success", { tableName, ...result, batch: true });
+      return result;
+    }
+
+    options.onStage?.("insert_start", { tableName, businessKey, batch: true });
+    await client.query(
+      `
+      insert into ${tableName} (
+        "Sku", "BcVariantId", "BcProductId", "ForecastCtyCode", "BblRuleSetItem", "CreatedAt", "UpdatedAt"
+      ) values ($1, $2, $3, $4, $5, $6, $7)
+      `,
+      [payload.sku, payload.bcVariantId, payload.bcProductId, payload.forecastCtyCode, payload.bblRuleSetItem, timestamp, timestamp],
+    );
+    const result = { action: "inserted" as const, businessKey };
+    options.onStage?.("insert_success", { tableName, ...result, batch: true });
+    return result;
+  } catch (error) {
+    throw normalizeExternalPgError(error, { stage: "variants_sync_execute" });
+  }
+}
+
+async function writeExternalVariantEligibilityWithKnownExistence(
+  client: ExternalPgClient,
+  tableName: string,
+  input: ExternalVariantEligibilityInput,
+  exists: boolean,
+  options: ExternalVariantPushOptions,
+): Promise<ExternalVariantEligibilitySyncResult> {
+  ensureEligibilityInput(input);
+  const payload = {
+    sku: asTrimmed(input.sku),
+    countryCode: asTrimmed(input.countryCode).toUpperCase(),
+    detailId: asTrimmed(input.detailId),
+    isActive: input.isActive === true,
+  };
+  const businessKey = { sku: payload.sku, countryCode: payload.countryCode };
+  try {
+    if (exists) {
+      options.onStage?.("update_start", { tableName, businessKey, batch: true });
+      await client.query(
+        `
+        update ${tableName}
+        set "DetailId" = $3, "IsActive" = $4
+        where "Sku" = $1
+          and "CountryCode" = $2
+        `,
+        [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
+      );
+      const result = { action: "updated" as const, businessKey };
+      options.onStage?.("update_success", { tableName, ...result, batch: true });
+      return result;
+    }
+
+    options.onStage?.("insert_start", { tableName, businessKey, batch: true });
+    await client.query(
+      `
+      insert into ${tableName} ("Sku", "CountryCode", "DetailId", "IsActive")
+      values ($1, $2, $3, $4)
+      `,
+      [payload.sku, payload.countryCode, payload.detailId, payload.isActive],
+    );
+    const result = { action: "inserted" as const, businessKey };
+    options.onStage?.("insert_success", { tableName, ...result, batch: true });
+    return result;
+  } catch (error) {
+    throw normalizeExternalPgError(error, { stage: "variant_eligibilities_sync_execute" });
+  }
 }
 
 async function syncExternalVariantWithClient(
@@ -476,6 +704,150 @@ export async function syncExternalVariantTablesForPayload(
       variantResult,
       eligibilityResult,
     };
+  }, options);
+}
+
+
+export async function syncExternalVariantTablesBatch(
+  inputs: ExternalVariantTablesBatchInput[],
+  options: ExternalVariantPushOptions & { writeConcurrency?: number } = {},
+): Promise<ExternalVariantTablesBatchResult> {
+  const normalizedInputs = inputs.map((input) => ({
+    sku: asTrimmed(input.sku),
+    countryCode: asTrimmed(input.countryCode).toUpperCase(),
+    detailId: asTrimmed(input.detailId),
+    isActive: input.isActive === true,
+    bcVariantId: input.bcVariantId,
+    bcProductId: input.bcProductId,
+    forecastCtyCode: asTrimmed(input.forecastCtyCode),
+    bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
+  }));
+
+  for (const input of normalizedInputs) {
+    ensureEligibilityInput(input);
+    ensureVariantInput(input);
+  }
+
+  if (!normalizedInputs.length) {
+    return {
+      results: [],
+      summary: { variantsInserted: 0, variantsUpdated: 0, eligibilityInserted: 0, eligibilityUpdated: 0, skipped: 0 },
+    };
+  }
+
+  const writeConcurrency = normalizeWriteConcurrency(options.writeConcurrency ?? EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY);
+
+  return withExternalPgClient(async (client, schema) => {
+    const variantsTableName = qualifiedTableName(schema, "variants");
+    const eligibilityTableName = qualifiedTableName(schema, "variant_eligibilities");
+    options.onStage?.("sync_start", {
+      targetCount: normalizedInputs.length,
+      order: ["variants", "variant_eligibilities"],
+      writeConcurrency,
+      batch: true,
+    });
+
+    const variantInputs = [...new Map(normalizedInputs.map((input) => [input.sku, {
+      sku: input.sku,
+      bcVariantId: input.bcVariantId,
+      bcProductId: input.bcProductId,
+      forecastCtyCode: input.forecastCtyCode,
+      bblRuleSetItem: input.bblRuleSetItem,
+    }])).values()];
+
+    const existingVariants = await lookupExistingVariantsWithClient(
+      client,
+      variantsTableName,
+      variantInputs.map((input) => input.sku),
+      options,
+    );
+    const existingEligibilities = await lookupExistingEligibilitiesWithClient(
+      client,
+      eligibilityTableName,
+      normalizedInputs.map((input) => ({ sku: input.sku, countryCode: input.countryCode })),
+      options,
+    );
+
+    const variantResults = new Map<string, ExternalVariantSyncResult>();
+    const variantErrors = new Map<string, string>();
+    await mapWithConcurrency(variantInputs, writeConcurrency, async (input) => {
+      try {
+        const result = await writeExternalVariantWithKnownExistence(
+          client,
+          variantsTableName,
+          input,
+          existingVariants.has(input.sku),
+          options,
+        );
+        variantResults.set(input.sku, result);
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "External variants write failed.";
+        variantErrors.set(input.sku, message);
+        return { action: "skipped" as const, businessKey: { sku: input.sku }, message };
+      }
+    });
+
+    const eligibilityResults = new Map<string, ExternalVariantEligibilitySyncResult>();
+    const eligibilityErrors = new Map<string, string>();
+    await mapWithConcurrency(normalizedInputs, writeConcurrency, async (input) => {
+      const key = `${input.sku}::${input.countryCode}`;
+      if (variantErrors.has(input.sku)) {
+        const message = variantErrors.get(input.sku) ?? "External variants write failed.";
+        eligibilityErrors.set(key, message);
+        return { action: "skipped" as const, businessKey: { sku: input.sku, countryCode: input.countryCode }, message };
+      }
+      try {
+        const result = await writeExternalVariantEligibilityWithKnownExistence(
+          client,
+          eligibilityTableName,
+          input,
+          existingEligibilities.has(key),
+          options,
+        );
+        eligibilityResults.set(key, result);
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "External variant_eligibilities write failed.";
+        eligibilityErrors.set(key, message);
+        return { action: "skipped" as const, businessKey: { sku: input.sku, countryCode: input.countryCode }, message };
+      }
+    });
+
+    const results = normalizedInputs.map((input) => {
+      const key = `${input.sku}::${input.countryCode}`;
+      const variantError = variantErrors.get(input.sku);
+      const eligibilityError = eligibilityErrors.get(key);
+      const variantResult = variantResults.get(input.sku) ?? {
+        action: "skipped" as const,
+        businessKey: { sku: input.sku },
+        message: variantError,
+      };
+      const eligibilityResult = eligibilityResults.get(key) ?? {
+        action: "skipped" as const,
+        businessKey: { sku: input.sku, countryCode: input.countryCode },
+        message: eligibilityError,
+      };
+      const errorMessage = variantError || eligibilityError;
+      return {
+        ok: !errorMessage,
+        skipped: false,
+        message: errorMessage ?? `External PostgreSQL push completed for ${input.sku} / ${input.countryCode}.`,
+        variantResult,
+        eligibilityResult,
+      };
+    });
+
+    const summary = {
+      variantsInserted: [...variantResults.values()].filter((result) => result.action === "inserted").length,
+      variantsUpdated: [...variantResults.values()].filter((result) => result.action === "updated").length,
+      eligibilityInserted: [...eligibilityResults.values()].filter((result) => result.action === "inserted").length,
+      eligibilityUpdated: [...eligibilityResults.values()].filter((result) => result.action === "updated").length,
+      skipped: results.filter((result) => result.skipped).length,
+    };
+
+    options.onStage?.("sync_success", { ...summary, targetCount: normalizedInputs.length, batch: true });
+    return { results, summary };
   }, options);
 }
 

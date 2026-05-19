@@ -4,7 +4,7 @@ import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { listCountryMappings } from '@/lib/cpq/setup/service';
 import {
   syncQPartAllocationToExternalIfBcOk,
-  summarizeAllocationExternalSync,
+  syncQPartAllocationsToExternalIfBcOkBatch,
 } from '@/lib/sales/allocation-external-sync';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
@@ -469,17 +469,36 @@ export async function bulkUpdateQPartCountryAllocation(input: {
       ]),
     ).values(),
   ];
-  const externalSyncResults = [];
-  for (const target of uniqueTargets) {
-    externalSyncResults.push(await syncQPartAllocationToExternalIfBcOk(target));
-  }
+  const partRows = (await sql`
+    with updated_targets as (
+      select *
+      from jsonb_to_recordset(${JSON.stringify(uniqueTargets)}::jsonb) as input("partId" bigint, "countryCode" text)
+    )
+    select
+      target."partId" as part_id,
+      target."countryCode" as country_code,
+      p.part_number,
+      allocation.active
+    from updated_targets target
+    join qpart_parts p on p.id = target."partId"
+    join qpart_country_allocation allocation
+      on allocation.part_id = target."partId"
+     and allocation.country_code = target."countryCode"
+  `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean }>;
+
+  const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(partRows.map((row) => ({
+    partId: row.part_id,
+    sku: asTrimmed(row.part_number),
+    countryCode: row.country_code,
+    active: row.active === true,
+  })));
 
   return {
     updatedCount: rows.length,
     partCount: partIds.length,
     countryCount: countryCodes.length,
     targetStatus: input.targetStatus,
-    externalSync: summarizeAllocationExternalSync(externalSyncResults),
+    externalSync,
   };
 }
 
@@ -502,24 +521,24 @@ export async function pushQPartAllocationBcOk(input: {
       select value::text as country_code
       from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
     )
-    select distinct allocation.part_id, allocation.country_code
+    select distinct allocation.part_id, allocation.country_code, p.part_number, allocation.active
     from qpart_country_allocation allocation
+    join qpart_parts p on p.id = allocation.part_id
     where allocation.part_id in (select part_id from target_parts)
       and allocation.country_code in (select country_code from target_countries)
-  `) as Array<{ part_id: number; country_code: string }>;
+  `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean }>;
 
-  const externalSyncResults = [];
-  for (const row of rows) {
-    externalSyncResults.push(await syncQPartAllocationToExternalIfBcOk({
-      partId: row.part_id,
-      countryCode: row.country_code,
-    }));
-  }
+  const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(rows.map((row) => ({
+    partId: row.part_id,
+    sku: asTrimmed(row.part_number),
+    countryCode: row.country_code,
+    active: row.active === true,
+  })));
 
   return {
     partCount: partIds.length,
     countryCount: countryCodes.length,
     targetCount: rows.length,
-    externalSync: summarizeAllocationExternalSync(externalSyncResults),
+    externalSync,
   };
 }
