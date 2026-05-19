@@ -1,10 +1,11 @@
-import BikeBuilderPage, { type BikeBuilderPagePrefill } from '@/components/cpq/bike-builder-page';
-import PageAccessGate from '@/components/auth/page-access-gate';
-import { PAGE_KEYS } from '@/lib/auth/page-access';
+import BikeBuilderAccessClient from '@/components/cpq/bike-builder-access-client';
+import { type BikeBuilderPagePrefill } from '@/components/cpq/bike-builder-page';
 
 type CpqPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
+
+export const dynamic = 'force-dynamic';
 
 const readSearchParam = (
   searchParams: CpqPageProps['searchParams'],
@@ -24,5 +25,5 @@ export default function CpqPage({ searchParams }: CpqPageProps) {
     replay_token: readSearchParam(searchParams, 'replay_token'),
   };
 
-  return <PageAccessGate pageKey={PAGE_KEYS.cpqConfigure}>{(access) => <BikeBuilderPage prefill={prefill} permissionLevel={access.permissionLevel} canEdit={access.canEdit} />}</PageAccessGate>;
+  return <BikeBuilderAccessClient prefill={prefill} />;
 }
