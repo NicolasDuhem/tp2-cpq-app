@@ -1,5 +1,6 @@
 'use client';
 
+import type { PermissionLevel } from '@/lib/auth/permission-level';
 import PageHeader from '@/components/shared/PageHeader';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -114,7 +115,7 @@ type CpqSetupPageProps = {
   initialOnlyMissingPicture?: boolean;
   initialFeature?: string;
   canEdit?: boolean;
-  permissionLevel?: 'none' | 'read' | 'edit' | 'admin';
+  permissionLevel?: PermissionLevel;
 };
 
 export default function CpqSetupPage({

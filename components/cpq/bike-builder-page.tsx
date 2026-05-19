@@ -1,5 +1,6 @@
 'use client';
 
+import type { PermissionLevel } from '@/lib/auth/permission-level';
 import { CSSProperties, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import LifecycleStepper from '@/components/BikeBuilder/LifecycleStepper';
 import PageHeader from '@/components/shared/PageHeader';
@@ -40,7 +41,7 @@ export type BikeBuilderPagePrefill = {
 type BikeBuilderPageProps = {
   prefill?: BikeBuilderPagePrefill;
   canEdit?: boolean;
-  permissionLevel?: 'none' | 'read' | 'edit' | 'admin';
+  permissionLevel?: PermissionLevel;
 };
 
 type SalesLaunchReplayPayload = {
