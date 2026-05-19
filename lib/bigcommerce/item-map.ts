@@ -171,7 +171,7 @@ export async function upsertBigCommerceItemMap(
     const skuCode = asTrimmed(rawItem?.sku ?? requestedSku);
     if (!skuCode) continue;
 
-    const status = toBcStatus(rawItem?.status);
+    const status = normalizeBCStatus(rawItem?.status);
     const variantJson =
       rawItem?.variantJson == null ? null : rawItem.variantJson;
     const bcProductId = safeInteger(rawItem?.productId);
