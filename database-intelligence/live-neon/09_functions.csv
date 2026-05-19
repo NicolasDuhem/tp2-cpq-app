@@ -1,5 +1,5 @@
 "function_schema","function_name","arguments","return_type","language","function_kind","function_definition"
-"public","app_list_pk_sequence_health","","TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)","plpgsql","FUNCTION","CREATE OR REPLACE FUNCTION public.app_list_pk_sequence_health()
+"public","app_list_pk_sequence_health","","TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)","plpgsql","f","CREATE OR REPLACE FUNCTION public.app_list_pk_sequence_health()
  RETURNS TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)
  LANGUAGE plpgsql
 AS $function$
@@ -54,7 +54,7 @@ begin
 end;
 $function$
 "
-"public","app_resync_pk_sequence","target_schema text, target_table text","TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, previous_sequence_next_value bigint, set_to_value bigint, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)","plpgsql","FUNCTION","CREATE OR REPLACE FUNCTION public.app_resync_pk_sequence(target_schema text, target_table text)
+"public","app_resync_pk_sequence","target_schema text, target_table text","TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, previous_sequence_next_value bigint, set_to_value bigint, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)","plpgsql","f","CREATE OR REPLACE FUNCTION public.app_resync_pk_sequence(target_schema text, target_table text)
  RETURNS TABLE(table_schema text, table_name text, pk_column text, sequence_schema text, sequence_name text, sequence_fq_name text, previous_sequence_next_value bigint, set_to_value bigint, sequence_last_value bigint, sequence_is_called boolean, sequence_next_value bigint, table_max_id bigint, expected_next_value bigint, status text)
  LANGUAGE plpgsql
 AS $function$
@@ -129,7 +129,7 @@ begin
 end;
 $function$
 "
-"public","qpart_validate_hierarchy_parent","","trigger","plpgsql","FUNCTION","CREATE OR REPLACE FUNCTION public.qpart_validate_hierarchy_parent()
+"public","qpart_validate_hierarchy_parent","","trigger","plpgsql","f","CREATE OR REPLACE FUNCTION public.qpart_validate_hierarchy_parent()
  RETURNS trigger
  LANGUAGE plpgsql
 AS $function$
