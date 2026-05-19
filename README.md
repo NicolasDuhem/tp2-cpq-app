@@ -188,3 +188,5 @@ User management, local login/session foundation, and per-page permissions were a
 - Use **Test current login** on `/login` to verify `/api/auth/me` session resolution.
 - Use header `👤` menu to confirm logged-in identity and run logout.
 - Global route-level login enforcement is intentionally not active yet.
+
+- 2026-05-19: Added auth session refresh fixes and direct permission enforcement for Bike/QPart allocation pages and APIs (no global lock yet).

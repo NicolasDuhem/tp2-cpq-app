@@ -254,3 +254,6 @@ User management, local login/session foundation, and per-page permissions were a
 - Login verification route is `/login` with a built-in **Test current login** action calling `/api/auth/me`.
 - Main header shows current auth status (`Login` link when logged out, `👤` menu + logout when logged in).
 - This is transitional and designed for safe auth/session validation before global enforcement middleware is added.
+
+## Permission enforcement update (2026-05-19)
+Bike and QPart allocation pages now enforce page permissions directly (without global app lock): read required for page data access, edit required for mutation/sync actions. Server APIs return 403 for insufficient permissions.

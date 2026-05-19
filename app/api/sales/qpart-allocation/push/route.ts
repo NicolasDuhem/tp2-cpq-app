@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PAGE_KEYS, requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { syncQPartAllocationToExternalIfBcOk } from '@/lib/sales/allocation-external-sync';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const forbidden = await requirePageEdit(PAGE_KEYS.qpart);
+  if (forbidden) return forbidden;
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   try {
