@@ -112,10 +112,11 @@ export default function AppNavigation() {
           {isMenuOpen ? (
             <nav id="mega-menu-panel" className="megaMenuPanel" role="navigation" aria-label="Primary navigation">
               {groupedLinks.map(({ section, links: sectionLinks }) => (
-                <section key={section} className="megaMenuSection">
+                <section key={section} className="mega-menu-column">
                   <button
                     type="button"
-                    className={`mega-menu-section-header ${openMobileSection === section ? 'isExpanded' : ''}`}
+                    className="mega-menu-section-header"
+                    aria-expanded={openMobileSection === section}
                     onClick={() => setOpenMobileSection((prev) => (prev === section ? null : section))}
                   >
                     {section}
