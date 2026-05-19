@@ -244,3 +244,6 @@ For all bulk operations, the helper reads latest BC status and BC IDs from Neon 
 The external writer reuses one PostgreSQL client for the batch. It batches SELECT-first existence checks for `variants` and `variant_eligibilities`, then writes rows with the configured bounded concurrency (`EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY`, default `5`). `ON CONFLICT` is still avoided because the external PostgreSQL target may not enforce the unique indexes that would make conflict handling safe.
 
 Operational constraints remain: external writes are still row-level UPDATE/INSERT operations after the batched existence reads, the mandatory table order remains `variants` before `variant_eligibilities`, and external failures do not roll back already completed Neon allocation changes.
+
+## Auth and permission foundation (May 19, 2026)
+User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.

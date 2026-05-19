@@ -248,3 +248,6 @@ No new database tables or columns are required for the 2026-05 allocation workfl
 - optional refreshed external `variant_eligibilities` status.
 
 `bc_item_variant_map.bc_status = 'OK'` is now the explicit gate for integrated allocation pushes. Rows with non-OK/unknown status or missing `bc_product_id`/`bc_variant_id` remain internally updated but externally **Pending BC** until BC status is refreshed and **Push all BC OK** is run.
+
+## Auth and permission foundation (May 19, 2026)
+User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.

@@ -16,6 +16,7 @@ const links: NavLink[] = [
   { href: '/sales/qpart-allocation', label: 'QPart Allocation' },
   { href: '/cpq', label: 'Bike Builder' },
   { href: '/cpq/setup', label: 'Setup' },
+  { href: '/setup/users', label: 'Setup User' },
   { href: '/qpart', label: 'QPart PIM' },
   { href: '/cpq/results', label: 'Sampler Results', adminOnly: true },
   { href: '/cpq/ui-docs', label: 'UI Docs', adminOnly: true },
@@ -34,7 +35,7 @@ export default function AppNavigation() {
     const clusterLabels = [
       ['Dashboard', 'Process'],
       ['Bike Allocation', 'QPart Allocation'],
-      ['Bike Builder', 'Setup', 'QPart PIM'],
+      ['Bike Builder', 'Setup', 'Setup User', 'QPart PIM'],
     ];
     const primaryLinks = visibleLinks.filter((link) => !link.adminOnly);
     const adminLinks = visibleLinks.filter((link) => link.adminOnly);
