@@ -2,7 +2,7 @@
 
 import PageAccessGate from '@/components/auth/page-access-gate';
 import UserManagementPage from '@/components/setup/user-management-page';
-import { PAGE_KEYS } from '@/lib/auth/page-access';
+import { PAGE_KEYS } from '@/lib/auth/page-keys';
 
 export default function UsersAccessClient() {
   return (

@@ -1,5 +1,5 @@
 import CpqSetupAccessClient from '@/components/setup/cpq-setup-access-client';
-import { PAGE_KEYS } from '@/lib/auth/page-access';
+import { PAGE_KEYS } from '@/lib/auth/page-keys';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type TabKey = 'accounts' | 'rulesets' | 'pictures';
