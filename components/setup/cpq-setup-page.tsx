@@ -3,6 +3,7 @@
 import PageHeader from '@/components/shared/PageHeader';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { usePagePermission } from '@/components/auth/use-page-permission';
 
 type AccountContext = {
   id: number;
@@ -112,15 +113,23 @@ type CpqSetupPageProps = {
   initialTab?: TabKey;
   initialOnlyMissingPicture?: boolean;
   initialFeature?: string;
+  canEdit?: boolean;
+  permissionLevel?: 'none' | 'read' | 'edit' | 'admin';
 };
 
 export default function CpqSetupPage({
   initialTab = 'accounts',
   initialOnlyMissingPicture = false,
   initialFeature = '',
+  canEdit = true,
+  permissionLevel = 'admin',
 }: CpqSetupPageProps) {
   const router = useRouter();
+  const accountsAccess = usePagePermission('cpq.setup.accounts');
+  const rulesetsAccess = usePagePermission('cpq.setup.rulesets');
+  const picturesAccess = usePagePermission('cpq.setup.pictures');
   const pathname = usePathname();
+  const visibleTabs = useMemo(() => ({ accounts: accountsAccess.canRead, rulesets: rulesetsAccess.canRead, pictures: picturesAccess.canRead }), [accountsAccess.canRead, rulesetsAccess.canRead, picturesAccess.canRead]);
   const [tab, setTab] = useState<TabKey>(initialTab);
   const [accounts, setAccounts] = useState<AccountContext[]>([]);
   const [rulesets, setRulesets] = useState<Ruleset[]>([]);
@@ -530,9 +539,9 @@ export default function CpqSetupPage({
           description="Manage account context defaults, CPQ rulesets, and picture-management option mappings stored in Neon."
         />
         <div className="tabRow">
-          <button className={tab === 'accounts' ? 'primary' : ''} onClick={() => { setTab('accounts'); updateRouteContext({ tab: 'accounts', feature: null, onlyMissingPicture: null }); }}>Account code management</button>
-          <button className={tab === 'rulesets' ? 'primary' : ''} onClick={() => { setTab('rulesets'); updateRouteContext({ tab: 'rulesets', feature: null, onlyMissingPicture: null }); }}>Ruleset management</button>
-          <button className={tab === 'pictures' ? 'primary' : ''} onClick={() => { setTab('pictures'); updateRouteContext({ tab: 'pictures' }); }}>Picture management</button>
+          <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className={tab === 'accounts' ? 'primary' : ''} onClick={() => { setTab('accounts'); updateRouteContext({ tab: 'accounts', feature: null, onlyMissingPicture: null }); }}>Account code management</button>
+          <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className={tab === 'rulesets' ? 'primary' : ''} onClick={() => { setTab('rulesets'); updateRouteContext({ tab: 'rulesets', feature: null, onlyMissingPicture: null }); }}>Ruleset management</button>
+          <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className={tab === 'pictures' ? 'primary' : ''} onClick={() => { setTab('pictures'); updateRouteContext({ tab: 'pictures' }); }}>Picture management</button>
         </div>
         {status && <div className="note compactNote">{status}</div>}
       </section>
@@ -541,7 +550,7 @@ export default function CpqSetupPage({
         <section className="compactCard compactSection">
           <div className="filtersHeader">
             <strong>{editingAccountId ? 'Edit account context' : 'Add account context'}</strong>
-            {editingAccountId && <button onClick={resetAccountDraft}>Cancel edit</button>}
+            {editingAccountId && <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={resetAccountDraft}>Cancel edit</button>}
           </div>
           <div className="denseGrid4">
             <label>Account code<input value={accountDraft.account_code} onChange={(e) => setAccountDraft((prev) => ({ ...prev, account_code: e.target.value }))} /></label>
@@ -580,7 +589,7 @@ export default function CpqSetupPage({
           </div>
           <label className="inlineCheck"><input type="checkbox" checked={accountDraft.is_active} onChange={(e) => setAccountDraft((prev) => ({ ...prev, is_active: e.target.checked }))} /> Active</label>
           <div className="toolbar compactToolbar">
-            <button className="primary" onClick={saveAccount}>{editingAccountId ? 'Update account context' : 'Create account context'}</button>
+            <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={saveAccount}>{editingAccountId ? 'Update account context' : 'Create account context'}</button>
           </div>
 
           <div className="tableWrap" style={{ maxHeight: 420 }}>
@@ -601,7 +610,7 @@ export default function CpqSetupPage({
                     <td>{row.is_active ? 'Yes' : 'No'}</td>
                     <td>
                       <div className="rowButtons">
-                        <button onClick={() => {
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => {
                           setEditingAccountId(row.id);
                           setAccountDraft({
                             account_code: row.account_code,
@@ -614,7 +623,7 @@ export default function CpqSetupPage({
                             is_active: row.is_active,
                           });
                         }}>Edit</button>
-                        <button onClick={() => void deleteAccount(row.id)}>Delete</button>
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => void deleteAccount(row.id)}>Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -625,7 +634,7 @@ export default function CpqSetupPage({
 
           <div className="filtersHeader" style={{ marginTop: 18 }}>
             <strong>{editingCountryMappingId ? 'Edit region/sub-region/country mapping' : 'Add region/sub-region/country mapping'}</strong>
-            {editingCountryMappingId && <button onClick={resetCountryMappingDraft}>Cancel edit</button>}
+            {editingCountryMappingId && <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={resetCountryMappingDraft}>Cancel edit</button>}
           </div>
           <div className="denseGrid4">
             <label>Region<input value={countryMappingDraft.region} onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, region: e.target.value }))} /></label>
@@ -640,7 +649,7 @@ export default function CpqSetupPage({
           </div>
           <label className="inlineCheck"><input type="checkbox" checked={countryMappingDraft.is_active} onChange={(e) => setCountryMappingDraft((prev) => ({ ...prev, is_active: e.target.checked }))} /> Active</label>
           <div className="toolbar compactToolbar">
-            <button className="primary" onClick={saveCountryMapping}>{editingCountryMappingId ? 'Update mapping' : 'Create mapping'}</button>
+            <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={saveCountryMapping}>{editingCountryMappingId ? 'Update mapping' : 'Create mapping'}</button>
           </div>
 
           <div className="tableWrap" style={{ maxHeight: 320 }}>
@@ -657,7 +666,7 @@ export default function CpqSetupPage({
                     <td>{row.is_active ? 'Yes' : 'No'}</td>
                     <td>
                       <div className="rowButtons">
-                        <button onClick={() => {
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => {
                           setEditingCountryMappingId(row.id);
                           setCountryMappingDraft({
                             region: row.region,
@@ -666,7 +675,7 @@ export default function CpqSetupPage({
                             is_active: row.is_active,
                           });
                         }}>Edit</button>
-                        <button onClick={() => void deleteCountryMapping(row.id)}>Delete</button>
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => void deleteCountryMapping(row.id)}>Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -681,7 +690,7 @@ export default function CpqSetupPage({
         <section className="compactCard compactSection">
           <div className="filtersHeader">
             <strong>{editingRulesetId ? 'Edit ruleset' : 'Add ruleset'}</strong>
-            {editingRulesetId && <button onClick={resetRulesetDraft}>Cancel edit</button>}
+            {editingRulesetId && <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={resetRulesetDraft}>Cancel edit</button>}
           </div>
           <div className="denseGrid4">
             <label>CPQ ruleset<input value={rulesetDraft.cpq_ruleset} onChange={(e) => setRulesetDraft((prev) => ({ ...prev, cpq_ruleset: e.target.value }))} /></label>
@@ -693,7 +702,7 @@ export default function CpqSetupPage({
           </div>
           <label className="inlineCheck"><input type="checkbox" checked={rulesetDraft.is_active} onChange={(e) => setRulesetDraft((prev) => ({ ...prev, is_active: e.target.checked }))} /> Active</label>
           <div className="toolbar compactToolbar">
-            <button className="primary" onClick={saveRuleset}>{editingRulesetId ? 'Update ruleset' : 'Create ruleset'}</button>
+            <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={saveRuleset}>{editingRulesetId ? 'Update ruleset' : 'Create ruleset'}</button>
           </div>
 
           <div className="tableWrap" style={{ maxHeight: 420 }}>
@@ -712,7 +721,7 @@ export default function CpqSetupPage({
                     <td>{row.is_active ? 'Yes' : 'No'}</td>
                     <td>
                       <div className="rowButtons">
-                        <button onClick={() => {
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => {
                           setEditingRulesetId(row.id);
                           setRulesetDraft({
                             cpq_ruleset: row.cpq_ruleset,
@@ -724,7 +733,7 @@ export default function CpqSetupPage({
                             is_active: row.is_active,
                           });
                         }}>Edit</button>
-                        <button onClick={() => void deleteRuleset(row.id)}>Delete</button>
+                        <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => void deleteRuleset(row.id)}>Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -738,7 +747,7 @@ export default function CpqSetupPage({
       {tab === 'pictures' && (
         <section className="compactCard compactSection">
           <div className="toolbar compactToolbar">
-            <button className="primary" onClick={() => void syncPictures()} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync from sampler results'}</button>
+            <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={() => void syncPictures()} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync from sampler results'}</button>
             <label className="pictureSearchField">
               Search feature, option, or value
               <input value={pictureSearch} onChange={(e) => setPictureSearch(e.target.value)} placeholder="Type to filter picture mappings" />
@@ -766,7 +775,7 @@ export default function CpqSetupPage({
 
           <div className="pictureFeatureTabs" role="tablist" aria-label="Picture management features">
             {featureTabs.map((feature) => (
-              <button
+              <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined}
                 key={feature}
                 role="tab"
                 aria-selected={selectedFeature === feature}
@@ -845,7 +854,7 @@ export default function CpqSetupPage({
                   onChange={(event) => setFeatureLayerOrderDraft(Math.max(1, Math.min(20, Number(event.target.value) || 1)))}
                   style={{ width: 90 }}
                 />
-                <button className="primary" onClick={() => void setFeatureSettings(selectedFeature, { feature_layer_order: featureLayerOrderDraft })}>
+                <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} className="primary" onClick={() => void setFeatureSettings(selectedFeature, { feature_layer_order: featureLayerOrderDraft })}>
                   Save layer order
                 </button>
               </div>
@@ -858,7 +867,7 @@ export default function CpqSetupPage({
                 const pictureCount = countPictureLinks(row);
                 const hasPictures = pictureCount > 0;
                 return (
-                  <button
+                  <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined}
                     key={row.id}
                     className="pictureTile"
                     onClick={() => setPictureDraft({
@@ -919,8 +928,8 @@ export default function CpqSetupPage({
                   Active
                 </label>
                 <div className="modalActions">
-                  <button onClick={() => setPictureDraft(null)}>Cancel</button>
-                  <button
+                  <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined} onClick={() => setPictureDraft(null)}>Cancel</button>
+                  <button disabled={!canEdit} title={!canEdit ? 'You need Edit access for this action.' : undefined}
                     className="primary"
                     disabled={savingImageId === pictureDraft.id}
                     onClick={() => void savePictureRow(pictureDraft.id, {

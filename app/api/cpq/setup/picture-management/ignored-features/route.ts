@@ -1,3 +1,4 @@
+import { requirePageEdit, requirePageRead } from '@/lib/auth/page-access';
 import { NextResponse } from 'next/server';
 import { listIgnoredFeatureLabelsForConfigure } from '@/lib/cpq/setup/service';
 

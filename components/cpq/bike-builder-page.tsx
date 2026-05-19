@@ -1,6 +1,6 @@
 'use client';
 
-import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import LifecycleStepper from '@/components/BikeBuilder/LifecycleStepper';
 import PageHeader from '@/components/shared/PageHeader';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
@@ -39,6 +39,8 @@ export type BikeBuilderPagePrefill = {
 
 type BikeBuilderPageProps = {
   prefill?: BikeBuilderPagePrefill;
+  canEdit?: boolean;
+  permissionLevel?: 'none' | 'read' | 'edit' | 'admin';
 };
 
 type SalesLaunchReplayPayload = {
@@ -333,7 +335,7 @@ const buildPreviewSelectedOptions = (parsed: NormalizedBikeBuilderState): Previe
     })
     .filter((entry): entry is PreviewSelectedOption => Boolean(entry));
 
-export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
+export default function BikeBuilderPage({ prefill, canEdit = true, permissionLevel = 'admin' }: BikeBuilderPageProps) {
   const { isAdminMode } = useAdminMode();
   const [accountContexts, setAccountContexts] = useState<AccountContextRecord[]>([]);
   const [rulesets, setRulesets] = useState<RulesetRecord[]>([]);
@@ -342,6 +344,17 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
   const [ruleset, setRuleset] = useState(fallbackRuleset.cpq_ruleset);
 
   const [state, setState] = useState<NormalizedBikeBuilderState | null>(null);
+
+  const readOnlyActionGuard = !canEdit ? {
+    onClickCapture: (event: MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const button = target.closest('button');
+      if (button && !button.hasAttribute('data-read-allowed')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+  } : {};
   const [requestState, setRequestState] = useState<RequestState>({ loading: false });
 
   const [configurationReferenceInput, setConfigurationReferenceInput] = useState('');
@@ -434,6 +447,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
     const targetRuleset = (requestedRuleset ?? rulesetRef.current).trim();
     if (!targetRuleset) return null;
     return (
+    <div {...readOnlyActionGuard} title={!canEdit ? 'You need Edit access for this action.' : undefined}>
       rulesets.find((entry) => entry.cpq_ruleset === targetRuleset) ?? {
         ...fallbackRuleset,
         cpq_ruleset: targetRuleset,
@@ -3326,6 +3340,7 @@ export default function BikeBuilderPage({ prefill }: BikeBuilderPageProps) {
         </div>
       ) : null}
     </main>
+    </div>
   );
 }
 

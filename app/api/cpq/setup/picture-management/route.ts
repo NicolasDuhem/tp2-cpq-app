@@ -1,7 +1,10 @@
+import { requirePageEdit, requirePageRead } from '@/lib/auth/page-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { listImageManagementRows } from '@/lib/cpq/setup/service';
 
 export async function GET(req: NextRequest) {
+  const forbidden = await requirePageRead('cpq.setup');
+  if (forbidden) return forbidden;
 
   const featureLabel = req.nextUrl.searchParams.get('featureLabel') ?? '';
   const onlyMissingPicture = req.nextUrl.searchParams.get('onlyMissingPicture') === 'true';

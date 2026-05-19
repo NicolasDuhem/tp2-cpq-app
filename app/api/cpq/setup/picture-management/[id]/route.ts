@@ -1,3 +1,4 @@
+import { requirePageEdit, requirePageRead } from '@/lib/auth/page-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { updateImageManagementRow } from '@/lib/cpq/setup/service';
 
