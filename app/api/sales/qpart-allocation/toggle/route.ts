@@ -4,6 +4,7 @@ import { requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
 import { toggleQPartCountryAllocation } from '@/lib/sales/qpart-allocation/service';
+import { getCurrentUser } from '@/lib/auth/session';
 
 export async function POST(req: NextRequest) {
   const forbidden = await requirePageEdit(PAGE_KEYS.qpart);
@@ -17,12 +18,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const actor = await getCurrentUser();
     await syncQPartCountryAllocationRows({ partIds: [Number(body.partId)] });
 
     const result = await toggleQPartCountryAllocation({
       partId: Number(body.partId),
       countryCode: String(body.countryCode ?? ''),
       targetStatus,
+      actor: actor ? { userId: actor.id, email: actor.email, displayName: actor.displayName } : null,
     });
 
     if (!result.updatedCount) {

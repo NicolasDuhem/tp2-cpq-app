@@ -6,6 +6,7 @@ import {
   syncQPartAllocationToExternalIfBcOk,
   syncQPartAllocationsToExternalIfBcOkBatch,
 } from '@/lib/sales/allocation-external-sync';
+import { insertAllocationAuditRows, type AllocationAuditActor } from '@/lib/audit/allocation-audit';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
 export type QPartBCStatusFilter = 'ok' | 'nok';
@@ -333,7 +334,7 @@ export async function getSalesQPartAllocationPageData(
   };
 }
 
-export async function toggleQPartCountryAllocation(input: { partId: number; countryCode: string; targetStatus: QPartAllocationStatus }) {
+export async function toggleQPartCountryAllocation(input: { partId: number; countryCode: string; targetStatus: QPartAllocationStatus; actor?: AllocationAuditActor | null }) {
   const partId = Number(input.partId);
   const countryCode = asTrimmed(input.countryCode).toUpperCase();
 
@@ -342,14 +343,19 @@ export async function toggleQPartCountryAllocation(input: { partId: number; coun
 
   const targetActive = input.targetStatus === 'active';
 
+  const beforeRows = (await sql`select active from qpart_country_allocation where part_id = ${partId} and country_code = ${countryCode}`) as Array<{active:boolean}>;
+  const partInfo = (await sql`select part_number from qpart_parts where id = ${partId} limit 1`) as Array<{part_number:string}>;
+  const before = beforeRows[0]?.active ?? null;
   const rows = (await sql`
     update qpart_country_allocation
     set active = ${targetActive},
         updated_at = now()
     where part_id = ${partId}
       and country_code = ${countryCode}
+      and coalesce(active,false) <> ${targetActive}
     returning id
   `) as Array<{ id: number }>;
+  if (rows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_single_toggle', entityType: 'qpart', itemCode: asTrimmed(partInfo[0]?.part_number), countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore: before, statusAfter: targetActive }]);
 
   const externalSync = rows.length
     ? await syncQPartAllocationToExternalIfBcOk({ partId, countryCode })
@@ -437,6 +443,8 @@ export async function bulkUpdateQPartCountryAllocation(input: {
   partIds: number[];
   countryCodes: string[];
   targetStatus: QPartAllocationStatus;
+  actor?: AllocationAuditActor | null;
+  scope?: 'current_page' | 'all_filtered_pages';
 }) {
   const partIds = [...new Set(input.partIds.map((value) => Number(value)).filter(Number.isFinite))];
   const countryCodes = [...new Set(input.countryCodes.map((value) => asTrimmed(value).toUpperCase()).filter(Boolean))];
@@ -458,8 +466,9 @@ export async function bulkUpdateQPartCountryAllocation(input: {
         updated_at = now()
     where allocation.part_id in (select part_id from target_parts)
       and allocation.country_code in (select country_code from target_countries)
-    returning allocation.part_id, allocation.country_code
-  `) as Array<{ part_id: number; country_code: string }>;
+      and coalesce(allocation.active,false) <> ${input.targetStatus === 'active'}
+    returning allocation.part_id, allocation.country_code, (not ${input.targetStatus === 'active'}) as status_before
+  `) as Array<{ part_id: number; country_code: string; status_before: boolean }>;
 
   const uniqueTargets = [
     ...new Map(
@@ -485,6 +494,7 @@ export async function bulkUpdateQPartCountryAllocation(input: {
       on allocation.part_id = target."partId"
      and allocation.country_code = target."countryCode"
   `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean }>;
+  if (partRows.length) await insertAllocationAuditRows(partRows.map((row) => ({ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_bulk_toggle', entityType: 'qpart', itemCode: asTrimmed(row.part_number), countryCode: row.country_code, actionType: input.targetStatus === 'active' ? 'bulk_activated' : 'bulk_deactivated', statusBefore: !row.active, statusAfter: row.active, metadata: { bulk: true, operation: input.targetStatus === 'active' ? 'bulk_activate' : 'bulk_deactivate', affectedCount: partRows.length, scope: input.scope ?? 'current_page' } })));
 
   const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(partRows.map((row) => ({
     partId: row.part_id,

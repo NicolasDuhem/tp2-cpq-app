@@ -3,6 +3,7 @@ import { PAGE_KEYS } from '@/lib/auth/page-keys';
 import { requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { updateAllocationCellStatus } from '@/lib/sales/bike-allocation/service';
+import { getCurrentUser } from '@/lib/auth/session';
 
 export async function POST(req: NextRequest) {
   const forbidden = await requirePageEdit(PAGE_KEYS.bike);
@@ -16,11 +17,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const actor = await getCurrentUser();
     const result = await updateAllocationCellStatus({
       ruleset: String(body.ruleset ?? ''),
       ipnCode: String(body.ipnCode ?? ''),
       countryCode: String(body.countryCode ?? ''),
       targetStatus,
+      actor: actor ? { userId: actor.id, email: actor.email, displayName: actor.displayName } : null,
     });
 
     if (result.updatedCount === 0) {

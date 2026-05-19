@@ -4,6 +4,7 @@ import {
   syncBikeAllocationToExternalIfBcOk,
   syncBikeAllocationsToExternalIfBcOkBatch,
 } from '@/lib/sales/allocation-external-sync';
+import { insertAllocationAuditRows, type AllocationAuditActor } from '@/lib/audit/allocation-audit';
 
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
@@ -231,6 +232,7 @@ export async function updateAllocationCellStatus(input: {
   ipnCode: string;
   countryCode: string;
   targetStatus: 'active' | 'not_active';
+  actor?: AllocationAuditActor | null;
 }) {
   const ruleset = asTrimmed(input.ruleset);
   const ipnCode = asTrimmed(input.ipnCode);
@@ -240,16 +242,11 @@ export async function updateAllocationCellStatus(input: {
   if (!ipnCode) throw new Error('ipnCode is required');
   if (!countryCode) throw new Error('countryCode is required');
 
-  const updatedRows = (await sql`
-    update CPQ_sampler_result
-    set
-      active = ${toStatusBoolean(input.targetStatus)},
-      updated_at = now()
-    where coalesce(trim(ruleset), '') = ${ruleset}
-      and coalesce(trim(ipn_code), '') = ${ipnCode}
-      and coalesce(trim(country_code), '') = ${countryCode}
-    returning id
-  `) as Array<{ id: number }>;
+  const targetActive = toStatusBoolean(input.targetStatus);
+  const priorRows = (await sql`select active from CPQ_sampler_result where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode}`) as Array<{active:boolean|null}>;
+  const statusBefore = priorRows[0]?.active ?? null;
+  const updatedRows = (await sql`update CPQ_sampler_result set active = ${targetActive}, updated_at = now() where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode} and coalesce(active,false) <> ${targetActive} returning id`) as Array<{ id: number }>;
+  if (updatedRows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_single_toggle', entityType: 'bike', itemCode: ipnCode, countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore, statusAfter: targetActive }]);
 
   const externalSync = updatedRows.length
     ? await syncBikeAllocationToExternalIfBcOk({ ruleset, ipnCode, countryCode })
@@ -267,6 +264,8 @@ export async function bulkUpdateAllocationStatus(input: {
   ipnCodes: string[];
   countryCodes: string[];
   targetStatus: 'active' | 'not_active';
+  actor?: AllocationAuditActor | null;
+  scope?: 'current_page' | 'all_filtered_pages';
 }) {
   const ruleset = asTrimmed(input.ruleset);
   const ipnCodes = [...new Set(input.ipnCodes.map(asTrimmed).filter(Boolean))];
@@ -276,7 +275,8 @@ export async function bulkUpdateAllocationStatus(input: {
   if (!ipnCodes.length) throw new Error('ipnCodes is required');
   if (!countryCodes.length) throw new Error('countryCodes is required');
 
-  const updatedRows = (await sql`
+  const targetActive = toStatusBoolean(input.targetStatus);
+  const changedRows = (await sql`
     with target_ipns as (
       select value::text as ipn_code
       from jsonb_array_elements_text(${JSON.stringify(ipnCodes)}::jsonb)
@@ -285,19 +285,18 @@ export async function bulkUpdateAllocationStatus(input: {
       select value::text as country_code
       from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
     )
-    update CPQ_sampler_result sr
-    set
-      active = ${toStatusBoolean(input.targetStatus)},
-      updated_at = now()
+    update CPQ_sampler_result sr set active = ${targetActive}, updated_at = now()
     where coalesce(trim(sr.ruleset), '') = ${ruleset}
       and coalesce(trim(sr.ipn_code), '') in (select ipn_code from target_ipns)
       and coalesce(trim(sr.country_code), '') in (select country_code from target_countries)
-    returning coalesce(trim(sr.ruleset), '') as ruleset, coalesce(trim(sr.ipn_code), '') as ipn_code, coalesce(trim(sr.country_code), '') as country_code
-  `) as Array<{ ruleset: string; ipn_code: string; country_code: string }>;
+      and coalesce(sr.active,false) <> ${targetActive}
+    returning coalesce(trim(sr.ruleset), '') as ruleset, coalesce(trim(sr.ipn_code), '') as ipn_code, coalesce(trim(sr.country_code), '') as country_code, (not ${targetActive}) as status_before
+  `) as Array<{ ruleset: string; ipn_code: string; country_code: string; status_before: boolean }>;
+  if (changedRows.length) await insertAllocationAuditRows(changedRows.map((row) => ({ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_bulk_toggle', entityType: 'bike', itemCode: row.ipn_code, countryCode: row.country_code, actionType: targetActive ? 'bulk_activated' : 'bulk_deactivated', statusBefore: row.status_before, statusAfter: targetActive, metadata: { bulk: true, operation: targetActive ? 'bulk_activate' : 'bulk_deactivate', affectedCount: changedRows.length, scope: input.scope ?? 'current_page' } })));
 
   const uniqueTargets = [
     ...new Map(
-      updatedRows.map((row) => [
+      changedRows.map((row) => [
         `${row.ruleset}::${row.ipn_code}::${row.country_code}`,
         { ruleset: row.ruleset, ipnCode: row.ipn_code, countryCode: row.country_code },
       ]),
@@ -340,7 +339,7 @@ export async function bulkUpdateAllocationStatus(input: {
   })));
 
   return {
-    updatedCount: updatedRows.length,
+    updatedCount: changedRows.length,
     ipnCount: ipnCodes.length,
     countryCount: countryCodes.length,
     targetStatus: input.targetStatus,

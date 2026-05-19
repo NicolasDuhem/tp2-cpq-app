@@ -3,6 +3,7 @@ import { PAGE_KEYS } from '@/lib/auth/page-keys';
 import { requirePageEdit } from '@/lib/auth/page-access';
 import { revalidatePath } from 'next/cache';
 import { bulkUpdateAllocationStatus } from '@/lib/sales/bike-allocation/service';
+import { getCurrentUser } from '@/lib/auth/session';
 
 export async function POST(req: NextRequest) {
   const forbidden = await requirePageEdit(PAGE_KEYS.bike);
@@ -16,11 +17,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const actor = await getCurrentUser();
     const result = await bulkUpdateAllocationStatus({
       ruleset: String(body.ruleset ?? ''),
       ipnCodes: Array.isArray(body.ipnCodes) ? body.ipnCodes.map((value) => String(value ?? '')) : [],
       countryCodes: Array.isArray(body.countryCodes) ? body.countryCodes.map((value) => String(value ?? '')) : [],
       targetStatus,
+      actor: actor ? { userId: actor.id, email: actor.email, displayName: actor.displayName } : null,
+      scope: 'current_page',
     });
 
     revalidatePath('/sales/bike-allocation');

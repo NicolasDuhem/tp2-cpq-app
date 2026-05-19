@@ -57,3 +57,7 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
 - Added page-level login/access denied handling on Bike Allocation and QPart Allocation pages.
 - Added temporary access-level debug text in Bike Allocation page header.
 - Global middleware lock and audit trail remain intentionally out of scope.
+
+
+### Allocation audit permissions context
+- Audit rows capture actor id/email/display from authenticated session when available; nullable actor fields are allowed for no-session flows.

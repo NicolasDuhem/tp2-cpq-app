@@ -251,3 +251,18 @@ No new database tables or columns are required for the 2026-05 allocation workfl
 
 ## Auth and permission foundation (May 19, 2026)
 User management, local login/session foundation, and per-page permissions were added. See `docs/AUTH_AND_PERMISSIONS.md` and migration `sql/migrations/2026-05-19_app_auth_permissions.sql`.
+
+
+## Allocation Active/Inactive Audit Log
+- Table: `app_allocation_audit_log` (migration `sql/migrations/2026-05-19_allocation_audit_log.sql`).
+- Captures actor (id/email/display), page/source/entity/item/country, action type, `status_before`, `status_after`, and json metadata.
+- Audited writes: bike single/bulk active toggle, QPart single/bulk active toggle. Only real status changes are logged.
+- Creation auditing (CSV/manual/CPQ-created) should write `status_before = null` and creation action types when those creation paths insert allocation rows.
+- Not audited: filter/search/pagination/read-only status checks/pushes that do not modify Active/create allocation rows.
+- Query example:
+```sql
+select created_at, actor_display_name, actor_email, page_key, source_process, entity_type, item_code, country_code, action_type, status_before, status_after, metadata
+from app_allocation_audit_log
+order by created_at desc
+limit 200;
+```
