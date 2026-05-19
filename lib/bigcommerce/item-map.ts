@@ -54,7 +54,7 @@ export type ItemMapUpsertPayload = {
 
 const asTrimmed = (value: unknown) => String(value ?? "").trim();
 
-function toBcStatus(value: unknown): BCStatus {
+export function normalizeBCStatus(value: unknown): BCStatus {
   const status = asTrimmed(value).toUpperCase();
   if (
     status === "OK" ||

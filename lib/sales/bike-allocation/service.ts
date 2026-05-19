@@ -5,6 +5,7 @@ import {
   syncBikeAllocationsToExternalIfBcOkBatch,
 } from '@/lib/sales/allocation-external-sync';
 import { insertAllocationAuditRows, type AllocationAuditActor } from '@/lib/audit/allocation-audit';
+import { normalizeBCStatus } from '@/lib/bigcommerce/item-map';
 
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
@@ -252,7 +253,7 @@ export async function updateAllocationCellStatus(input: {
     order by updated_at desc nulls last, id desc
     limit 1
   `) as Array<{ bc_status: string | null }>;
-  const bigcommerceStatus = asTrimmed(bcStatusRows[0]?.bc_status).toUpperCase() || null;
+  const bigcommerceStatus = bcStatusRows[0]?.bc_status == null ? null : normalizeBCStatus(bcStatusRows[0]?.bc_status);
   const priorRows = (await sql`select active from CPQ_sampler_result where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode}`) as Array<{active:boolean|null}>;
   const statusBefore = priorRows[0]?.active ?? null;
   const updatedRows = (await sql`update CPQ_sampler_result set active = ${targetActive}, updated_at = now() where coalesce(trim(ruleset), '') = ${ruleset} and coalesce(trim(ipn_code), '') = ${ipnCode} and coalesce(trim(country_code), '') = ${countryCode} and coalesce(active,false) <> ${targetActive} returning id`) as Array<{ id: number }>;
@@ -302,7 +303,7 @@ export async function bulkUpdateAllocationStatus(input: {
       and coalesce(sr.active,false) <> ${targetActive}
     returning coalesce(trim(sr.ruleset), '') as ruleset, coalesce(trim(sr.ipn_code), '') as ipn_code, coalesce(trim(sr.country_code), '') as country_code, (not ${targetActive}) as status_before
   `) as Array<{ ruleset: string; ipn_code: string; country_code: string; status_before: boolean }>;
-  const bcStatusBySku = new Map<string, string | null>();
+  const bcStatusBySku = new Map<string, ReturnType<typeof normalizeBCStatus> | null>();
   if (changedRows.length) {
     const skuRows = [...new Set(changedRows.map((row) => row.ipn_code))];
     const bcRows = (await sql`
@@ -325,7 +326,7 @@ export async function bulkUpdateAllocationStatus(input: {
       from ranked
       where rn = 1
     `) as Array<{ sku_code: string; bc_status: string | null }>;
-    for (const row of bcRows) bcStatusBySku.set(row.sku_code, asTrimmed(row.bc_status).toUpperCase() || null);
+    for (const row of bcRows) bcStatusBySku.set(row.sku_code, row.bc_status == null ? null : normalizeBCStatus(row.bc_status));
   }
   if (changedRows.length) await insertAllocationAuditRows(changedRows.map((row) => ({ actor: input.actor, pageKey: 'sales.bike_allocation', sourceProcess: 'bike_allocation_bulk_toggle', entityType: 'bike', itemCode: row.ipn_code, countryCode: row.country_code, bigcommerceStatus: bcStatusBySku.get(row.ipn_code) ?? null, actionType: targetActive ? 'bulk_activated' : 'bulk_deactivated', statusBefore: row.status_before, statusAfter: targetActive, metadata: { bulk: true, operation: targetActive ? 'bulk_activate' : 'bulk_deactivate', affectedCount: changedRows.length, scope: input.scope ?? 'current_page' } })));
 

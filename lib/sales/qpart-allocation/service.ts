@@ -7,6 +7,7 @@ import {
   syncQPartAllocationsToExternalIfBcOkBatch,
 } from '@/lib/sales/allocation-external-sync';
 import { insertAllocationAuditRows, type AllocationAuditActor } from '@/lib/audit/allocation-audit';
+import { normalizeBCStatus } from '@/lib/bigcommerce/item-map';
 
 export type QPartAllocationStatus = 'active' | 'inactive';
 export type QPartBCStatusFilter = 'ok' | 'nok';
@@ -367,7 +368,7 @@ export async function toggleQPartCountryAllocation(input: { partId: number; coun
       and coalesce(active,false) <> ${targetActive}
     returning id
   `) as Array<{ id: number }>;
-  if (rows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_single_toggle', entityType: 'qpart', itemCode: asTrimmed(partInfo[0]?.part_number), countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore: before, statusAfter: targetActive, bigcommerceStatus: asTrimmed(partInfo[0]?.bc_status).toUpperCase() || null }]);
+  if (rows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_single_toggle', entityType: 'qpart', itemCode: asTrimmed(partInfo[0]?.part_number), countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore: before, statusAfter: targetActive, bigcommerceStatus: partInfo[0]?.bc_status == null ? null : normalizeBCStatus(partInfo[0]?.bc_status) }]);
 
   const externalSync = rows.length
     ? await syncQPartAllocationToExternalIfBcOk({ partId, countryCode })
@@ -514,7 +515,7 @@ export async function bulkUpdateQPartCountryAllocation(input: {
       limit 1
     ) map on true
   `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean; bc_status: string | null }>;
-  if (partRows.length) await insertAllocationAuditRows(partRows.map((row) => ({ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_bulk_toggle', entityType: 'qpart', itemCode: asTrimmed(row.part_number), countryCode: row.country_code, bigcommerceStatus: asTrimmed(row.bc_status).toUpperCase() || null, actionType: input.targetStatus === 'active' ? 'bulk_activated' : 'bulk_deactivated', statusBefore: !row.active, statusAfter: row.active, metadata: { bulk: true, operation: input.targetStatus === 'active' ? 'bulk_activate' : 'bulk_deactivate', affectedCount: partRows.length, scope: input.scope ?? 'current_page' } })));
+  if (partRows.length) await insertAllocationAuditRows(partRows.map((row) => ({ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_bulk_toggle', entityType: 'qpart', itemCode: asTrimmed(row.part_number), countryCode: row.country_code, bigcommerceStatus: row.bc_status == null ? null : normalizeBCStatus(row.bc_status), actionType: input.targetStatus === 'active' ? 'bulk_activated' : 'bulk_deactivated', statusBefore: !row.active, statusAfter: row.active, metadata: { bulk: true, operation: input.targetStatus === 'active' ? 'bulk_activate' : 'bulk_deactivate', affectedCount: partRows.length, scope: input.scope ?? 'current_page' } })));
 
   const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(partRows.map((row) => ({
     partId: row.part_id,
