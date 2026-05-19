@@ -2,7 +2,7 @@
 
 import PageAccessGate from '@/components/auth/page-access-gate';
 import BikeBuilderPage, { type BikeBuilderPagePrefill } from '@/components/cpq/bike-builder-page';
-import { PAGE_KEYS } from '@/lib/auth/page-access';
+import { PAGE_KEYS } from '@/lib/auth/page-keys';
 
 type BikeBuilderAccessClientProps = {
   prefill: BikeBuilderPagePrefill;
