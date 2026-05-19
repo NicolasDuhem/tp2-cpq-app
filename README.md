@@ -196,3 +196,13 @@ User management, local login/session foundation, and per-page permissions were a
 - Active/Inactive status changes on Sales Bike Allocation and Sales QPart Allocation are written to `app_allocation_audit_log` with before/after values and actor metadata.
 
 - `/sales/allocation-audit` → read-only audit history lookup by item code (bike IPN/SKU or QPart code), with permission key `sales.allocation_audit`.
+
+
+## Dashboard (May 2026 operational rebuild)
+- `/dashboard` now focuses on bike allocation health, qpart allocation health, last-24h allocation audit activity, and compact operational gap cards.
+- Filters: region, sub-region, country, bike type, qpart hierarchy L1, BC status (OK/NOK/all), active status (active/inactive/all).
+- Data is aggregated server-side in `lib/dashboard/service.ts` using explicit column selects and grouped SQL.
+- Bike sources: `CPQ_sampler_result` + `CPQ_setup_ruleset` + `cpq_country_mappings` + latest `bc_item_variant_map` per SKU.
+- QPart sources: `qpart_country_allocation` + `qpart_parts` + `qpart_hierarchy_nodes` + `cpq_country_mappings` + latest `bc_item_variant_map` per part number.
+- Recent activity source: `app_allocation_audit_log` (last 24 hours).
+- Old map/heatmap/picture-completeness dashboard visuals were removed from `/dashboard` and replaced with compact operational sections.

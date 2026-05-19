@@ -1,491 +1,205 @@
 import { sql } from '@/lib/db/client';
 
-export type DashboardKpi = {
-  activeConfigurations: number;
-  inactiveConfigurations: number;
-  territoriesCovered: number;
-  bikeTypesCovered: number;
-  territoriesWithGaps: number;
-  featuresMissingPictures: number;
-  pictureCoveragePct: number;
-};
-
-export type DashboardTerritoryPoint = {
-  countryCode: string;
-  countryName: string;
+export type DashboardFilters = {
   region: string;
   subRegion: string;
-  x: number;
-  y: number;
-  totalBikeTypes: number;
-  activeBikeTypes: number;
-  inactiveBikeTypes: number;
-  readinessScore: number;
+  country: string;
+  bikeType: string;
+  hierarchyLevel1: string;
+  bcStatus: 'all' | 'ok' | 'nok';
+  activeStatus: 'all' | 'active' | 'inactive';
 };
 
-export type DashboardCoverageRow = {
-  countryCode: string;
-  countryName: string;
-  bikeType: string;
+export type AllocationBucket = {
+  region: string;
+  subRegion: string;
+  country: string;
+  groupLabel: string;
+  bcOkCount: number;
+  bcNokCount: number;
   activeCount: number;
   inactiveCount: number;
   totalCount: number;
-  health: 'strong' | 'mixed' | 'weak' | 'none';
-  healthScore: number;
 };
 
-export type DashboardPictureFeature = {
-  featureLabel: string;
-  configured: number;
-  missing: number;
-  total: number;
-  completionPct: number;
-};
-
-export type DashboardGapItem = {
-  label: string;
-  value: number;
-  hint: string;
-  href: string;
-};
-
-export type DashboardLeaderboardItem = {
-  rank: number;
-  label: string;
-  metricLabel: string;
-  metricValue: number;
-  href: string;
+export type AuditSummary = {
+  last24hTotal: number;
+  bikeUpdates: number;
+  qpartUpdates: number;
+  activeChanges: number;
+  inactiveChanges: number;
+  externalPushEvents: number;
+  topUsers: Array<{ name: string; count: number }>;
+  recentRows: Array<{ createdAt: string; user: string; entityType: string; actionType: string; countryCode: string | null; itemCode: string }>;
 };
 
 export type DashboardPageData = {
   generatedAt: string;
-  kpi: DashboardKpi;
-  bikeTypes: string[];
-  countries: string[];
-  territoryPoints: DashboardTerritoryPoint[];
-  coverageRows: DashboardCoverageRow[];
-  pictureFeatures: DashboardPictureFeature[];
-  gaps: DashboardGapItem[];
-  leaderboards: {
-    territoriesMissingCoverage: DashboardLeaderboardItem[];
-    bikeTypesWeakCoverage: DashboardLeaderboardItem[];
-    featuresMissingPictures: DashboardLeaderboardItem[];
-    inactiveHeavyCombos: DashboardLeaderboardItem[];
+  filters: DashboardFilters;
+  filterOptions: {
+    regions: string[];
+    subRegions: string[];
+    countries: string[];
+    bikeTypes: string[];
+    hierarchyLevel1: string[];
   };
-  extras: {
-    activeSharePct: number;
-    inactiveSharePct: number;
-    rulesetsByBikeType: Array<{ bikeType: string; rulesetCount: number }>;
+  bikeSummary: { bcOkCount: number; bcNokCount: number; activeCount: number; inactiveCount: number; totalCount: number };
+  bikeRows: AllocationBucket[];
+  qpartSummary: { bcOkCount: number; bcNokCount: number; activeCount: number; inactiveCount: number; totalCount: number };
+  qpartRows: AllocationBucket[];
+  audit: AuditSummary;
+  operationalGaps: Array<{ label: string; severity: 'medium' | 'high'; value: number; note: string }>;
+};
+
+const t = (value: unknown) => String(value ?? '').trim();
+
+function parseFilters(input: URLSearchParams): DashboardFilters {
+  const bc = t(input.get('bc_status')).toLowerCase();
+  const active = t(input.get('active_status')).toLowerCase();
+  return {
+    region: t(input.get('region')),
+    subRegion: t(input.get('sub_region')),
+    country: t(input.get('country')).toUpperCase(),
+    bikeType: t(input.get('bike_type')),
+    hierarchyLevel1: t(input.get('h1')),
+    bcStatus: bc === 'ok' || bc === 'nok' ? bc : 'all',
+    activeStatus: active === 'active' || active === 'inactive' ? active : 'all',
   };
-  notes: {
-    heatmapLogic: string;
-    bikeTypeMappingSource: string;
-    pictureCompletenessLogic: string;
-  };
-};
-
-type CountryMappingRow = {
-  country_code: string;
-  region: string;
-  sub_region: string;
-};
-
-type SamplerAggregateRow = {
-  country_code: string;
-  ruleset: string;
-  active_count: number;
-  inactive_count: number;
-  total_count: number;
-};
-
-const asTrimmed = (value: unknown) => String(value ?? '').trim();
-
-const REGION_COORDINATES: Record<string, { lon: number; lat: number }> = {
-  europe: { lon: 10, lat: 51 },
-  'north america': { lon: -100, lat: 45 },
-  'south america': { lon: -60, lat: -17 },
-  asia: { lon: 95, lat: 35 },
-  africa: { lon: 20, lat: 2 },
-  oceania: { lon: 135, lat: -24 },
-  'middle east': { lon: 45, lat: 26 },
-};
-
-const SUB_REGION_COORDINATE_OFFSETS: Record<string, { lon: number; lat: number }> = {
-  'western europe': { lon: -6, lat: 2 },
-  'northern europe': { lon: 2, lat: 7 },
-  'southern europe': { lon: 4, lat: -6 },
-  'eastern europe': { lon: 12, lat: 2 },
-  'north america': { lon: -5, lat: 0 },
-  'central america': { lon: 8, lat: -14 },
-  'south america': { lon: 0, lat: -2 },
-  'eastern asia': { lon: 20, lat: 3 },
-  'south-eastern asia': { lon: 16, lat: -9 },
-  'southern asia': { lon: 6, lat: -6 },
-  'western asia': { lon: -8, lat: 2 },
-  'northern africa': { lon: 3, lat: 9 },
-  'sub-saharan africa': { lon: 8, lat: -5 },
-  'australia and new zealand': { lon: 14, lat: -5 },
-};
-
-function normalizeKey(value: string): string {
-  return value.trim().toLowerCase();
 }
 
-function hashCode(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
+export async function getDashboardPageData(searchParams?: Record<string, string | string[] | undefined>): Promise<DashboardPageData> {
+  const params = new URLSearchParams();
+  Object.entries(searchParams ?? {}).forEach(([k, v]) => {
+    if (typeof v === 'string') params.set(k, v);
+  });
+  const filters = parseFilters(params);
 
-function projectToMap(lon: number, lat: number) {
-  const x = ((lon + 180) / 360) * 100;
-  const y = ((90 - lat) / 180) * 100;
-  return { x, y };
-}
-
-function resolveCountryName(countryCode: string): string {
-  try {
-    const formatter = new Intl.DisplayNames(['en'], { type: 'region' });
-    return formatter.of(countryCode) ?? countryCode;
-  } catch {
-    return countryCode;
-  }
-}
-
-export async function getDashboardPageData(): Promise<DashboardPageData> {
-  const [countryMappingsRaw, samplerAggRowsRaw, rulesetRowsRaw, pictureRowsRaw] = await Promise.all([
+  const [optionsRows, bikeRowsRaw, qpartRowsRaw, auditRowsRaw] = await Promise.all([
+    sql`select distinct upper(trim(country_code)) as country, trim(region) as region, trim(sub_region) as sub_region from cpq_country_mappings where is_active = true`,
     sql`
-      select distinct country_code, region, sub_region
-      from cpq_country_mappings
-      where is_active = true
-        and coalesce(trim(country_code), '') <> ''
-    `,
-    sql`
-      select
-        upper(trim(country_code)) as country_code,
-        trim(ruleset) as ruleset,
+      with sampler as (
+        select
+          upper(trim(sr.country_code)) as country,
+          coalesce(nullif(trim(cm.region), ''), 'Unknown') as region,
+          coalesce(nullif(trim(cm.sub_region), ''), 'Unknown') as sub_region,
+          coalesce(nullif(trim(rs.bike_type), ''), 'Unmapped') as bike_type,
+          coalesce(map.bc_status, 'UNKNOWN') as bc_status,
+          coalesce(sr.active, false) as active
+        from CPQ_sampler_result sr
+        left join cpq_country_mappings cm on upper(trim(cm.country_code)) = upper(trim(sr.country_code)) and cm.is_active = true
+        left join CPQ_setup_ruleset rs on trim(rs.cpq_ruleset) = trim(sr.ruleset)
+        left join lateral (
+          select bc_status
+          from bc_item_variant_map m
+          where coalesce(trim(m.sku_code), '') = coalesce(trim(sr.ipn_code), '')
+          order by updated_at desc nulls last, id desc
+          limit 1
+        ) map on true
+        where coalesce(trim(sr.country_code), '') <> '' and coalesce(trim(sr.ruleset), '') <> ''
+      )
+      select region, sub_region, country, bike_type as group_label,
+        sum(case when upper(bc_status) = 'OK' then 1 else 0 end)::int as bc_ok_count,
+        sum(case when upper(bc_status) = 'OK' then 0 else 1 end)::int as bc_nok_count,
         sum(case when active = true then 1 else 0 end)::int as active_count,
         sum(case when active = false then 1 else 0 end)::int as inactive_count,
         count(*)::int as total_count
-      from CPQ_sampler_result
-      where coalesce(trim(country_code), '') <> ''
-        and coalesce(trim(ruleset), '') <> ''
-      group by upper(trim(country_code)), trim(ruleset)
+      from sampler
+      where (${filters.region} = '' or region = ${filters.region})
+        and (${filters.subRegion} = '' or sub_region = ${filters.subRegion})
+        and (${filters.country} = '' or country = ${filters.country})
+        and (${filters.bikeType} = '' or bike_type = ${filters.bikeType})
+        and (${filters.bcStatus} = 'all' or (${filters.bcStatus} = 'ok' and upper(bc_status) = 'OK') or (${filters.bcStatus} = 'nok' and upper(bc_status) <> 'OK'))
+        and (${filters.activeStatus} = 'all' or (${filters.activeStatus} = 'active' and active = true) or (${filters.activeStatus} = 'inactive' and active = false))
+      group by region, sub_region, country, bike_type
+      order by region, sub_region, country, bike_type
     `,
     sql`
-      select cpq_ruleset, bike_type
-      from CPQ_setup_ruleset
-      where coalesce(trim(cpq_ruleset), '') <> ''
+      with q as (
+        select
+          upper(trim(a.country_code)) as country,
+          coalesce(nullif(trim(cm.region), ''), 'Unknown') as region,
+          coalesce(nullif(trim(cm.sub_region), ''), 'Unknown') as sub_region,
+          coalesce(nullif(trim(h1.label_en), ''), 'Unmapped') as h1,
+          coalesce(map.bc_status, 'UNKNOWN') as bc_status,
+          coalesce(a.active, false) as active
+        from qpart_country_allocation a
+        join qpart_parts p on p.id = a.part_id
+        left join qpart_hierarchy_nodes h0 on h0.id = p.hierarchy_node_id
+        left join qpart_hierarchy_nodes h1 on h1.id = case when h0.level = 1 then h0.id else h0.parent_id end
+        left join cpq_country_mappings cm on upper(trim(cm.country_code)) = upper(trim(a.country_code)) and cm.is_active = true
+        left join lateral (
+          select bc_status
+          from bc_item_variant_map m
+          where coalesce(trim(m.sku_code), '') = coalesce(trim(p.part_number), '')
+          order by updated_at desc nulls last, id desc
+          limit 1
+        ) map on true
+      )
+      select region, sub_region, country, h1 as group_label,
+        sum(case when upper(bc_status) = 'OK' then 1 else 0 end)::int as bc_ok_count,
+        sum(case when upper(bc_status) = 'OK' then 0 else 1 end)::int as bc_nok_count,
+        sum(case when active = true then 1 else 0 end)::int as active_count,
+        sum(case when active = false then 1 else 0 end)::int as inactive_count,
+        count(*)::int as total_count
+      from q
+      where (${filters.region} = '' or region = ${filters.region})
+        and (${filters.subRegion} = '' or sub_region = ${filters.subRegion})
+        and (${filters.country} = '' or country = ${filters.country})
+        and (${filters.hierarchyLevel1} = '' or h1 = ${filters.hierarchyLevel1})
+        and (${filters.bcStatus} = 'all' or (${filters.bcStatus} = 'ok' and upper(bc_status) = 'OK') or (${filters.bcStatus} = 'nok' and upper(bc_status) <> 'OK'))
+        and (${filters.activeStatus} = 'all' or (${filters.activeStatus} = 'active' and active = true) or (${filters.activeStatus} = 'inactive' and active = false))
+      group by region, sub_region, country, h1
+      order by region, sub_region, country, h1
     `,
     sql`
-      select feature_label, picture_link_1, picture_link_2, picture_link_3, picture_link_4
-      from cpq_image_management
-      where is_active = true
+      select created_at, coalesce(nullif(trim(actor_display_name), ''), nullif(trim(actor_email), ''), 'System') as actor_name,
+        entity_type, action_type, country_code, item_code, source_process
+      from app_allocation_audit_log
+      where created_at >= now() - interval '24 hours'
+      order by created_at desc
+      limit 200
     `,
   ]);
-  const countryMappings = countryMappingsRaw as CountryMappingRow[];
-  const samplerAggRows = samplerAggRowsRaw as SamplerAggregateRow[];
-  const rulesetRows = rulesetRowsRaw as Array<{ cpq_ruleset: string | null; bike_type: string | null }>;
-  const pictureRows = pictureRowsRaw as Array<{
-    feature_label: string | null;
-    picture_link_1: string | null;
-    picture_link_2: string | null;
-    picture_link_3: string | null;
-    picture_link_4: string | null;
-  }>;
 
-  const rulesetToBikeType = new Map<string, string>();
-  const rulesetsByBikeTypeCounter = new Map<string, Set<string>>();
-  for (const row of rulesetRows) {
-    const ruleset = asTrimmed(row.cpq_ruleset);
-    if (!ruleset) continue;
-    const bikeType = asTrimmed(row.bike_type) || 'Unmapped';
-    rulesetToBikeType.set(ruleset, bikeType);
-    if (!rulesetsByBikeTypeCounter.has(bikeType)) rulesetsByBikeTypeCounter.set(bikeType, new Set());
-    rulesetsByBikeTypeCounter.get(bikeType)?.add(ruleset);
-  }
+  const opts = optionsRows as Array<{ country: string | null; region: string | null; sub_region: string | null }>;
+  const bikeRows = (bikeRowsRaw as Array<any>).map((r) => ({ region: t(r.region), subRegion: t(r.sub_region), country: t(r.country), groupLabel: t(r.group_label), bcOkCount: Number(r.bc_ok_count ?? 0), bcNokCount: Number(r.bc_nok_count ?? 0), activeCount: Number(r.active_count ?? 0), inactiveCount: Number(r.inactive_count ?? 0), totalCount: Number(r.total_count ?? 0) }));
+  const qpartRows = (qpartRowsRaw as Array<any>).map((r) => ({ region: t(r.region), subRegion: t(r.sub_region), country: t(r.country), groupLabel: t(r.group_label), bcOkCount: Number(r.bc_ok_count ?? 0), bcNokCount: Number(r.bc_nok_count ?? 0), activeCount: Number(r.active_count ?? 0), inactiveCount: Number(r.inactive_count ?? 0), totalCount: Number(r.total_count ?? 0) }));
+  const auditRows = auditRowsRaw as Array<any>;
 
-  const bikeTypesSet = new Set<string>();
-  for (const row of samplerAggRows) {
-    const bikeType = rulesetToBikeType.get(asTrimmed(row.ruleset)) ?? 'Unmapped';
-    bikeTypesSet.add(bikeType);
-  }
-  for (const bikeType of rulesetsByBikeTypeCounter.keys()) bikeTypesSet.add(bikeType);
-  const bikeTypes = [...bikeTypesSet].sort((a, b) => a.localeCompare(b));
+  const sum = (rows: AllocationBucket[]) => rows.reduce((a, r) => ({ bcOkCount: a.bcOkCount + r.bcOkCount, bcNokCount: a.bcNokCount + r.bcNokCount, activeCount: a.activeCount + r.activeCount, inactiveCount: a.inactiveCount + r.inactiveCount, totalCount: a.totalCount + r.totalCount }), { bcOkCount: 0, bcNokCount: 0, activeCount: 0, inactiveCount: 0, totalCount: 0 });
 
-  const countryMeta = new Map<string, { region: string; subRegion: string }>();
-  for (const row of countryMappings) {
-    const code = asTrimmed(row.country_code).toUpperCase();
-    if (!code) continue;
-    countryMeta.set(code, { region: asTrimmed(row.region), subRegion: asTrimmed(row.sub_region) });
-  }
-
-  for (const row of samplerAggRows) {
-    const code = asTrimmed(row.country_code).toUpperCase();
-    if (!code || countryMeta.has(code)) continue;
-    countryMeta.set(code, { region: 'Unknown', subRegion: 'Unknown' });
-  }
-
-  const countries = [...countryMeta.keys()].sort((a, b) => a.localeCompare(b));
-
-  const coverageRows: DashboardCoverageRow[] = [];
-  let totalActiveConfigurations = 0;
-  let totalInactiveConfigurations = 0;
-
-  const aggregateByPair = new Map<string, { active: number; inactive: number; total: number }>();
-  for (const row of samplerAggRows) {
-    const countryCode = asTrimmed(row.country_code).toUpperCase();
-    const bikeType = rulesetToBikeType.get(asTrimmed(row.ruleset)) ?? 'Unmapped';
-    const key = `${countryCode}::${bikeType}`;
-    const existing = aggregateByPair.get(key) ?? { active: 0, inactive: 0, total: 0 };
-    existing.active += Number(row.active_count ?? 0);
-    existing.inactive += Number(row.inactive_count ?? 0);
-    existing.total += Number(row.total_count ?? 0);
-    aggregateByPair.set(key, existing);
-
-    totalActiveConfigurations += Number(row.active_count ?? 0);
-    totalInactiveConfigurations += Number(row.inactive_count ?? 0);
-  }
-
-  for (const countryCode of countries) {
-    for (const bikeType of bikeTypes) {
-      const bucket = aggregateByPair.get(`${countryCode}::${bikeType}`) ?? { active: 0, inactive: 0, total: 0 };
-      const health: DashboardCoverageRow['health'] =
-        bucket.total === 0 ? 'none' : bucket.active === 0 ? 'weak' : bucket.inactive === 0 ? 'strong' : 'mixed';
-      const healthScore = bucket.total === 0 ? 0 : bucket.active === 0 ? 0.35 : bucket.inactive === 0 ? 1 : 0.65;
-      coverageRows.push({
-        countryCode,
-        countryName: resolveCountryName(countryCode),
-        bikeType,
-        activeCount: bucket.active,
-        inactiveCount: bucket.inactive,
-        totalCount: bucket.total,
-        health,
-        healthScore,
-      });
-    }
-  }
-
-  const coverageByCountry = new Map<string, { activeBikeTypes: number; inactiveBikeTypes: number; readiness: number; totalPairs: number }>();
-  for (const countryCode of countries) {
-    const rows = coverageRows.filter((row) => row.countryCode === countryCode);
-    const activeBikeTypes = rows.filter((row) => row.activeCount > 0).length;
-    const inactiveBikeTypes = rows.filter((row) => row.totalCount > 0 && row.activeCount === 0).length;
-    const readiness = rows.length ? rows.reduce((sum, row) => sum + row.healthScore, 0) / rows.length : 0;
-    coverageByCountry.set(countryCode, { activeBikeTypes, inactiveBikeTypes, readiness, totalPairs: rows.length });
-  }
-
-  const territoryPoints: DashboardTerritoryPoint[] = countries.map((countryCode) => {
-    const meta = countryMeta.get(countryCode) ?? { region: 'Unknown', subRegion: 'Unknown' };
-    const regionSeed = REGION_COORDINATES[normalizeKey(meta.region)] ?? { lon: 0, lat: 10 };
-    const subRegionShift = SUB_REGION_COORDINATE_OFFSETS[normalizeKey(meta.subRegion)] ?? { lon: 0, lat: 0 };
-    const jitterSeed = hashCode(countryCode);
-    const jitterLon = ((jitterSeed % 9) - 4) * 1.2;
-    const jitterLat = ((Math.floor(jitterSeed / 10) % 9) - 4) * 0.8;
-    const lon = Math.max(-170, Math.min(170, regionSeed.lon + subRegionShift.lon + jitterLon));
-    const lat = Math.max(-72, Math.min(72, regionSeed.lat + subRegionShift.lat + jitterLat));
-    const projected = projectToMap(lon, lat);
-    const coverage = coverageByCountry.get(countryCode) ?? { activeBikeTypes: 0, inactiveBikeTypes: 0, readiness: 0, totalPairs: 0 };
-
-    return {
-      countryCode,
-      countryName: resolveCountryName(countryCode),
-      region: meta.region,
-      subRegion: meta.subRegion,
-      x: projected.x,
-      y: projected.y,
-      totalBikeTypes: coverage.totalPairs,
-      activeBikeTypes: coverage.activeBikeTypes,
-      inactiveBikeTypes: coverage.inactiveBikeTypes,
-      readinessScore: coverage.readiness,
-    };
-  });
-
-  const pictureFeatureMap = new Map<string, { configured: number; missing: number; total: number }>();
-  for (const row of pictureRows) {
-    const featureLabel = asTrimmed(row.feature_label) || 'Unknown feature';
-    const links = [row.picture_link_1, row.picture_link_2, row.picture_link_3, row.picture_link_4].map((entry) => asTrimmed(entry));
-    const hasAnyPicture = links.some(Boolean);
-    const bucket = pictureFeatureMap.get(featureLabel) ?? { configured: 0, missing: 0, total: 0 };
-    bucket.total += 1;
-    if (hasAnyPicture) bucket.configured += 1;
-    else bucket.missing += 1;
-    pictureFeatureMap.set(featureLabel, bucket);
-  }
-
-  const pictureFeatures: DashboardPictureFeature[] = [...pictureFeatureMap.entries()]
-    .map(([featureLabel, value]) => ({
-      featureLabel,
-      configured: value.configured,
-      missing: value.missing,
-      total: value.total,
-      completionPct: value.total ? (value.configured / value.total) * 100 : 0,
-    }))
-    .sort((a, b) => b.missing - a.missing || a.featureLabel.localeCompare(b.featureLabel));
-
-  const territoriesCovered = countries.filter((countryCode) => {
-    const coverage = coverageByCountry.get(countryCode);
-    return (coverage?.activeBikeTypes ?? 0) + (coverage?.inactiveBikeTypes ?? 0) > 0;
-  }).length;
-  const bikeTypesCovered = bikeTypes.filter((bikeType) => coverageRows.some((row) => row.bikeType === bikeType && row.totalCount > 0)).length;
-  const territoriesWithGaps = countries.filter((countryCode) => {
-    const coverage = coverageByCountry.get(countryCode);
-    return (coverage?.activeBikeTypes ?? 0) < bikeTypes.length;
-  }).length;
-
-  const pictureTotals = pictureFeatures.reduce(
-    (acc, item) => {
-      acc.configured += item.configured;
-      acc.missing += item.missing;
-      acc.total += item.total;
-      return acc;
-    },
-    { configured: 0, missing: 0, total: 0 },
-  );
-
-  const kpi: DashboardKpi = {
-    activeConfigurations: totalActiveConfigurations,
-    inactiveConfigurations: totalInactiveConfigurations,
-    territoriesCovered,
-    bikeTypesCovered,
-    territoriesWithGaps,
-    featuresMissingPictures: pictureFeatures.filter((feature) => feature.missing > 0).length,
-    pictureCoveragePct: pictureTotals.total ? (pictureTotals.configured / pictureTotals.total) * 100 : 0,
-  };
-
-  const gaps: DashboardGapItem[] = [];
-  const bottomCountries = countries
-    .map((countryCode) => {
-      const coverage = coverageByCountry.get(countryCode) ?? { activeBikeTypes: 0, inactiveBikeTypes: 0, readiness: 0, totalPairs: 0 };
-      return { countryCode, ...coverage };
-    })
-    .sort((a, b) => a.readiness - b.readiness)
-    .slice(0, 5);
-  for (const row of bottomCountries) {
-    gaps.push({
-      label: `${row.countryCode} readiness`,
-      value: Math.round(row.readiness * 100),
-      hint: `${row.activeBikeTypes}/${bikeTypes.length} bike types active`,
-      href: `/sales/bike-allocation?country_code=${encodeURIComponent(row.countryCode)}`,
-    });
-  }
-
-  const weakestBikeTypes = bikeTypes
-    .map((bikeType) => {
-      const rows = coverageRows.filter((row) => row.bikeType === bikeType);
-      const missingCount = rows.filter((row) => row.totalCount === 0).length;
-      return { bikeType, missingCount };
-    })
-    .sort((a, b) => b.missingCount - a.missingCount)
-    .slice(0, 3);
-  for (const row of weakestBikeTypes) {
-    gaps.push({
-      label: `${row.bikeType} territory gaps`,
-      value: row.missingCount,
-      hint: `${row.missingCount} countries without any configuration`,
-      href: `/sales/bike-allocation?bike_type=${encodeURIComponent(row.bikeType)}`,
-    });
-  }
-
-  const topMissingFeatures = pictureFeatures.filter((feature) => feature.missing > 0).slice(0, 3);
-  for (const feature of topMissingFeatures) {
-    gaps.push({
-      label: `${feature.featureLabel} missing pictures`,
-      value: feature.missing,
-      hint: `${feature.configured}/${feature.total} configured`,
-      href: `/cpq/setup?tab=pictures&feature=${encodeURIComponent(feature.featureLabel)}&onlyMissingPicture=true`,
-    });
-  }
-
-  const territoriesMissingCoverage = countries
-    .map((countryCode) => {
-      const rows = coverageRows.filter((row) => row.countryCode === countryCode);
-      const missing = rows.filter((row) => row.totalCount === 0).length;
-      return { label: `${countryCode} · ${resolveCountryName(countryCode)}`, metricValue: missing, href: `/sales/bike-allocation?country_code=${encodeURIComponent(countryCode)}` };
-    })
-    .sort((a, b) => b.metricValue - a.metricValue)
-    .slice(0, 10)
-    .map((item, index) => ({ rank: index + 1, label: item.label, metricLabel: 'Missing bike types', metricValue: item.metricValue, href: item.href }));
-
-  const bikeTypesWeakCoverage = bikeTypes
-    .map((bikeType) => {
-      const rows = coverageRows.filter((row) => row.bikeType === bikeType);
-      const activeTerritories = rows.filter((row) => row.activeCount > 0).length;
-      const weak = countries.length - activeTerritories;
-      return { bikeType, weak };
-    })
-    .sort((a, b) => b.weak - a.weak)
-    .slice(0, 10)
-    .map((item, index) => ({
-      rank: index + 1,
-      label: item.bikeType,
-      metricLabel: 'Territories without active coverage',
-      metricValue: item.weak,
-      href: `/sales/bike-allocation?bike_type=${encodeURIComponent(item.bikeType)}`,
-    }));
-
-  const featuresMissingPictures = pictureFeatures
-    .slice(0, 10)
-    .map((item, index) => ({
-      rank: index + 1,
-      label: item.featureLabel,
-      metricLabel: 'Missing picture links',
-      metricValue: item.missing,
-      href: `/cpq/setup?tab=pictures&feature=${encodeURIComponent(item.featureLabel)}&onlyMissingPicture=true`,
-    }));
-
-  const inactiveHeavyCombos = coverageRows
-    .filter((row) => row.totalCount > 0)
-    .map((row) => ({
-      label: `${row.countryCode} · ${row.bikeType}`,
-      inactiveShare: row.totalCount ? row.inactiveCount / row.totalCount : 0,
-      inactiveCount: row.inactiveCount,
-      href: `/sales/bike-allocation?country_code=${encodeURIComponent(row.countryCode)}&bike_type=${encodeURIComponent(row.bikeType)}`,
-    }))
-    .sort((a, b) => b.inactiveShare - a.inactiveShare || b.inactiveCount - a.inactiveCount)
-    .slice(0, 10)
-    .map((item, index) => ({
-      rank: index + 1,
-      label: item.label,
-      metricLabel: 'Inactive ratio %',
-      metricValue: Math.round(item.inactiveShare * 100),
-      href: item.href,
-    }));
-
-  const totalConfigurations = totalActiveConfigurations + totalInactiveConfigurations;
-  const extras = {
-    activeSharePct: totalConfigurations ? (totalActiveConfigurations / totalConfigurations) * 100 : 0,
-    inactiveSharePct: totalConfigurations ? (totalInactiveConfigurations / totalConfigurations) * 100 : 0,
-    rulesetsByBikeType: [...rulesetsByBikeTypeCounter.entries()]
-      .map(([bikeType, set]) => ({ bikeType, rulesetCount: set.size }))
-      .sort((a, b) => b.rulesetCount - a.rulesetCount || a.bikeType.localeCompare(b.bikeType)),
-  };
+  const topUsers = new Map<string, number>();
+  auditRows.forEach((r) => topUsers.set(t(r.actor_name), (topUsers.get(t(r.actor_name)) ?? 0) + 1));
 
   return {
     generatedAt: new Date().toISOString(),
-    kpi,
-    bikeTypes,
-    countries,
-    territoryPoints,
-    coverageRows,
-    pictureFeatures,
-    gaps,
-    leaderboards: {
-      territoriesMissingCoverage,
-      bikeTypesWeakCoverage,
-      featuresMissingPictures,
-      inactiveHeavyCombos,
+    filters,
+    filterOptions: {
+      regions: [...new Set(opts.map((r) => t(r.region)).filter(Boolean))].sort(),
+      subRegions: [...new Set(opts.map((r) => t(r.sub_region)).filter(Boolean))].sort(),
+      countries: [...new Set(opts.map((r) => t(r.country).toUpperCase()).filter(Boolean))].sort(),
+      bikeTypes: [...new Set(bikeRows.map((r) => r.groupLabel).filter(Boolean))].sort(),
+      hierarchyLevel1: [...new Set(qpartRows.map((r) => r.groupLabel).filter(Boolean))].sort(),
     },
-    extras,
-    notes: {
-      heatmapLogic:
-        'Cell health uses country+bike-type aggregate: none (no rows), weak (rows exist but all inactive), mixed (both active and inactive), strong (all active). Scores: 0 / 0.35 / 0.65 / 1.0.',
-      bikeTypeMappingSource: 'CPQ_setup_ruleset.cpq_ruleset -> CPQ_setup_ruleset.bike_type',
-      pictureCompletenessLogic:
-        'A picture-management row is configured when any of picture_link_1..4 contains a non-empty value. Missing means all four links are blank.',
+    bikeSummary: sum(bikeRows),
+    bikeRows,
+    qpartSummary: sum(qpartRows),
+    qpartRows,
+    audit: {
+      last24hTotal: auditRows.length,
+      bikeUpdates: auditRows.filter((r) => t(r.entity_type) === 'bike').length,
+      qpartUpdates: auditRows.filter((r) => t(r.entity_type) === 'qpart').length,
+      activeChanges: auditRows.filter((r) => t(r.action_type) === 'activated').length,
+      inactiveChanges: auditRows.filter((r) => t(r.action_type) === 'deactivated').length,
+      externalPushEvents: auditRows.filter((r) => t(r.source_process).toLowerCase().includes('push') || t(r.action_type).toLowerCase().includes('push')).length,
+      topUsers: [...topUsers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count })),
+      recentRows: auditRows.slice(0, 20).map((r) => ({ createdAt: new Date(r.created_at).toISOString(), user: t(r.actor_name), entityType: t(r.entity_type), actionType: t(r.action_type), countryCode: r.country_code ? t(r.country_code) : null, itemCode: t(r.item_code) })),
     },
+    operationalGaps: [
+      { label: 'Bike Active + BC NOK', severity: 'high', value: bikeRows.reduce((n, r) => n + Math.min(r.activeCount, r.bcNokCount), 0), note: 'Active bike rows that may fail BC-gated external sync.' },
+      { label: 'QPart Active + BC NOK', severity: 'high', value: qpartRows.reduce((n, r) => n + Math.min(r.activeCount, r.bcNokCount), 0), note: 'Active qparts with NOK/unknown BC status.' },
+      { label: 'Bike Inactive footprint', severity: 'medium', value: sum(bikeRows).inactiveCount, note: 'Rows currently inactive in CPQ sampler allocation.' },
+      { label: 'QPart Inactive footprint', severity: 'medium', value: sum(qpartRows).inactiveCount, note: 'Rows currently inactive in qpart country allocation.' },
+    ],
   };
 }
