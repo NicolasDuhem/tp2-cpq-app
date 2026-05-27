@@ -517,7 +517,7 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
     setDraftStatus((current) => ({
       ...current,
       restoredAt: draft.savedAt,
-      message: `Restored previous configurator draft from ${new Date(draft.savedAt).toLocaleString()}.`,
+      message: `Restored previous page state from ${new Date(draft.savedAt).toLocaleString()}.`,
     }));
   };
 
@@ -553,7 +553,6 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
         })),
         cpqResponse: state,
         featuresSnapshot: state?.features ?? null,
-        generatedItemCode: state?.itemCode ?? null,
         countryCode: selectedAccount?.country_code ?? activeCpqContext?.countryCode ?? null,
         currencyCode: selectedAccount?.currency ?? null,
         language: selectedAccount?.language ?? null,
@@ -1307,7 +1306,7 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
       const message = error instanceof Error ? error.message : 'Configure failed';
       const expiredSessionHint =
         /session/i.test(message) || /expired/i.test(message)
-          ? ' Your CPQ session may have expired. You can restart the configuration with the same account, ruleset, and selected options.'
+          ? ' The restored CPQ session may have expired. Please start configuration again with the same account and ruleset.'
           : '';
       setRequestState({ loading: false, error: `${message}${expiredSessionHint}` });
     } finally {
@@ -2834,14 +2833,12 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
           <span style={styles.cellMeta}>
             Draft key: <code>{CPQ_DRAFT_STORAGE_KEY}</code>
           </span>
-          <span style={styles.cellMeta}>
-            {draftStatus.savedAt ? `Draft saved at ${new Date(draftStatus.savedAt).toLocaleTimeString()}` : 'Draft autosave waiting'}
-          </span>
+          <span style={styles.cellMeta}>{draftStatus.savedAt ? 'Page state saved' : 'Page state autosave waiting'}</span>
           {draftStatus.message ? <span style={styles.cellMeta}>{draftStatus.message}</span> : null}
           {storedDraft ? (
             <>
               <button className="bbButtonSecondary" onClick={() => hydrateDraft(storedDraft)} data-read-allowed="true">
-                Resume draft
+                Restore saved page state
               </button>
               <button
                 className="bbButtonTertiary"
@@ -2849,12 +2846,12 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
                   if (window.confirm('Clear the local CPQ draft from this browser?')) {
                     clearCpqDraft();
                     setStoredDraft(null);
-                    setDraftStatus({ savedAt: null, restoredAt: null, message: 'Draft cleared from this browser.' });
+                    setDraftStatus({ savedAt: null, restoredAt: null, message: 'Saved page state cleared from this browser.' });
                   }
                 }}
                 data-read-allowed="true"
               >
-                Clear draft
+                Clear saved page state
               </button>
             </>
           ) : null}

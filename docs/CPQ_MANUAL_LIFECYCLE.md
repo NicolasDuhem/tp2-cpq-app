@@ -39,10 +39,9 @@ Finalize response is captured as metadata (`finalize_response_json`) and is not 
 - No active CopyConfiguration call in runtime save flow.
 - No server-side auth/RBAC enforcement in lifecycle APIs.
 
-## CPQ local draft persistence
+## CPQ page state persistence
 
-- Manual lifecycle work-in-progress state is autosaved to browser `localStorage` (`tp2-cpq:cpq-configurator-draft:v1`).
-- Autosave is debounced and updates as account/ruleset/session/features/options change.
-- On return to `/cpq`, the latest valid v1 draft is restored and a restore message is shown.
-- **Clear draft** only removes browser-local draft data; it does not delete finalized or sampler records.
-- Expired restored sessions are handled by showing: restart with same account/ruleset/selected options.
+- `/cpq` autosaves browser-local page state to `sessionStorage` with key `tp2-cpq:cpq-page-state:v1`.
+- Stored fields are high-level UI state only (account/ruleset, CPQ session/header/detail identifiers, selected options, and current CPQ state snapshot JSON).
+- This storage is browser-local only and does not create/update any server draft records.
+- **Clear saved page state** only removes browser storage; it does not delete finalized CPQ/Neon records.
