@@ -1,4 +1,4 @@
-export const CPQ_DRAFT_STORAGE_KEY = 'tp2-cpq:cpq-configurator-draft:v1';
+export const CPQ_DRAFT_STORAGE_KEY = 'tp2-cpq:cpq-page-state:v1';
 
 export type CpqConfiguratorDraft = {
   version: 1;
@@ -15,7 +15,6 @@ export type CpqConfiguratorDraft = {
   dropdownOrderSnapshot: Array<{ featureId: string; selectedOptionId: string | null }>;
   cpqResponse: unknown | null;
   featuresSnapshot: unknown | null;
-  generatedItemCode: string | null;
   countryCode: string | null;
   currencyCode: string | null;
   language: string | null;
@@ -25,7 +24,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 export const readCpqDraft = (): CpqConfiguratorDraft | null => {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(CPQ_DRAFT_STORAGE_KEY);
+  const raw = window.sessionStorage.getItem(CPQ_DRAFT_STORAGE_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -38,10 +37,10 @@ export const readCpqDraft = (): CpqConfiguratorDraft | null => {
 
 export const saveCpqDraft = (draft: CpqConfiguratorDraft): void => {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(CPQ_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  window.sessionStorage.setItem(CPQ_DRAFT_STORAGE_KEY, JSON.stringify(draft));
 };
 
 export const clearCpqDraft = (): void => {
   if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(CPQ_DRAFT_STORAGE_KEY);
+  window.sessionStorage.removeItem(CPQ_DRAFT_STORAGE_KEY);
 };
