@@ -6,6 +6,13 @@ import LifecycleStepper from '@/components/BikeBuilder/LifecycleStepper';
 import PageHeader from '@/components/shared/PageHeader';
 import { useAdminMode } from '@/components/shared/admin-mode-context';
 import {
+  clearCpqDraft,
+  CpqConfiguratorDraft,
+  CPQ_DRAFT_STORAGE_KEY,
+  readCpqDraft,
+  saveCpqDraft,
+} from '@/lib/cpq/client-draft-storage';
+import {
   BikeBuilderContext,
   BikeBuilderFeatureOption,
   FinalizeConfigurationRequest,
@@ -429,6 +436,12 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
     type: 'idle',
     message: '',
   });
+  const [draftStatus, setDraftStatus] = useState<{ savedAt: string | null; restoredAt: string | null; message: string | null }>({
+    savedAt: null,
+    restoredAt: null,
+    message: null,
+  });
+  const [storedDraft, setStoredDraft] = useState<CpqConfiguratorDraft | null>(null);
 
   const selectedRuleset = useMemo(
     () => rulesets.find((entry) => entry.cpq_ruleset === ruleset) ?? null,
@@ -483,6 +496,74 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
     [accountContexts],
   );
   const previewSelectedOptions = useMemo(() => (state ? buildPreviewSelectedOptions(state) : []), [state]);
+
+  const hydrateDraft = (draft: CpqConfiguratorDraft) => {
+    if (draft.accountCode) setAccountCode(draft.accountCode);
+    if (draft.ruleset) setRuleset(draft.ruleset);
+    if (draft.cpqResponse && typeof draft.cpqResponse === 'object') {
+      setState(draft.cpqResponse as NormalizedBikeBuilderState);
+    }
+    setActiveCpqContext((current) => ({
+      owner: current?.owner ?? 'standard',
+      accountCode: draft.accountCode ?? current?.accountCode ?? '',
+      countryCode: draft.countryCode ?? current?.countryCode ?? '',
+      ruleset: draft.ruleset ?? current?.ruleset ?? '',
+      sessionId: draft.sessionId ?? null,
+      headerId: draft.headerId ?? null,
+      detailId: draft.detailId ?? null,
+      source: 'restored-local-draft',
+      initRequestSeq: current?.initRequestSeq ?? null,
+    }));
+    setDraftStatus((current) => ({
+      ...current,
+      restoredAt: draft.savedAt,
+      message: `Restored previous configurator draft from ${new Date(draft.savedAt).toLocaleString()}.`,
+    }));
+  };
+
+  useEffect(() => {
+    const draft = readCpqDraft();
+    if (!draft) return;
+    setStoredDraft(draft);
+    hydrateDraft(draft);
+  }, []);
+
+  useEffect(() => {
+    if (!accountCode && !ruleset && !state && !activeCpqContext) return;
+    const timeout = window.setTimeout(() => {
+      const nextDraft: CpqConfiguratorDraft = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        accountCode: accountCode || null,
+        accountContextId: selectedAccount?.id ?? null,
+        ruleset: ruleset || null,
+        sessionId: activeCpqContext?.sessionId ?? state?.sessionId ?? null,
+        headerId: activeCpqContext?.headerId ?? selectedRuleset?.header_id ?? null,
+        detailId: activeCpqContext?.detailId ?? state?.detailId ?? null,
+        sourceHeaderId: state?.sourceHeaderId ?? null,
+        sourceDetailId: state?.sourceDetailId ?? null,
+        selectedOptions: Object.fromEntries(
+          (state?.features ?? [])
+            .filter((feature) => feature.selectedOptionId)
+            .map((feature) => [feature.featureId, feature.selectedOptionId as string]),
+        ),
+        dropdownOrderSnapshot: (state?.features ?? []).map((feature) => ({
+          featureId: feature.featureId,
+          selectedOptionId: feature.selectedOptionId ?? null,
+        })),
+        cpqResponse: state,
+        featuresSnapshot: state?.features ?? null,
+        generatedItemCode: state?.itemCode ?? null,
+        countryCode: selectedAccount?.country_code ?? activeCpqContext?.countryCode ?? null,
+        currencyCode: selectedAccount?.currency ?? null,
+        language: selectedAccount?.language ?? null,
+      };
+      saveCpqDraft(nextDraft);
+      setStoredDraft(nextDraft);
+      setDraftStatus((current) => ({ ...current, savedAt: nextDraft.savedAt }));
+    }, 450);
+    return () => window.clearTimeout(timeout);
+  }, [accountCode, ruleset, state, activeCpqContext, selectedAccount, selectedRuleset]);
 
   const appendDebugEntry = (entry: DebugEntry) => {
     if (!isDebugEnabled) return;
@@ -1223,7 +1304,12 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
       setLatestConfigureSnapshot(configureSnapshot);
       setRequestState({ loading: false });
     } catch (error) {
-      setRequestState({ loading: false, error: error instanceof Error ? error.message : 'Configure failed' });
+      const message = error instanceof Error ? error.message : 'Configure failed';
+      const expiredSessionHint =
+        /session/i.test(message) || /expired/i.test(message)
+          ? ' Your CPQ session may have expired. You can restart the configuration with the same account, ruleset, and selected options.'
+          : '';
+      setRequestState({ loading: false, error: `${message}${expiredSessionHint}` });
     } finally {
       setActiveFeatureId(null);
     }
@@ -2743,6 +2829,35 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
               </button>
             </div>
           </div>
+        </div>
+        <div style={styles.row}>
+          <span style={styles.cellMeta}>
+            Draft key: <code>{CPQ_DRAFT_STORAGE_KEY}</code>
+          </span>
+          <span style={styles.cellMeta}>
+            {draftStatus.savedAt ? `Draft saved at ${new Date(draftStatus.savedAt).toLocaleTimeString()}` : 'Draft autosave waiting'}
+          </span>
+          {draftStatus.message ? <span style={styles.cellMeta}>{draftStatus.message}</span> : null}
+          {storedDraft ? (
+            <>
+              <button className="bbButtonSecondary" onClick={() => hydrateDraft(storedDraft)} data-read-allowed="true">
+                Resume draft
+              </button>
+              <button
+                className="bbButtonTertiary"
+                onClick={() => {
+                  if (window.confirm('Clear the local CPQ draft from this browser?')) {
+                    clearCpqDraft();
+                    setStoredDraft(null);
+                    setDraftStatus({ savedAt: null, restoredAt: null, message: 'Draft cleared from this browser.' });
+                  }
+                }}
+                data-read-allowed="true"
+              >
+                Clear draft
+              </button>
+            </>
+          ) : null}
         </div>
 
         <div style={styles.referenceRow}>

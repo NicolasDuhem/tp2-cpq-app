@@ -276,3 +276,11 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - QPart sources: `qpart_country_allocation` + `qpart_parts` + `qpart_hierarchy_nodes` + `cpq_country_mappings` + latest `bc_item_variant_map` per part number.
 - Recent activity source: `app_allocation_audit_log` (last 24 hours).
 - Old map/heatmap/picture-completeness dashboard visuals were removed from `/dashboard` and replaced with compact operational sections.
+
+## CPQ local draft persistence
+
+- `/cpq` now autosaves a browser-local draft in `localStorage` under key `tp2-cpq:cpq-configurator-draft:v1`.
+- Stored fields include account/ruleset context, CPQ session + header/detail IDs, selected dropdown options, CPQ feature snapshot, generated item code, and country/currency/language context.
+- Draft restore runs on `/cpq` load, and operators can also use **Resume draft** / **Clear draft** controls.
+- This draft is browser-local only (not a server/user draft), and does not write Neon until existing save/finalize actions run.
+- If a restored CPQ session is expired, configure now surfaces an explicit restart hint while preserving current account/ruleset/option context.

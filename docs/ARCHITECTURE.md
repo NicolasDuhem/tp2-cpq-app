@@ -237,3 +237,12 @@ User management, local login/session foundation, and per-page permissions were a
 - QPart sources: `qpart_country_allocation` + `qpart_parts` + `qpart_hierarchy_nodes` + `cpq_country_mappings` + latest `bc_item_variant_map` per part number.
 - Recent activity source: `app_allocation_audit_log` (last 24 hours).
 - Old map/heatmap/picture-completeness dashboard visuals were removed from `/dashboard` and replaced with compact operational sections.
+
+## CPQ local draft persistence (browser)
+
+- Client-only draft module: `lib/cpq/client-draft-storage.ts`.
+- Storage backend: `window.localStorage` key `tp2-cpq:cpq-configurator-draft:v1`.
+- Scope: `/cpq` runtime state continuity across refresh/tab switch/navigation return.
+- Stores non-secret configurator working state (account/ruleset/session/detail/features/options/context metadata).
+- Excludes auth/session cookies and server credentials.
+- Restore and clear controls live in the CPQ page header area; this is additive and does not alter canonical finalize/save DB flow.
