@@ -22,6 +22,8 @@ Canonical `json_snapshot` and sampler payload source are:
 - Generate cartesian combinations from visible, selectable feature options.
 - User selects rows + assigns one/many countries per row.
 - Validation blocks run if any selected row has zero countries.
+- Ignore decision source: `/api/cpq/setup/picture-management` rows (`cpq_image_management`). During configure loop, rows are matched by normalized `(feature_label, option_label, option_value)` against selected `(featureLabel, optionLabel, optionValue)`.
+- Ignore semantics are strict: only `ignore_during_configure = true` skips a selection; `false` and missing matches are configured.
 - Execution unit is row-country pair:
   1. fresh init,
   2. feature remap,

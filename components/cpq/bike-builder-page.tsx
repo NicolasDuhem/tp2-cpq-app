@@ -233,6 +233,15 @@ type RowDiagnosticEvent = {
   status?: number;
   traceId?: string;
 };
+type PictureManagementDecisionRow = {
+  feature_label: string;
+  option_label: string;
+  option_value: string;
+  ignore_during_configure: boolean;
+};
+
+const normalizeConfigureDecisionKey = (value: unknown): string => String(value ?? "").trim().toLowerCase();
+
 type RowFailureDiagnostics = {
   rowId: string;
   executionKey?: string;
@@ -2256,13 +2265,18 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
   const runSelectedCombinationRows = async () => {
     if (!combinationDataset || !selectedAccount) return;
     let latestIgnoredFeatureLabels = ignoredFeatureLabels;
+    let latestPictureManagementRows: PictureManagementDecisionRow[] = [];
     try {
-      const response = await fetch('/api/cpq/setup/picture-management/ignored-features');
-      const payload = (await response.json().catch(() => ({ featureLabels: [] }))) as { featureLabels?: string[] };
-      latestIgnoredFeatureLabels = Array.isArray(payload.featureLabels) ? payload.featureLabels : [];
+      const response = await fetch('/api/cpq/setup/picture-management');
+      const payload = (await response.json().catch(() => ({ rows: [] }))) as { rows?: PictureManagementDecisionRow[] };
+      latestPictureManagementRows = Array.isArray(payload.rows) ? payload.rows : [];
+      latestIgnoredFeatureLabels = Array.from(new Set(latestPictureManagementRows
+        .filter((row) => row?.ignore_during_configure === true)
+        .map((row) => row.feature_label)));
       setIgnoredFeatureLabels(latestIgnoredFeatureLabels);
     } catch {
       latestIgnoredFeatureLabels = ignoredFeatureLabels;
+      latestPictureManagementRows = [];
     }
 
     const selectedRows = combinationDataset.rows.filter((row) => row.selected);
@@ -2386,11 +2400,25 @@ export default function BikeBuilderPage({ prefill, canEdit = true, permissionLev
           const rowCell = row.cellsByFeatureKey[column.stableFeatureKey];
           if (!rowCell) continue;
 
-          const isIgnoredFeature = latestIgnoredFeatureLabels.some(
-            (featureLabel) => featureLabel.trim().toLowerCase() === column.featureLabel.trim().toLowerCase(),
-          );
-          if (isIgnoredFeature) {
+          const matchedPictureManagementRow = latestPictureManagementRows.find((imageRow) => (
+            normalizeConfigureDecisionKey(imageRow.feature_label) === normalizeConfigureDecisionKey(rowCell.featureLabel)
+            && normalizeConfigureDecisionKey(imageRow.option_label) === normalizeConfigureDecisionKey(rowCell.optionLabel)
+            && normalizeConfigureDecisionKey(imageRow.option_value) === normalizeConfigureDecisionKey(rowCell.optionValue)
+          ));
+          const ignoreDuringConfiguration = matchedPictureManagementRow?.ignore_during_configure === true;
+          if (ignoreDuringConfiguration) {
             ignoredFeaturesForRow.push(column.featureLabel);
+            console.info('[CPQ bulk configure decision]', {
+              workflow: 'configure_all_ticked_items',
+              featureLabel: rowCell.featureLabel,
+              featureId: rowCell.currentSessionFeatureId,
+              optionLabel: rowCell.optionLabel,
+              optionValue: rowCell.optionValue,
+              matchedImageManagementRow: Boolean(matchedPictureManagementRow),
+              ignoreDuringConfiguration,
+              decision: 'skip',
+              reason: 'ignore_during_configure is explicitly true for matched feature/option row',
+            });
             continue;
           }
 
