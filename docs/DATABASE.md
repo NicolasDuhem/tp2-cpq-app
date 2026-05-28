@@ -283,3 +283,9 @@ limit 200;
 - Old map/heatmap/picture-completeness dashboard visuals were removed from `/dashboard` and replaced with compact operational sections.
 
 - Bulk configure skip rule: `cpq_image_management.ignore_during_configure` is evaluated per feature+option row. Only explicit `true` skips; `false` or no matching row means configure.
+
+## 2026-05-28 Neon transfer reduction update
+
+- `retrieve-configuration` now resolves canonical references through a lightweight projection that excludes `json_snapshot` and `finalize_response_json`.
+- `json_snapshot` write path now reduces stored payload content to selected business captions (`ForecastAs`, `Description`, `DetailId`, `TradePrice`, `MSRP`) with non-empty/non-zero value filtering for new saves.
+- Historical `cpq_configuration_references` rows are intentionally unchanged in this pass.
