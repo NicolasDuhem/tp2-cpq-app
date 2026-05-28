@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveConfigurationReference, saveConfigurationReference } from '@/lib/cpq/runtime/configuration-references';
+import { resolveConfigurationReferenceFull, saveConfigurationReference } from '@/lib/cpq/runtime/configuration-references';
 import { createTraceId, errorToLog, logTrace } from '@/lib/cpq/runtime/debug';
 
 export async function POST(req: NextRequest) {
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
   });
 
   try {
-    const row = await resolveConfigurationReference(reference, {
+    const row = await resolveConfigurationReferenceFull(reference, {
       traceId,
       route: '/api/cpq/configuration-references',
       action: 'ResolveConfigurationReference',

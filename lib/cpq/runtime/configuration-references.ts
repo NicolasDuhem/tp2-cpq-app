@@ -1,5 +1,6 @@
 import { sql } from '@/lib/db/client';
 import { createTraceId, errorToLog, logTrace } from './debug';
+import { reduceConfigurationJsonSnapshot } from './reduce-json-snapshot';
 
 export type ConfigurationReferenceRow = {
   id: number;
@@ -101,7 +102,7 @@ export async function saveConfigurationReference(input: SaveConfigurationReferen
   const canonicalDetailId = trimRequired(input.canonical_detail_id ?? input.finalized_detail_id, 'canonical_detail_id');
   const canonicalHeaderId = trimOrNull(input.canonical_header_id ?? input.header_id) ?? 'Simulator';
   const finalizeResponseJson = toJsonObject(input.finalize_response_json, 'finalize_response_json');
-  const jsonSnapshot = toJsonObject(input.json_snapshot, 'json_snapshot');
+  const jsonSnapshot = reduceConfigurationJsonSnapshot(toJsonObject(input.json_snapshot, 'json_snapshot'));
   const payload = {
     configuration_reference: trimRequired(configurationReference, 'configuration_reference'),
     canonical_header_id: canonicalHeaderId,
@@ -265,6 +266,10 @@ export async function saveConfigurationReference(input: SaveConfigurationReferen
 }
 
 export async function resolveConfigurationReference(configurationReference: string, options?: DbTraceOptions) {
+  return resolveConfigurationReferenceFull(configurationReference, options);
+}
+
+export async function resolveConfigurationReferenceLite(configurationReference: string, options?: DbTraceOptions) {
   const traceId = options?.traceId ?? createTraceId();
   const start = Date.now();
 
@@ -279,7 +284,35 @@ export async function resolveConfigurationReference(configurationReference: stri
 
   try {
     const rows = (await sql`
-      select *
+      select
+        id,
+        configuration_reference,
+        canonical_header_id,
+        canonical_detail_id,
+        ruleset,
+        namespace,
+        header_id,
+        finalized_detail_id,
+        source_working_detail_id,
+        source_session_id,
+        source_header_id,
+        source_detail_id,
+        account_code,
+        customer_id,
+        account_type,
+        company,
+        currency,
+        language,
+        country_code,
+        customer_location,
+        application_instance,
+        application_name,
+        finalized_session_id,
+        final_ipn_code,
+        product_description,
+        is_active,
+        created_at,
+        updated_at
       from cpq_configuration_references
       where configuration_reference = ${trimRequired(configurationReference, 'configuration_reference')}
         and is_active = true
@@ -313,4 +346,19 @@ export async function resolveConfigurationReference(configurationReference: stri
     });
     throw error;
   }
+}
+
+
+export async function resolveConfigurationReferenceFull(configurationReference: string, options?: DbTraceOptions) {
+  const traceId = options?.traceId ?? createTraceId();
+  const rows = (await sql`
+    select *
+    from cpq_configuration_references
+    where configuration_reference = ${trimRequired(configurationReference, 'configuration_reference')}
+      and is_active = true
+    order by updated_at desc, id desc
+    limit 1
+  `) as ConfigurationReferenceRow[];
+  logTrace({ timestamp: new Date().toISOString(), traceId, action: options?.action ?? 'resolveConfigurationReferenceFull', route: options?.route ?? '/api/cpq/configuration-references', source: 'db', status: 200, success: true, response: rows[0] ?? { found: false } });
+  return rows[0] ?? null;
 }

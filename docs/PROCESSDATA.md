@@ -286,3 +286,9 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - Draft restore runs on `/cpq` load, and operators can also use **Resume draft** / **Clear draft** controls.
 - This draft is browser-local only (not a server/user draft), and does not write Neon until existing save/finalize actions run.
 - If a restored CPQ session is expired, configure now surfaces an explicit restart hint while preserving current account/ruleset/option context.
+
+## 2026-05-28 CPQ snapshot reduction behavior
+
+- Canonical save still occurs in the same route order and ownership.
+- New saves now reduce `json_snapshot` to selected captions only (`ForecastAs`, `Description`, `DetailId`, `TradePrice`, `MSRP`) and drop null/blank/zero-equivalent values.
+- Retrieve flow does not depend on `json_snapshot`; it uses canonical identity/context fields and a fresh StartConfiguration call.
