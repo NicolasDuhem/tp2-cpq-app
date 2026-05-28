@@ -281,3 +281,5 @@ limit 200;
 - QPart sources: `qpart_country_allocation` + `qpart_parts` + `qpart_hierarchy_nodes` + `cpq_country_mappings` + latest `bc_item_variant_map` per part number.
 - Recent activity source: `app_allocation_audit_log` (last 24 hours).
 - Old map/heatmap/picture-completeness dashboard visuals were removed from `/dashboard` and replaced with compact operational sections.
+
+- Bulk configure skip rule: `cpq_image_management.ignore_during_configure` is evaluated per feature+option row. Only explicit `true` skips; `false` or no matching row means configure.
