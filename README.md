@@ -1,6 +1,8 @@
 # tp2-cpq-app
 
-Next.js CPQ operations app for bike configuration, setup management, sampler analytics, and sales allocation handoff..
+Next.js CPQ operations app for bike configuration, setup management, sampler analytics, and sales allocation handoff.
+
+Release process smoke-test note: this README-only update is intended to validate the GitHub-to-Vercel deployment flow.
 
 ## Current routes
 
