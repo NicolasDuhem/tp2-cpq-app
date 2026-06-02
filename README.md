@@ -2,7 +2,7 @@
 
 Next.js CPQ operations app for bike configuration, setup management, sampler analytics, and sales allocation handoff.
 
-Release process smoke-test note: this README-only update is intended to validate the GitHub-to-Vercel deployment flow. Re-run marker: 2026-06-02 Codex push-to-GitHub-to-Vercel verification.
+Release process smoke-test note: this README-only update is intended to validate the GitHub-to-Vercel deployment flow. Re-run marker: 2026-06-02 second Codex push-to-GitHub-to-Vercel verification.
 
 ## Current routes
 
