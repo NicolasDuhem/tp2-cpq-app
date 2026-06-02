@@ -63,6 +63,11 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 - `NEXT_PUBLIC_CPQ_DEBUG=true` enables client debug timeline (still admin-only visible).
 - `CPQ_USE_MOCK=true` switches `/api/cpq/init` and `/api/cpq/configure` to mock responses.
 
+
+## Environment variables
+
+See `docs/ENVIRONMENT_VARIABLES.md` and `.env.example` for the canonical code-derived environment variable inventory, safe placeholder values, expected Vercel values checklist, and screenshot-only variable findings.
+
 ## Documentation
 
 See `docs/README.md` for the full documentation map, including deep architecture, page/component breakdown, and gap analysis.
