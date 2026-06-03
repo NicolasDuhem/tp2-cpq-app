@@ -204,7 +204,7 @@ The external Push button uses SELECT-first UPDATE/INSERT logic and does not requ
 - `"Sku"` = pushed SKU / `bc_item_variant_map.sku_code`
 - `"BcVariantId"` = `bc_item_variant_map.bc_variant_id`
 - `"BcProductId"` = `bc_item_variant_map.bc_product_id`
-- Bike `"ForecastCtyCode"` = `F_BB`; QPart allocation push override = `Qpart`
+- Bike `"ForecastCtyCode"` = extracted full CPQ `ForecastAs` code when available; updates preserve existing value when absent and inserts use the legacy `F_BB` fallback. QPart allocation push override = `Qpart`
 - Bike `"BblRuleSetItem"` = deterministic Neon `cpq_sampler_result.ruleset` lookup by SKU; QPart allocation push override = `Qpart`
 - `"CreatedAt"` and `"UpdatedAt"` = Unix-second bigint timestamp, for example `1778151766`
 
@@ -289,3 +289,15 @@ limit 200;
 - `retrieve-configuration` now resolves canonical references through a lightweight projection that excludes `json_snapshot` and `finalize_response_json`.
 - `json_snapshot` write path now reduces stored payload content to selected business captions (`ForecastAs`, `Description`, `DetailId`, `TradePrice`, `MSRP`) with non-empty/non-zero value filtering for new saves.
 - Historical `cpq_configuration_references` rows are intentionally unchanged in this pass.
+
+## `cpq_configuration_references.json_snapshot` reduced-caption rules (2026-06-03)
+Runtime saves reduce `json_snapshot` to captioned CPQ reference values needed by downstream operations:
+
+- Retained captions: `ForecastAs`, `Description`, `DetailId`, `TradePrice`, and `MSRP`.
+- Dropped values: `null`, `undefined`, blank strings, numeric `0`, and string `0`.
+- `ForecastAs`: value must be meaningful and at least 13 characters. Full values in the 15-to-30-character range are preferred for extraction; short option suffixes such as `_ULT`, `_BLA`, and `_STD` are not stored in newly reduced snapshots.
+- `MSRP`: only the maximum safely parsed non-zero numeric value is retained.
+- `TradePrice`: only the maximum safely parsed non-zero numeric value is retained.
+- Historical rows are not automatically rewritten by the runtime reducer.
+
+External bike allocation pushes use the extracted full `ForecastAs` as `public.variants."ForecastCtyCode"`. If no valid full ForecastAs is found, updates preserve the existing external value and inserts retain the legacy fallback. QPart allocation pushes keep their existing `Qpart` hardcoding.

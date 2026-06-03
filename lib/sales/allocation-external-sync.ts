@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { sql } from '@/lib/db/client';
+import { extractPrimaryForecastAs } from '@/lib/cpq/runtime/reduce-json-snapshot';
 import { buildBikeExternalSamplerPayload, buildQpartExternalSamplerPayload } from '@/lib/external-pg/cpq-sampler-result';
 import {
   syncExternalVariantTablesBatch,
@@ -64,7 +65,6 @@ type StageTimer = {
   start: (stage: string) => () => void;
 };
 
-const FORECAST_CTY_CODE = 'F_BB';
 const QPART_EXTERNAL_VALUE = 'Qpart';
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
@@ -188,6 +188,46 @@ export async function lookupLatestSamplerRulesetMap(skuCodes: string[]): Promise
   return result;
 }
 
+
+export async function lookupPrimaryForecastAsMap(skuCodes: string[]): Promise<Map<string, string | null>> {
+  const skus = [...new Set(skuCodes.map(asTrimmed).filter(Boolean))];
+  const result = new Map<string, string | null>();
+  if (!skus.length) return result;
+
+  const rows = (await sql`
+    with requested as (
+      select value::text as sku_code
+      from jsonb_array_elements_text(${JSON.stringify(skus)}::jsonb)
+    ),
+    ranked as (
+      select
+        coalesce(trim(ref.final_ipn_code), '') as sku_code,
+        ref.json_snapshot,
+        row_number() over (
+          partition by coalesce(trim(ref.final_ipn_code), '')
+          order by ref.updated_at desc nulls last, ref.created_at desc nulls last, ref.id desc
+        ) as rn
+      from public.cpq_configuration_references ref
+      join requested on coalesce(trim(ref.final_ipn_code), '') = requested.sku_code
+      where ref.is_active = true
+        and coalesce(trim(ref.final_ipn_code), '') <> ''
+    )
+    select sku_code, json_snapshot
+    from ranked
+    where rn = 1
+  `) as Array<{ sku_code: string | null; json_snapshot: unknown }>;
+
+  for (const row of rows) {
+    const sku = asTrimmed(row.sku_code);
+    if (!sku) continue;
+    result.set(sku, extractPrimaryForecastAs(row.json_snapshot));
+  }
+  for (const sku of skus) {
+    if (!result.has(sku)) result.set(sku, null);
+  }
+  return result;
+}
+
 function pendingBcResult(sku: string, countryCode: string, status: string, hasIds: boolean): AllocationExternalSyncResult {
   const missingIds = hasIds ? '' : ' or missing BC product/variant IDs';
   return {
@@ -265,11 +305,13 @@ export async function syncBikeAllocationToExternalIfBcOk(input: {
 
   try {
     const payload = await buildBikeExternalSamplerPayload({ ruleset, ipnCode: sku, countryCode });
+    const forecastAsMap = await lookupPrimaryForecastAsMap([sku]);
     const result = await syncExternalVariantTablesForPayload({
       sku: payload.ipnCode,
       countryCode: payload.countryCode,
       detailId: payload.detailId,
       isActive: payload.active,
+      forecastCtyCodeOverride: forecastAsMap.get(sku) ?? null,
     });
     return pushedResult(sku, countryCode, result);
   } catch (error) {
@@ -338,6 +380,10 @@ export async function syncBikeAllocationsToExternalIfBcOkBatch(
   const rulesetMap = await lookupLatestSamplerRulesetMap(normalizedTargets.map((target) => target.sku));
   endRuleset();
 
+  const endForecastAs = timer.start('load forecast map');
+  const forecastAsMap = await lookupPrimaryForecastAsMap(normalizedTargets.map((target) => target.sku));
+  endForecastAs();
+
   const results: AllocationExternalSyncResult[] = [];
   const pushable = [];
   for (const target of normalizedTargets) {
@@ -366,7 +412,7 @@ export async function syncBikeAllocationsToExternalIfBcOkBatch(
           isActive: target.active,
           bcProductId: bc.bcProductId as number,
           bcVariantId: bc.bcVariantId as number,
-          forecastCtyCode: FORECAST_CTY_CODE,
+          forecastCtyCode: forecastAsMap.get(target.sku) ?? null,
           bblRuleSetItem: ruleset,
         })),
         {

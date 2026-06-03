@@ -145,7 +145,7 @@ order by count(*) desc, "Sku", "CountryCode";
 
 Push is allowed only when Neon `bc_item_variant_map` has `bc_status = 'OK'` plus both `bc_product_id` and `bc_variant_id` for the SKU. If either ID is missing, the API returns a skipped result and writes nothing externally; the Sales UIs hide Push for rows that do not meet this precondition.
 
-For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, hardcoded `"ForecastCtyCode" = 'F_BB'`, deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. QPart pushes use the QPart-only override (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`). `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
+For bike pushes, `variants` receives `"Sku"`, `"BcVariantId"`, `"BcProductId"`, `"ForecastCtyCode"` from the extracted full CPQ `ForecastAs` code (legacy `F_BB` insert fallback only when no valid code exists), deterministic `"BblRuleSetItem"` from Neon `cpq_sampler_result.ruleset`, and bigint Unix-second `"CreatedAt"`/`"UpdatedAt"` values such as `1778151766`. QPart pushes use the QPart-only override (`BblRuleSetItem`, `ForecastCtyCode`, and `DetailId` = `Qpart`). `variant_eligibilities` receives `"Sku"`, `"CountryCode"`, `"DetailId"`, and `"IsActive"` from the current bike/QPart allocation state.
 
 ## Live Neon metadata source of truth
 
