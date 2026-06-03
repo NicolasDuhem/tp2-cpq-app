@@ -35,3 +35,41 @@
 ## Follow-up recommendations
 - Backfill historical `cpq_configuration_references` rows in a controlled migration/batch script after runtime verification in staging.
 - Next optimization pass should target `bc_item_variant_map` join normalization in bike/qpart/dashboard services (replace trim/coalesce predicates with normalized key columns or pre-normalized lookups).
+
+## Snapshot reduction refinement: ForecastAs and price maxima (2026-06-03)
+- Newly reduced `cpq_configuration_references.json_snapshot` rows still retain only `ForecastAs`, `Description`, `DetailId`, `TradePrice`, and `MSRP` captioned entries.
+- `ForecastAs` entries are retained only when the value is meaningful and at least 13 characters long. Short option fragments such as `_ULT`, `_BLA`, and `_STD` are treated as selectable-option noise and removed.
+- Primary `ForecastAs` extraction prefers full values in the 15-to-30-character range and scores `raw.Details` / `Details` paths ahead of `screenOptions`, `SelectableValues`, and `CustomProperties` paths.
+- `MSRP` keeps only the first deterministic entry with the maximum safely parsed non-zero numeric value.
+- `TradePrice` keeps only the first deterministic entry with the maximum safely parsed non-zero numeric value.
+- `null`, `undefined`, blank strings, numeric `0`, and string `0` continue to be dropped.
+- Historical rows are not bulk rewritten by this runtime change; they will only change if saved again or migrated by a separate controlled backfill.
+
+### Reduced snapshot validation SQL
+Preferred JSON path inspection for new reduced snapshots:
+
+```sql
+select
+  id,
+  configuration_reference,
+  jsonb_path_query_array(json_snapshot, '$.** ? (@.caption == "ForecastAs")') as forecast_as_entries,
+  jsonb_path_query_array(json_snapshot, '$.** ? (@.caption == "MSRP")') as msrp_entries,
+  jsonb_path_query_array(json_snapshot, '$.** ? (@.caption == "TradePrice")') as trade_price_entries,
+  created_at
+from cpq_configuration_references
+order by created_at desc
+limit 20;
+```
+
+Fallback query if JSON path syntax is unavailable in the SQL client:
+
+```sql
+select
+  id,
+  configuration_reference,
+  json_snapshot,
+  created_at
+from cpq_configuration_references
+order by created_at desc
+limit 5;
+```

@@ -109,7 +109,7 @@ Important boundary: this is **not** server-enforced authentication/RBAC; it is U
 - External push targets are `variants` first, then `variant_eligibilities`, both under `EXTERNAL_PG_SCHEMA`. The order is required because eligibility rows depend on the SKU existing in `variants`.
 - Push is skipped unless Neon `bc_item_variant_map` has both `bc_product_id` and `bc_variant_id` for the SKU. The Sales bike and QPart UIs hide Push when those IDs are missing.
 - The external write path does not use `ON CONFLICT` and does not require unique indexes. It SELECTs by `"Sku"` for `variants` and by (`"Sku"`, `"CountryCode"`) for `variant_eligibilities`, then UPDATEs or INSERTs.
-- `variants."BcVariantId"` and `variants."BcProductId"` are looked up from Neon `bc_item_variant_map`; `"ForecastCtyCode"` is temporarily hardcoded to `F_BB`; `"BblRuleSetItem"` is resolved deterministically from Neon `cpq_sampler_result.ruleset`; bigint timestamps are Unix seconds.
+- `variants."BcVariantId"` and `variants."BcProductId"` are looked up from Neon `bc_item_variant_map`; bike `"ForecastCtyCode"` comes from the extracted full CPQ `ForecastAs` code with update preservation and legacy insert fallback when absent; `"BblRuleSetItem"` is resolved deterministically from Neon `cpq_sampler_result.ruleset`; bigint timestamps are Unix seconds.
 - BigCommerce item-map upserts only update Neon `bc_item_variant_map`; they no longer perform a background external variants push.
 
 ## 8) CPQ context invariants

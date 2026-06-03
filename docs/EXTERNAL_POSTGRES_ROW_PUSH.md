@@ -66,7 +66,7 @@ The source allocation row provides the part number SKU, country, and current all
 | `"Sku"` | `bc_item_variant_map.sku_code` / pushed SKU |
 | `"BcVariantId"` | `bc_item_variant_map.bc_variant_id` |
 | `"BcProductId"` | `bc_item_variant_map.bc_product_id` |
-| `"ForecastCtyCode"` | hardcoded temporary value `F_BB` |
+| `"ForecastCtyCode"` | Bike: extracted full CPQ `ForecastAs` code; update preserves existing value when absent; insert falls back to legacy `F_BB` only when no valid code exists. QPart: `Qpart`. |
 | `"BblRuleSetItem"` | deterministic Neon `cpq_sampler_result.ruleset` lookup by joining `cpq_sampler_result.ipn_code` to `bc_item_variant_map.sku_code` |
 | `"CreatedAt"` | current Unix timestamp in seconds, for example `1778151766`, on insert only |
 | `"UpdatedAt"` | current Unix timestamp in seconds, for example `1778151766`, on insert and update |
@@ -252,3 +252,22 @@ The bulk path reduces repeated work as follows:
 - Row writes remain parameterized UPDATE/INSERT statements with bounded concurrency. The default limit is `5`, tunable with `EXTERNAL_VARIANT_TABLE_WRITE_CONCURRENCY`.
 
 Bulk responses include compact aggregate counts under `result.externalSync`: `attempted`, `totalTargets`, `pushed`, `pendingBc`, `errors`, `variantsInserted`, `variantsUpdated`, `eligibilityInserted`, `eligibilityUpdated`, `skipped`, and `timingsMs`. Per-row payloads are intentionally not returned by bulk routes to keep large operations lightweight.
+
+## Bike `ForecastCtyCode` mapping from CPQ ForecastAs (2026-06-03)
+- Bike allocation pushes populate external `${EXTERNAL_PG_SCHEMA}.variants."ForecastCtyCode"` from the primary full `ForecastAs` value extracted from the matching active `cpq_configuration_references.json_snapshot` row.
+- The extractor ignores short ForecastAs fragments below 13 characters and prefers 15-to-30-character values from `raw.Details` / `Details` over selectable-option custom property paths.
+- The bike bulk path batch-loads the latest active configuration reference snapshots only for the selected SKU/IPN set by `final_ipn_code`; it does not scan historical snapshots and does not query per country cell.
+- Bike updates use `coalesce($forecast, "ForecastCtyCode")`, so a missing valid full ForecastAs does not overwrite an existing external value with blank, `null`, `0`, `_ULT`, `_BLA`, or another short fragment.
+- Bike inserts fall back to the previous legacy `F_BB` value only when no valid full ForecastAs exists, preserving the existing insert behavior while preventing noisy ForecastAs fragments from being sent.
+- QPart pushes remain hardcoded to `Qpart` for `BblRuleSetItem`, `ForecastCtyCode`, and `DetailId`.
+
+External validation for one pushed SKU/IPN:
+
+```sql
+select
+  "Sku",
+  "ForecastCtyCode",
+  "UpdatedAt"
+from public.variants
+where "Sku" = '<IPN_CODE>';
+```

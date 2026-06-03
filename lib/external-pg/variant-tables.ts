@@ -35,7 +35,7 @@ export type ExternalVariantInput = {
   sku: string;
   bcVariantId: number;
   bcProductId: number;
-  forecastCtyCode: string;
+  forecastCtyCode?: string | null;
   bblRuleSetItem: string;
 };
 
@@ -67,7 +67,7 @@ export type ExternalVariantTablesSyncResult = {
 export type ExternalVariantTablesBatchInput = ExternalVariantEligibilityInput & {
   bcVariantId: number;
   bcProductId: number;
-  forecastCtyCode: string;
+  forecastCtyCode?: string | null;
   bblRuleSetItem: string;
 };
 
@@ -160,8 +160,8 @@ function ensureVariantInput(input: ExternalVariantInput) {
   if (!Number.isFinite(input.bcProductId)) {
     throw new Error("bcProductId is required for external variants sync");
   }
-  if (!asTrimmed(input.forecastCtyCode)) {
-    throw new Error("forecastCtyCode is required for external variants sync");
+  if (input.forecastCtyCode !== null && input.forecastCtyCode !== undefined && !asTrimmed(input.forecastCtyCode)) {
+    throw new Error("forecastCtyCode must be meaningful when provided for external variants sync");
   }
   if (!asTrimmed(input.bblRuleSetItem)) {
     throw new Error("bblRuleSetItem is required for external variants sync");
@@ -329,7 +329,7 @@ async function writeExternalVariantWithKnownExistence(
     sku: asTrimmed(input.sku),
     bcVariantId: input.bcVariantId,
     bcProductId: input.bcProductId,
-    forecastCtyCode: asTrimmed(input.forecastCtyCode),
+    forecastCtyCode: asTrimmed(input.forecastCtyCode) || null,
     bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
   };
   const timestamp = currentExternalTimestamp();
@@ -343,7 +343,7 @@ async function writeExternalVariantWithKnownExistence(
         set
           "BcVariantId" = $2,
           "BcProductId" = $3,
-          "ForecastCtyCode" = $4,
+          "ForecastCtyCode" = coalesce($4, "ForecastCtyCode"),
           "BblRuleSetItem" = $5,
           "UpdatedAt" = $6
         where "Sku" = $1
@@ -360,9 +360,9 @@ async function writeExternalVariantWithKnownExistence(
       `
       insert into ${tableName} (
         "Sku", "BcVariantId", "BcProductId", "ForecastCtyCode", "BblRuleSetItem", "CreatedAt", "UpdatedAt"
-      ) values ($1, $2, $3, $4, $5, $6, $7)
+      ) values ($1, $2, $3, coalesce($4, $8), $5, $6, $7)
       `,
-      [payload.sku, payload.bcVariantId, payload.bcProductId, payload.forecastCtyCode, payload.bblRuleSetItem, timestamp, timestamp],
+      [payload.sku, payload.bcVariantId, payload.bcProductId, payload.forecastCtyCode, payload.bblRuleSetItem, timestamp, timestamp, FORECAST_CTY_CODE],
     );
     const result = { action: "inserted" as const, businessKey };
     options.onStage?.("insert_success", { tableName, ...result, batch: true });
@@ -431,7 +431,7 @@ async function syncExternalVariantWithClient(
     sku: asTrimmed(input.sku),
     bcVariantId: input.bcVariantId,
     bcProductId: input.bcProductId,
-    forecastCtyCode: asTrimmed(input.forecastCtyCode),
+    forecastCtyCode: asTrimmed(input.forecastCtyCode) || null,
     bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
   };
   const timestamp = currentExternalTimestamp();
@@ -463,7 +463,7 @@ async function syncExternalVariantWithClient(
         set
           "BcVariantId" = $2,
           "BcProductId" = $3,
-          "ForecastCtyCode" = $4,
+          "ForecastCtyCode" = coalesce($4, "ForecastCtyCode"),
           "BblRuleSetItem" = $5,
           "UpdatedAt" = $6
         where "Sku" = $1
@@ -503,7 +503,7 @@ async function syncExternalVariantWithClient(
         $1,
         $2,
         $3,
-        $4,
+        coalesce($4, $8),
         $5,
         $6,
         $7
@@ -517,6 +517,7 @@ async function syncExternalVariantWithClient(
         payload.bblRuleSetItem,
         timestamp,
         timestamp,
+        FORECAST_CTY_CODE,
       ],
     );
     const result = {
@@ -628,7 +629,7 @@ export async function syncExternalVariantEligibility(
 }
 
 export async function syncExternalVariantTablesForPayload(
-  input: ExternalVariantEligibilityInput & { forecastCtyCodeOverride?: string; bblRuleSetItemOverride?: string },
+  input: ExternalVariantEligibilityInput & { forecastCtyCodeOverride?: string | null; bblRuleSetItemOverride?: string },
   options: ExternalVariantPushOptions = {},
 ): Promise<ExternalVariantTablesSyncResult> {
   ensureEligibilityInput(input);
@@ -658,7 +659,7 @@ export async function syncExternalVariantTablesForPayload(
   if (!ruleset) {
     throw new Error(`No cpq_sampler_result ruleset found for SKU ${sku}`);
   }
-  const forecastCtyCode = asTrimmed(input.forecastCtyCodeOverride) || FORECAST_CTY_CODE;
+  const forecastCtyCode = input.forecastCtyCodeOverride === null ? null : (asTrimmed(input.forecastCtyCodeOverride) || FORECAST_CTY_CODE);
 
   return withExternalPgClient(async (client, schema) => {
     const variantsTableName = qualifiedTableName(schema, "variants");
@@ -719,7 +720,7 @@ export async function syncExternalVariantTablesBatch(
     isActive: input.isActive === true,
     bcVariantId: input.bcVariantId,
     bcProductId: input.bcProductId,
-    forecastCtyCode: asTrimmed(input.forecastCtyCode),
+    forecastCtyCode: asTrimmed(input.forecastCtyCode) || null,
     bblRuleSetItem: asTrimmed(input.bblRuleSetItem),
   }));
 
