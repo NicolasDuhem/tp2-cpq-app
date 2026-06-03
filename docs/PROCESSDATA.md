@@ -182,7 +182,7 @@ Future compatibility note: this design allows adding a bulk "new locale backfill
 - The external write targets are `${EXTERNAL_PG_SCHEMA}.variants` first and `${EXTERNAL_PG_SCHEMA}.variant_eligibilities` second.
 - Before any external write, the SKU must have both `bc_product_id` and `bc_variant_id` in Neon `bc_item_variant_map`. Missing IDs return a skipped API result and no external write.
 - The current process uses SELECT-first UPDATE/INSERT logic rather than `ON CONFLICT`, so unique indexes are not a prerequisite.
-- Bike `variants` receives BC IDs from Neon, `ForecastCtyCode = F_BB`, `BblRuleSetItem` from Neon `cpq_sampler_result.ruleset`, and Unix-second bigint timestamps. QPart allocation pushes override `ForecastCtyCode`, `BblRuleSetItem`, and `DetailId` to `Qpart`.
+- Bike `variants` receives BC IDs from Neon, `ForecastCtyCode` from the extracted full CPQ `ForecastAs` code (preserve-on-update and legacy insert fallback when absent), `BblRuleSetItem` from Neon `cpq_sampler_result.ruleset`, and Unix-second bigint timestamps. QPart allocation pushes override `ForecastCtyCode`, `BblRuleSetItem`, and `DetailId` to `Qpart`.
 - `variant_eligibilities` receives SKU/country/detail ID plus `IsActive` from the current allocation row being pushed, not from country mapping metadata.
 - Push buttons are hidden in the Sales bike and QPart allocation tables unless the row SKU/part number has both BigCommerce IDs available in Neon.
 
@@ -292,3 +292,11 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - Canonical save still occurs in the same route order and ownership.
 - New saves now reduce `json_snapshot` to selected captions only (`ForecastAs`, `Description`, `DetailId`, `TradePrice`, `MSRP`) and drop null/blank/zero-equivalent values.
 - Retrieve flow does not depend on `json_snapshot`; it uses canonical identity/context fields and a fresh StartConfiguration call.
+
+## ForecastAs and reduced snapshot downstream process (2026-06-03)
+1. CPQ save reduces `json_snapshot` to `ForecastAs`, `Description`, `DetailId`, `TradePrice`, and `MSRP` entries only.
+2. The reducer removes empty/zero values and removes short ForecastAs option fragments below 13 characters.
+3. Price noise is reduced by retaining only max numeric `MSRP` and max numeric `TradePrice` entries.
+4. Bike external PostgreSQL push batch-loads relevant active configuration references for the selected SKU/IPN set, extracts the primary full ForecastAs in memory, and maps it to `variants."ForecastCtyCode"`.
+5. The external push path avoids unbounded or per-row snapshot reads: bulk push uses one bounded lookup for the selected SKUs, and single-row push uses the same lookup helper for one SKU.
+6. QPart external push remains separate in behavior and continues writing `Qpart` for QPart forecast/ruleset/detail fields.
