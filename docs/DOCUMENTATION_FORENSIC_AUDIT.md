@@ -59,3 +59,7 @@ The screenshot may be incomplete. These variables were not visible in the provid
 - No single server-only env validation module exists. Validation is distributed across service-specific helpers and route code. A future dedicated validator would reduce configuration drift.
 
 See `docs/ENVIRONMENT_VARIABLES.md` for the full canonical inventory, screenshot comparison, and Expected Vercel values checklist.
+
+## API route and message-flow map follow-up — 2026-06-04
+
+Added `docs/API_ROUTE_AND_MESSAGE_FLOW_MAP.md` as a static-code-inspection map of all `app/api/**/route.ts` handlers, frontend/internal API caller flows, data lineage, visible permission enforcement, external systems, Mermaid diagrams, and high-risk API routes. This was documentation-only; no runtime code, API behavior, database schema, or existing documentation was destructively changed.
