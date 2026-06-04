@@ -1,0 +1,758 @@
+# TP2 CPQ App API Message Flow Diagrams
+
+Source: generated from the Codex static-inspection API route and message-flow map pasted into this chat.
+
+The aim of this file is to replace the large route tables with visual API diagrams showing which screen calls which API route, using `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` edge labels.
+
+> Important: the original Codex document says this is based on static code inspection only. Runtime behaviour, production environment variables, production permissions, and live external system availability were not tested.
+
+---
+
+## 1. High-level system API architecture
+
+```mermaid
+flowchart TD
+  Browser["Browser / Next.js screens"]
+  PageGuards["Client access gates<br/>PageAccessGate / nav hiding / useCurrentUser"]
+  Pages["Next.js app pages<br/>app/**/page.tsx"]
+  API["API route handlers<br/>app/api/**/route.ts"]
+  Services["Services / helpers<br/>lib/**"]
+  Neon[("Neon / Postgres<br/>primary app DB")]
+  CPQ["Infor CPQ API"]
+  BC["BigCommerce API"]
+  ExtPG[("External PostgreSQL<br/>public.variants<br/>public.variant_eligibilities")]
+  Blob["Vercel Blob"]
+  OpenAI["OpenAI API"]
+
+  Browser -->|"GET /api/auth/me"| PageGuards
+  Browser --> Pages
+  Browser -->|"GET / POST / PUT / PATCH / DELETE"| API
+  Pages -->|"server-side direct calls"| Services
+  API --> Services
+
+  Services --> Neon
+  Services --> CPQ
+  Services --> BC
+  Services --> ExtPG
+  Services --> Blob
+  Services --> OpenAI
+```
+
+---
+
+## 2. Auth and permissions flow
+
+```mermaid
+flowchart TD
+  LoginPage["/login"]
+  UserShell["Global shell / user status / nav"]
+  SetupUsersPage["/setup/users"]
+  AuthLogin["POST /api/auth/login"]
+  AuthMe["GET /api/auth/me"]
+  AuthLogout["POST /api/auth/logout"]
+  PermissionPages["GET /api/setup/permission-pages"]
+  UsersList["GET /api/setup/users"]
+  UsersCreate["POST /api/setup/users"]
+  UsersDetail["GET /api/setup/users/[id]"]
+  UsersUpdate["PUT /api/setup/users/[id]"]
+  UsersStatus["PATCH /api/setup/users/[id]/status"]
+
+  Users[("app_users")]
+  Sessions[("app_sessions")]
+  UserPerms[("app_user_page_permissions")]
+  AppPages[("app_permission_pages")]
+
+  LoginPage -->|"POST email + password"| AuthLogin
+  LoginPage -->|"GET current login test"| AuthMe
+  UserShell -->|"POST logout"| AuthLogout
+  UserShell -->|"GET session user"| AuthMe
+
+  AuthLogin --> Users
+  AuthLogin --> Sessions
+  AuthMe --> Sessions
+  AuthMe --> Users
+  AuthMe --> UserPerms
+  AuthLogout --> Sessions
+
+  SetupUsersPage -->|"GET initial permissions"| PermissionPages
+  SetupUsersPage -->|"GET initial users"| UsersList
+  SetupUsersPage -->|"POST create user"| UsersCreate
+  SetupUsersPage -->|"GET edit selected user"| UsersDetail
+  SetupUsersPage -->|"PUT save existing user"| UsersUpdate
+  SetupUsersPage -->|"PATCH activate/deactivate"| UsersStatus
+
+  PermissionPages --> AppPages
+  UsersList --> Users
+  UsersCreate --> Users
+  UsersCreate --> UserPerms
+  UsersDetail --> Users
+  UsersDetail --> UserPerms
+  UsersUpdate --> Users
+  UsersUpdate --> UserPerms
+  UsersStatus --> Users
+```
+
+---
+
+## 3. CPQ configurator runtime flow
+
+```mermaid
+flowchart TD
+  CPQPage["/cpq<br/>BikeBuilderPage"]
+  AccountContext["GET /api/cpq/setup/account-context?activeOnly=true"]
+  Rulesets["GET /api/cpq/setup/rulesets?activeOnly=true"]
+  IgnoredFeatures["GET /api/cpq/setup/picture-management/ignored-features"]
+
+  Init["POST /api/cpq/init<br/>start configuration"]
+  Retrieve["POST /api/cpq/retrieve-configuration<br/>copy / replay configuration"]
+  Configure["POST /api/cpq/configure<br/>option selection changed"]
+  ImageLayers["POST /api/cpq/image-layers<br/>resolve selected image layers"]
+  Finalize["POST /api/cpq/finalize<br/>finalize configuration"]
+  SaveReference["POST /api/cpq/configuration-references<br/>save finalized reference"]
+  GetReference["GET /api/cpq/configuration-references<br/>resolve saved reference"]
+  SaveSampler["POST /api/cpq/sampler-result<br/>save sampler result"]
+
+  Neon[("Neon / Postgres")]
+  CPQApi["Infor CPQ API"]
+  SetupTables[("CPQ_setup_account_context<br/>CPQ_setup_ruleset<br/>cpq_country_mappings")]
+  RefTable[("cpq_configuration_references")]
+  SamplerTable[("CPQ_sampler_result")]
+  ImageTable[("cpq_image_management")]
+
+  CPQPage -->|"GET setup dropdowns"| AccountContext
+  CPQPage -->|"GET ruleset dropdown"| Rulesets
+  CPQPage -->|"GET ignored image features"| IgnoredFeatures
+
+  CPQPage -->|"POST ruleset/account/country/prefill"| Init
+  CPQPage -->|"POST configuration reference"| Retrieve
+  CPQPage -->|"POST session + selected feature/option"| Configure
+  CPQPage -->|"POST selected option rows"| ImageLayers
+  CPQPage -->|"POST session/detail/context"| Finalize
+  CPQPage -->|"POST reference + snapshot"| SaveReference
+  CPQPage -->|"GET configuration_reference"| GetReference
+  CPQPage -->|"POST sampler result + snapshots"| SaveSampler
+
+  AccountContext --> SetupTables
+  Rulesets --> SetupTables
+  IgnoredFeatures --> ImageTable
+  Init --> CPQApi
+  Configure --> CPQApi
+  Finalize --> CPQApi
+  Retrieve --> RefTable
+  Retrieve --> CPQApi
+  ImageLayers --> ImageTable
+  SaveReference --> RefTable
+  GetReference --> RefTable
+  SaveSampler --> SamplerTable
+
+  SetupTables --> Neon
+  RefTable --> Neon
+  SamplerTable --> Neon
+  ImageTable --> Neon
+```
+
+---
+
+## 4. CPQ setup and picture management flow
+
+```mermaid
+flowchart TD
+  SetupPage["/cpq/setup<br/>accounts / rulesets / pictures"]
+
+  GetAccounts["GET /api/cpq/setup/account-context"]
+  PostAccounts["POST /api/cpq/setup/account-context"]
+  PutAccounts["PUT /api/cpq/setup/account-context/[id]"]
+  DeleteAccounts["DELETE /api/cpq/setup/account-context/[id]"]
+
+  GetCountries["GET /api/cpq/setup/country-mappings"]
+  PostCountries["POST /api/cpq/setup/country-mappings"]
+  PutCountries["PUT /api/cpq/setup/country-mappings/[id]"]
+  DeleteCountries["DELETE /api/cpq/setup/country-mappings/[id]"]
+
+  GetRulesets["GET /api/cpq/setup/rulesets"]
+  PostRulesets["POST /api/cpq/setup/rulesets"]
+  PutRulesets["PUT /api/cpq/setup/rulesets/[id]"]
+  DeleteRulesets["DELETE /api/cpq/setup/rulesets/[id]"]
+
+  GetPictures["GET /api/cpq/setup/picture-management"]
+  PutPictureRow["PUT /api/cpq/setup/picture-management/[id]"]
+  PutFeatureFlags["PUT /api/cpq/setup/picture-management/feature-flags"]
+  SyncPictures["POST /api/cpq/setup/picture-management/sync"]
+
+  AccountTable[("CPQ_setup_account_context")]
+  CountryTable[("cpq_country_mappings")]
+  RulesetTable[("CPQ_setup_ruleset")]
+  ImageTable[("cpq_image_management")]
+  SamplerTable[("CPQ_sampler_result")]
+  Neon[("Neon / Postgres")]
+
+  SetupPage -->|"GET load accounts"| GetAccounts
+  SetupPage -->|"POST create account"| PostAccounts
+  SetupPage -->|"PUT update account"| PutAccounts
+  SetupPage -->|"DELETE account"| DeleteAccounts
+
+  SetupPage -->|"GET load countries"| GetCountries
+  SetupPage -->|"POST create country mapping"| PostCountries
+  SetupPage -->|"PUT update country mapping"| PutCountries
+  SetupPage -->|"DELETE country mapping"| DeleteCountries
+
+  SetupPage -->|"GET load rulesets"| GetRulesets
+  SetupPage -->|"POST create ruleset"| PostRulesets
+  SetupPage -->|"PUT update ruleset"| PutRulesets
+  SetupPage -->|"DELETE ruleset"| DeleteRulesets
+
+  SetupPage -->|"GET picture rows / filters"| GetPictures
+  SetupPage -->|"PUT save image row"| PutPictureRow
+  SetupPage -->|"PUT feature flags"| PutFeatureFlags
+  SetupPage -->|"POST sync pictures from sampler"| SyncPictures
+
+  GetAccounts --> AccountTable
+  PostAccounts --> AccountTable
+  PutAccounts --> AccountTable
+  DeleteAccounts --> AccountTable
+
+  GetCountries --> CountryTable
+  PostCountries --> CountryTable
+  PutCountries --> CountryTable
+  DeleteCountries --> CountryTable
+
+  GetRulesets --> RulesetTable
+  PostRulesets --> RulesetTable
+  PutRulesets --> RulesetTable
+  DeleteRulesets --> RulesetTable
+
+  GetPictures --> ImageTable
+  PutPictureRow --> ImageTable
+  PutFeatureFlags --> ImageTable
+  SyncPictures --> SamplerTable
+  SyncPictures --> ImageTable
+
+  AccountTable --> Neon
+  CountryTable --> Neon
+  RulesetTable --> Neon
+  ImageTable --> Neon
+  SamplerTable --> Neon
+```
+
+---
+
+## 5. Bike allocation screen flow
+
+```mermaid
+flowchart TD
+  BikePage["/sales/bike-allocation<br/>SalesBikeAllocationTable"]
+  ServerRender["Server page render<br/>direct lib/sales/bike-allocation/service.ts"]
+  ItemMapLookup["POST /api/bigcommerce/item-map/lookup"]
+  VariantStatus["POST /api/bigcommerce/variant-status"]
+  ItemMapUpsert["POST /api/bigcommerce/item-map/upsert"]
+  ExternalStatus["POST /api/sales/bike-allocation/external-status"]
+  Toggle["POST /api/sales/bike-allocation/toggle"]
+  BulkUpdate["POST /api/sales/bike-allocation/bulk-update"]
+  PushOne["POST /api/sales/bike-allocation/push"]
+  BulkPush["POST /api/sales/bike-allocation/bulk-push"]
+  LaunchCPQ["POST /api/sales/bike-allocation/launch-context"]
+
+  Neon[("Neon / Postgres")]
+  BCMap[("bc_item_variant_map")]
+  Sampler[("CPQ_sampler_result")]
+  Rulesets[("CPQ_setup_ruleset")]
+  Audit[("app_allocation_audit_log")]
+  ConfigRefs[("cpq_configuration_references")]
+  BigCommerce["BigCommerce API"]
+  ExtPG[("External PostgreSQL<br/>variants / variant_eligibilities")]
+  CPQPage["/cpq<br/>prefilled launch"]
+
+  BikePage -->|"server load rows / matrix"| ServerRender
+  BikePage -->|"POST skus"| ItemMapLookup
+  BikePage -->|"POST skus, check live BC"| VariantStatus
+  BikePage -->|"POST sku/product/variant/status"| ItemMapUpsert
+  BikePage -->|"POST sku + country targets"| ExternalStatus
+  BikePage -->|"POST ruleset + ipnCode + countryCode + active"| Toggle
+  BikePage -->|"POST selected rows / filters / target active"| BulkUpdate
+  BikePage -->|"POST sku + country"| PushOne
+  BikePage -->|"POST selected rows / filters"| BulkPush
+  BikePage -->|"POST row context"| LaunchCPQ
+
+  ServerRender --> Sampler
+  ServerRender --> Rulesets
+  ServerRender --> BCMap
+
+  ItemMapLookup --> BCMap
+  VariantStatus --> BigCommerce
+  VariantStatus --> BCMap
+  ItemMapUpsert --> BCMap
+
+  ExternalStatus --> ExtPG
+  Toggle --> Sampler
+  Toggle --> BCMap
+  Toggle --> Audit
+  Toggle -. "may sync externally when BC OK" .-> ExtPG
+  BulkUpdate --> Sampler
+  BulkUpdate --> Audit
+  BulkUpdate -. "may sync externally when BC OK" .-> ExtPG
+
+  PushOne --> BCMap
+  PushOne --> Sampler
+  PushOne --> ConfigRefs
+  PushOne --> ExtPG
+  BulkPush --> Sampler
+  BulkPush --> BCMap
+  BulkPush --> ExtPG
+
+  LaunchCPQ --> Sampler
+  LaunchCPQ --> Rulesets
+  LaunchCPQ --> CPQPage
+
+  BCMap --> Neon
+  Sampler --> Neon
+  Rulesets --> Neon
+  Audit --> Neon
+  ConfigRefs --> Neon
+```
+
+---
+
+## 6. QPart allocation screen flow
+
+```mermaid
+flowchart TD
+  QPartAllocPage["/sales/qpart-allocation<br/>SalesQPartAllocationTable"]
+  ServerRender["Server page render<br/>direct lib/sales/qpart-allocation/service.ts"]
+  ItemMapLookup["POST /api/bigcommerce/item-map/lookup"]
+  VariantStatus["POST /api/bigcommerce/variant-status"]
+  ItemMapUpsert["POST /api/bigcommerce/item-map/upsert"]
+  ExternalStatus["POST /api/sales/qpart-allocation/external-status"]
+  Toggle["POST /api/sales/qpart-allocation/toggle"]
+  BulkUpdate["POST /api/sales/qpart-allocation/bulk-update"]
+  PushOne["POST /api/sales/qpart-allocation/push"]
+  BulkPush["POST /api/sales/qpart-allocation/bulk-push"]
+  UpdateAllAuth["POST /api/sales/qpart-allocation/update-all-auth"]
+
+  Neon[("Neon / Postgres")]
+  QParts[("qpart_parts")]
+  Allocation[("qpart_country_allocation")]
+  BCMap[("bc_item_variant_map")]
+  Audit[("app_allocation_audit_log")]
+  BigCommerce["BigCommerce API"]
+  ExtPG[("External PostgreSQL<br/>variants / variant_eligibilities")]
+  Cookie["Browser cookie<br/>update-all token"]
+
+  QPartAllocPage -->|"server load matrix"| ServerRender
+  QPartAllocPage -->|"POST skus"| ItemMapLookup
+  QPartAllocPage -->|"POST skus, live BC status"| VariantStatus
+  QPartAllocPage -->|"POST item map status"| ItemMapUpsert
+  QPartAllocPage -->|"POST target rows"| ExternalStatus
+  QPartAllocPage -->|"POST partId + countryCode + active"| Toggle
+  QPartAllocPage -->|"POST selected partIds + countries + target active"| BulkUpdate
+  QPartAllocPage -->|"POST single part/SKU/country"| PushOne
+  QPartAllocPage -->|"POST selected parts/countries/scope"| BulkPush
+  QPartAllocPage -->|"POST passphrase / intent"| UpdateAllAuth
+
+  ServerRender --> QParts
+  ServerRender --> Allocation
+  ServerRender --> BCMap
+
+  ItemMapLookup --> BCMap
+  VariantStatus --> BigCommerce
+  VariantStatus --> BCMap
+  ItemMapUpsert --> BCMap
+
+  ExternalStatus --> ExtPG
+  Toggle --> QParts
+  Toggle --> Allocation
+  Toggle --> BCMap
+  Toggle --> Audit
+  BulkUpdate --> QParts
+  BulkUpdate --> Allocation
+  BulkUpdate --> BCMap
+  BulkUpdate --> Audit
+  PushOne --> QParts
+  PushOne --> BCMap
+  PushOne --> ExtPG
+  BulkPush --> QParts
+  BulkPush --> Allocation
+  BulkPush --> BCMap
+  BulkPush --> ExtPG
+  UpdateAllAuth --> Cookie
+
+  QParts --> Neon
+  Allocation --> Neon
+  BCMap --> Neon
+  Audit --> Neon
+```
+
+---
+
+## 7. QPart PIM: parts list, part form, import/export, images
+
+```mermaid
+flowchart TD
+  PartsList["/qpart/parts"]
+  NewPart["/qpart/parts/new"]
+  EditPart["/qpart/parts/[id]"]
+
+  PartsGet["GET /api/qpart/parts"]
+  PartsPost["POST /api/qpart/parts"]
+  PartGet["GET /api/qpart/parts/[id]"]
+  PartPut["PUT /api/qpart/parts/[id]"]
+  PartDelete["DELETE /api/qpart/parts/[id]"]
+  Import["POST /api/qpart/parts/import"]
+  Export["GET /api/qpart/parts/export"]
+
+  Locales["GET /api/qpart/locales"]
+  Hierarchy["GET /api/qpart/hierarchy"]
+  Metadata["GET /api/qpart/metadata?activeOnly=true"]
+  BikeTypes["GET /api/qpart/bike-types"]
+  Countries["GET /api/qpart/countries"]
+  Derive["POST /api/qpart/compatibility/derive"]
+  Translate["POST /api/qpart/translations/field"]
+
+  ImageGet["GET /api/qpart/parts/[id]/image"]
+  ImagePost["POST /api/qpart/parts/[id]/image?mode=..."]
+  ImageDelete["DELETE /api/qpart/parts/[id]/image?imageId=..."]
+
+  Neon[("Neon / Postgres")]
+  Parts[("qpart_parts")]
+  Translations[("qpart_part_translations")]
+  MetadataValues[("qpart_part_metadata_values")]
+  HierarchyTable[("qpart_hierarchy_nodes")]
+  MetadataDefs[("qpart_metadata_definitions")]
+  Compatibility[("qpart_part_compatibility_rules<br/>compatibility reference tables")]
+  Channels[("qpart_part_channel_assignment")]
+  CountryAllocation[("qpart_country_allocation")]
+  Images[("qpart_part_images")]
+  Blob["Vercel Blob"]
+  OpenAI["OpenAI API"]
+
+  PartsList -->|"GET filters / page / search"| PartsGet
+  PartsList -->|"POST CSV file"| Import
+  PartsList -->|"GET CSV export"| Export
+  PartsList -->|"GET hierarchy filter"| Hierarchy
+
+  NewPart -->|"GET dependencies"| Locales
+  NewPart -->|"GET dependencies"| Hierarchy
+  NewPart -->|"GET dependencies"| Metadata
+  NewPart -->|"GET dependencies"| BikeTypes
+  NewPart -->|"GET dependencies"| Countries
+  NewPart -->|"POST save new part"| PartsPost
+  NewPart -->|"POST derive compatibility"| Derive
+  NewPart -->|"POST translate field"| Translate
+
+  EditPart -->|"GET part detail"| PartGet
+  EditPart -->|"PUT save existing part"| PartPut
+  EditPart -->|"DELETE part"| PartDelete
+  EditPart -->|"GET images"| ImageGet
+  EditPart -->|"POST multipart image upload"| ImagePost
+  EditPart -->|"DELETE image metadata"| ImageDelete
+  EditPart -->|"GET one-part export"| Export
+  EditPart -->|"POST derive compatibility"| Derive
+  EditPart -->|"POST translate field"| Translate
+
+  PartsGet --> Parts
+  PartsPost --> Parts
+  PartsPost --> Translations
+  PartsPost --> MetadataValues
+  PartsPost --> Compatibility
+  PartsPost --> Channels
+  PartsPost --> CountryAllocation
+
+  PartGet --> Parts
+  PartGet --> Translations
+  PartGet --> MetadataValues
+  PartGet --> Compatibility
+  PartPut --> Parts
+  PartPut --> Translations
+  PartPut --> MetadataValues
+  PartPut --> Compatibility
+  PartPut --> Channels
+  PartPut --> CountryAllocation
+  PartDelete --> Parts
+
+  Import --> Parts
+  Import --> Translations
+  Import --> MetadataValues
+  Import --> Compatibility
+  Export --> Parts
+
+  Hierarchy --> HierarchyTable
+  Metadata --> MetadataDefs
+  BikeTypes --> Compatibility
+  Countries --> CountryAllocation
+  Derive --> Compatibility
+  Translate --> OpenAI
+
+  ImageGet --> Images
+  ImageGet --> Blob
+  ImagePost --> Images
+  ImagePost --> Blob
+  ImageDelete --> Images
+
+  Parts --> Neon
+  Translations --> Neon
+  MetadataValues --> Neon
+  HierarchyTable --> Neon
+  MetadataDefs --> Neon
+  Compatibility --> Neon
+  Channels --> Neon
+  CountryAllocation --> Neon
+  Images --> Neon
+```
+
+---
+
+## 8. QPart setup: hierarchy, metadata, compatibility
+
+```mermaid
+flowchart TD
+  HierarchyPage["/qpart/hierarchy"]
+  MetadataPage["/qpart/metadata"]
+  CompatibilityPage["/qpart/compatibility"]
+
+  GetHierarchy["GET /api/qpart/hierarchy"]
+  PostHierarchy["POST /api/qpart/hierarchy"]
+  PutHierarchy["PUT /api/qpart/hierarchy/[id]"]
+  DeleteHierarchy["DELETE /api/qpart/hierarchy/[id]"]
+
+  GetMetadata["GET /api/qpart/metadata"]
+  PostMetadata["POST /api/qpart/metadata"]
+  PutMetadata["PUT /api/qpart/metadata/[id]"]
+  DeleteMetadata["DELETE /api/qpart/metadata/[id]"]
+
+  GetReferenceValues["GET /api/qpart/compatibility/reference-values"]
+  PostReferenceValues["POST /api/qpart/compatibility/reference-values"]
+  PutReferenceValues["PUT /api/qpart/compatibility/reference-values/[id]"]
+  DeleteReferenceValues["DELETE /api/qpart/compatibility/reference-values/[id]"]
+  Derive["POST /api/qpart/compatibility/derive"]
+  BikeTypes["GET /api/qpart/bike-types"]
+
+  HierarchyTable[("qpart_hierarchy_nodes")]
+  MetadataTable[("qpart_metadata_definitions")]
+  CompatibilityTables[("qpart compatibility reference tables")]
+  Neon[("Neon / Postgres")]
+
+  HierarchyPage -->|"GET rows / filter by level"| GetHierarchy
+  HierarchyPage -->|"POST create node"| PostHierarchy
+  HierarchyPage -->|"PUT update node"| PutHierarchy
+  HierarchyPage -->|"DELETE node"| DeleteHierarchy
+
+  MetadataPage -->|"GET definitions"| GetMetadata
+  MetadataPage -->|"POST create definition"| PostMetadata
+  MetadataPage -->|"PUT update definition"| PutMetadata
+  MetadataPage -->|"DELETE definition"| DeleteMetadata
+
+  CompatibilityPage -->|"GET reference values"| GetReferenceValues
+  CompatibilityPage -->|"POST create reference value"| PostReferenceValues
+  CompatibilityPage -->|"PUT update reference value"| PutReferenceValues
+  CompatibilityPage -->|"DELETE reference value"| DeleteReferenceValues
+  CompatibilityPage -->|"POST derive preview"| Derive
+  CompatibilityPage -->|"GET bike types"| BikeTypes
+
+  GetHierarchy --> HierarchyTable
+  PostHierarchy --> HierarchyTable
+  PutHierarchy --> HierarchyTable
+  DeleteHierarchy --> HierarchyTable
+
+  GetMetadata --> MetadataTable
+  PostMetadata --> MetadataTable
+  PutMetadata --> MetadataTable
+  DeleteMetadata --> MetadataTable
+
+  GetReferenceValues --> CompatibilityTables
+  PostReferenceValues --> CompatibilityTables
+  PutReferenceValues --> CompatibilityTables
+  DeleteReferenceValues --> CompatibilityTables
+  Derive --> CompatibilityTables
+  BikeTypes --> CompatibilityTables
+
+  HierarchyTable --> Neon
+  MetadataTable --> Neon
+  CompatibilityTables --> Neon
+```
+
+---
+
+## 9. BigCommerce status/cache flow used by allocation screens
+
+```mermaid
+flowchart LR
+  BikeAllocation["/sales/bike-allocation"]
+  QPartAllocation["/sales/qpart-allocation"]
+  Lookup["POST /api/bigcommerce/item-map/lookup<br/>cached SKU mapping"]
+  Status["POST /api/bigcommerce/variant-status<br/>live SKU status"]
+  Upsert["POST /api/bigcommerce/item-map/upsert<br/>save refreshed mapping"]
+
+  BCMap[("bc_item_variant_map")]
+  BigCommerce["BigCommerce API"]
+  Neon[("Neon / Postgres")]
+
+  BikeAllocation -->|"POST skus"| Lookup
+  QPartAllocation -->|"POST skus"| Lookup
+  Lookup --> BCMap
+
+  BikeAllocation -->|"POST skus"| Status
+  QPartAllocation -->|"POST skus"| Status
+  Status --> BigCommerce
+  Status --> BCMap
+
+  BikeAllocation -->|"POST product / variant / status"| Upsert
+  QPartAllocation -->|"POST product / variant / status"| Upsert
+  Upsert --> BCMap
+
+  BCMap --> Neon
+```
+
+---
+
+## 10. Allocation audit flow
+
+```mermaid
+flowchart TD
+  BikeAllocation["/sales/bike-allocation"]
+  QPartAllocation["/sales/qpart-allocation"]
+  AuditPage["/sales/allocation-audit"]
+
+  BikeToggle["POST /api/sales/bike-allocation/toggle"]
+  BikeBulk["POST /api/sales/bike-allocation/bulk-update"]
+  QPartToggle["POST /api/sales/qpart-allocation/toggle"]
+  QPartBulk["POST /api/sales/qpart-allocation/bulk-update"]
+  AuditSearch["GET /api/sales/allocation-audit<br/>query itemCode / entityType / sort"]
+
+  AuditLog[("app_allocation_audit_log")]
+  Neon[("Neon / Postgres")]
+
+  BikeAllocation -->|"POST single active/inactive change"| BikeToggle
+  BikeAllocation -->|"POST bulk active/inactive change"| BikeBulk
+  QPartAllocation -->|"POST single active/inactive change"| QPartToggle
+  QPartAllocation -->|"POST bulk active/inactive change"| QPartBulk
+
+  BikeToggle --> AuditLog
+  BikeBulk --> AuditLog
+  QPartToggle --> AuditLog
+  QPartBulk --> AuditLog
+
+  AuditPage -->|"GET search history"| AuditSearch
+  AuditSearch --> AuditLog
+  AuditLog --> Neon
+```
+
+---
+
+## 11. Admin and debug utility flow
+
+```mermaid
+flowchart TD
+  SequencePage["/qpart/admin/sequences"]
+  ManualDebug["Manual diagnostic / unknown caller"]
+
+  GetSequences["GET /api/admin/db-sequences"]
+  ResyncSequences["POST /api/admin/db-sequences/resync"]
+
+  DebugExternalRead["GET /api/debug/external-postgres-test"]
+  DebugExternalPost["POST /api/debug/external-postgres-test"]
+  DebugExternalWrite["POST /api/debug/external-postgres-write-test"]
+
+  Neon[("Neon / Postgres")]
+  Sequences[("DB sequence metadata / functions")]
+  ExtPG[("External PostgreSQL")]
+
+  SequencePage -->|"GET sequence health"| GetSequences
+  SequencePage -->|"POST table or all:true"| ResyncSequences
+
+  GetSequences --> Sequences
+  ResyncSequences --> Sequences
+  Sequences --> Neon
+
+  ManualDebug -->|"GET diagnostic"| DebugExternalRead
+  ManualDebug -->|"POST diagnostic"| DebugExternalPost
+  ManualDebug -->|"POST write diagnostic"| DebugExternalWrite
+
+  DebugExternalRead --> ExtPG
+  DebugExternalPost --> ExtPG
+  DebugExternalWrite --> ExtPG
+```
+
+---
+
+## 12. External systems by feature area
+
+```mermaid
+flowchart TD
+  CPQRuntime["CPQ runtime<br/>/api/cpq/init<br/>/api/cpq/configure<br/>/api/cpq/finalize<br/>/api/cpq/retrieve-configuration"]
+  BCStatus["BC status/cache<br/>/api/bigcommerce/variant-status"]
+  AllocationPush["Allocation push/status<br/>bike + qpart push / bulk-push / external-status"]
+  QPartImages["QPart images<br/>/api/qpart/parts/[id]/image"]
+  QPartTranslate["QPart translations<br/>/api/qpart/translations/field"]
+  AppDB["Most setup, auth, PIM, allocation APIs"]
+
+  Infor["Infor CPQ API"]
+  BigCommerce["BigCommerce API"]
+  ExtPG[("External PostgreSQL<br/>variants / variant_eligibilities")]
+  Blob["Vercel Blob"]
+  OpenAI["OpenAI API"]
+  Neon[("Neon / Postgres")]
+
+  CPQRuntime --> Infor
+  CPQRuntime --> Neon
+  BCStatus --> BigCommerce
+  BCStatus --> Neon
+  AllocationPush --> ExtPG
+  AllocationPush --> Neon
+  QPartImages --> Blob
+  QPartImages --> Neon
+  QPartTranslate --> OpenAI
+  AppDB --> Neon
+```
+
+---
+
+## 13. Security / risk overlay from static inspection
+
+```mermaid
+flowchart TD
+  Risk["Routes needing review from static inspection"]
+
+  NoServerGate["No server-side permission check found<br/>in static route inspection"]
+  LargePayload["Large payload / response risk"]
+  ExternalWrite["External write risk"]
+  ExternalCost["External API cost / latency risk"]
+  DebugRisk["Debug endpoints exposed if deployed"]
+
+  CPQRuntime["/api/cpq/init<br/>/api/cpq/configure<br/>/api/cpq/finalize<br/>/api/cpq/retrieve-configuration"]
+  CPQPersist["/api/cpq/configuration-references<br/>/api/cpq/sampler-result"]
+  BigCommerceRoutes["/api/bigcommerce/variant-status<br/>/api/bigcommerce/item-map/lookup<br/>/api/bigcommerce/item-map/upsert"]
+  QPartPIM["/api/qpart/parts<br/>/api/qpart/parts/import<br/>/api/qpart/parts/export<br/>/api/qpart/parts/[id]/image"]
+  AllocationBulk["/api/sales/bike-allocation/bulk-update<br/>/api/sales/bike-allocation/bulk-push<br/>/api/sales/qpart-allocation/bulk-update<br/>/api/sales/qpart-allocation/bulk-push"]
+  DebugRoutes["/api/debug/external-postgres-test<br/>/api/debug/external-postgres-write-test"]
+  Translation["/api/qpart/translations/field"]
+
+  Risk --> NoServerGate
+  Risk --> LargePayload
+  Risk --> ExternalWrite
+  Risk --> ExternalCost
+  Risk --> DebugRisk
+
+  NoServerGate --> CPQRuntime
+  NoServerGate --> BigCommerceRoutes
+  NoServerGate --> QPartPIM
+  LargePayload --> CPQRuntime
+  LargePayload --> CPQPersist
+  LargePayload --> AllocationBulk
+  LargePayload --> QPartPIM
+  ExternalWrite --> AllocationBulk
+  ExternalWrite --> DebugRoutes
+  ExternalCost --> CPQRuntime
+  ExternalCost --> Translation
+  DebugRisk --> DebugRoutes
+```
+
+---
+
+## Suggested file location
+
+Put this file in the repo as:
+
+```text
+docs/API_MESSAGE_FLOW_DIAGRAMS.md
+```
+
+The original Codex table can stay as a detailed audit/reference document. This file is better for business review, onboarding, and understanding what fires from each screen.
