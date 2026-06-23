@@ -1,4 +1,4 @@
-# tp2-cpq-app-prod
+# tp2-cpq-app
 
 Next.js CPQ operations app for bike configuration, setup management, sampler analytics, and sales allocation handoff.
 
