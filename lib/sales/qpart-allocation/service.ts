@@ -1,0 +1,575 @@
+import { sql } from '@/lib/db/client';
+import { listMetadataDefinitions } from '@/lib/qpart/metadata/service';
+import { syncQPartCountryAllocationRows } from '@/lib/qpart/allocation/service';
+import { listCountryMappings } from '@/lib/cpq/setup/service';
+import {
+  syncQPartAllocationToExternalIfBcOk,
+  syncQPartAllocationsToExternalIfBcOkBatch,
+} from '@/lib/sales/allocation-external-sync';
+import { insertAllocationAuditRows, type AllocationAuditActor } from '@/lib/audit/allocation-audit';
+import { normalizeBCStatus as normalizeAuditBCStatus } from '@/lib/bigcommerce/item-map';
+
+export type QPartAllocationStatus = 'active' | 'inactive';
+export type QPartBCStatusFilter = 'ok' | 'nok';
+
+export type SalesQPartAllocationRow = {
+  partId: number;
+  partNumber: string;
+  englishTitle: string;
+  hierarchyLevels: string[];
+  hierarchySummary: string;
+  metadataValues: Record<string, string[]>;
+  countryStatuses: Record<string, QPartAllocationStatus>;
+  hasBcIds: boolean;
+  bcStatus: QPartBCStatusFilter;
+};
+
+export type SalesQPartTerritoryFilterRegion = {
+  region: string;
+  subRegions: Array<{
+    subRegion: string;
+    countries: string[];
+  }>;
+};
+
+export type SalesQPartAllocationFilterOptions = {
+  countries: string[];
+  territoryRegions: SalesQPartTerritoryFilterRegion[];
+  metadataFields: Array<{ key: string; label: string }>;
+  hierarchyOptions: Record<number, string[]>;
+};
+
+export type SalesQPartAllocationSkuCountryPair = {
+  sku: string;
+  countryCode: string;
+};
+
+export type SalesQPartAllocationPageData = {
+  rows: SalesQPartAllocationRow[];
+  countries: string[];
+  filterOptions: SalesQPartAllocationFilterOptions;
+  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
+};
+
+type PartAllocationRow = {
+  part_id: number;
+  part_number: string;
+  default_name: string;
+  country_code: string;
+  active: boolean;
+  hierarchy_1: string | null;
+  hierarchy_2: string | null;
+  hierarchy_3: string | null;
+  hierarchy_4: string | null;
+  hierarchy_5: string | null;
+  hierarchy_6: string | null;
+  hierarchy_7: string | null;
+  has_bc_ids: boolean | null;
+  bc_status: string | null;
+};
+
+const asTrimmed = (value: unknown) => String(value ?? '').trim();
+
+function asFiniteNumber(value: unknown, fallback: number) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function normalizeStatus(value: unknown): QPartAllocationStatus {
+  return value === true || value === 'true' || value === 't' || value === 1 || value === '1' ? 'active' : 'inactive';
+}
+
+function normalizeBCStatus(value: unknown, hasBcIds: boolean): QPartBCStatusFilter {
+  const status = asTrimmed(value).toUpperCase();
+  if (status === 'OK') return 'ok';
+  if (status === 'NOK' || status === 'ERR' || status === 'DISABLED' || status === 'UNKNOWN') return 'nok';
+  return hasBcIds ? 'ok' : 'nok';
+}
+
+async function listPartAllocationRows(partIds?: number[]): Promise<PartAllocationRow[]> {
+  const normalizedPartIds = (partIds ?? []).filter((value) => Number.isFinite(value));
+  const hasPartIds = normalizedPartIds.length > 0;
+  return (await sql`
+    select
+      p.id as part_id,
+      p.part_number,
+      p.default_name,
+      allocation.country_code,
+      allocation.active,
+      coalesce(case when n0.level = 1 then n0.label_en end, case when n1.level = 1 then n1.label_en end, case when n2.level = 1 then n2.label_en end, case when n3.level = 1 then n3.label_en end, case when n4.level = 1 then n4.label_en end, case when n5.level = 1 then n5.label_en end, case when n6.level = 1 then n6.label_en end) as hierarchy_1,
+      coalesce(case when n0.level = 2 then n0.label_en end, case when n1.level = 2 then n1.label_en end, case when n2.level = 2 then n2.label_en end, case when n3.level = 2 then n3.label_en end, case when n4.level = 2 then n4.label_en end, case when n5.level = 2 then n5.label_en end, case when n6.level = 2 then n6.label_en end) as hierarchy_2,
+      coalesce(case when n0.level = 3 then n0.label_en end, case when n1.level = 3 then n1.label_en end, case when n2.level = 3 then n2.label_en end, case when n3.level = 3 then n3.label_en end, case when n4.level = 3 then n4.label_en end, case when n5.level = 3 then n5.label_en end, case when n6.level = 3 then n6.label_en end) as hierarchy_3,
+      coalesce(case when n0.level = 4 then n0.label_en end, case when n1.level = 4 then n1.label_en end, case when n2.level = 4 then n2.label_en end, case when n3.level = 4 then n3.label_en end, case when n4.level = 4 then n4.label_en end, case when n5.level = 4 then n5.label_en end, case when n6.level = 4 then n6.label_en end) as hierarchy_4,
+      coalesce(case when n0.level = 5 then n0.label_en end, case when n1.level = 5 then n1.label_en end, case when n2.level = 5 then n2.label_en end, case when n3.level = 5 then n3.label_en end, case when n4.level = 5 then n4.label_en end, case when n5.level = 5 then n5.label_en end, case when n6.level = 5 then n6.label_en end) as hierarchy_5,
+      coalesce(case when n0.level = 6 then n0.label_en end, case when n1.level = 6 then n1.label_en end, case when n2.level = 6 then n2.label_en end, case when n3.level = 6 then n3.label_en end, case when n4.level = 6 then n4.label_en end, case when n5.level = 6 then n5.label_en end, case when n6.level = 6 then n6.label_en end) as hierarchy_6,
+      coalesce(case when n0.level = 7 then n0.label_en end, case when n1.level = 7 then n1.label_en end, case when n2.level = 7 then n2.label_en end, case when n3.level = 7 then n3.label_en end, case when n4.level = 7 then n4.label_en end, case when n5.level = 7 then n5.label_en end, case when n6.level = 7 then n6.label_en end) as hierarchy_7,
+      (map.bc_product_id is not null and map.bc_variant_id is not null) as has_bc_ids,
+      map.bc_status
+    from qpart_parts p
+    join qpart_country_allocation allocation on allocation.part_id = p.id
+    left join qpart_hierarchy_nodes n0 on n0.id = p.hierarchy_node_id
+    left join qpart_hierarchy_nodes n1 on n1.id = n0.parent_id
+    left join qpart_hierarchy_nodes n2 on n2.id = n1.parent_id
+    left join qpart_hierarchy_nodes n3 on n3.id = n2.parent_id
+    left join qpart_hierarchy_nodes n4 on n4.id = n3.parent_id
+    left join qpart_hierarchy_nodes n5 on n5.id = n4.parent_id
+    left join qpart_hierarchy_nodes n6 on n6.id = n5.parent_id
+    left join lateral (
+      select bc_product_id, bc_variant_id, bc_status
+      from public.bc_item_variant_map map
+      where coalesce(trim(map.sku_code), '') = coalesce(trim(p.part_number), '')
+      order by updated_at desc nulls last, id desc
+      limit 1
+    ) map on true
+    where (${hasPartIds}::boolean = false or p.id = any(${normalizedPartIds}::bigint[]))
+    order by p.part_number, allocation.country_code
+  `) as PartAllocationRow[];
+}
+
+async function listPartMetadataMap() {
+  const rows = (await sql`
+    select
+      mv.part_id,
+      definitions.key,
+      coalesce(
+        nullif(trim(mv.value_text), ''),
+        case when mv.value_number is null then null else mv.value_number::text end,
+        case when mv.value_boolean is null then null when mv.value_boolean then 'true' else 'false' end,
+        case when mv.value_date is null then null else mv.value_date::text end,
+        case when mv.value_json is null then null else mv.value_json::text end
+      ) as resolved_value
+    from qpart_part_metadata_values mv
+    join qpart_metadata_definitions definitions on definitions.id = mv.metadata_definition_id
+    where definitions.is_active = true
+  `) as Array<{ part_id: number; key: string; resolved_value: string | null }>;
+
+  const map = new Map<number, Record<string, Set<string>>>();
+  for (const row of rows) {
+    const value = asTrimmed(row.resolved_value);
+    if (!value) continue;
+    const partMetadata = map.get(row.part_id) ?? {};
+    const definitionValues = partMetadata[row.key] ?? new Set<string>();
+    definitionValues.add(value);
+    partMetadata[row.key] = definitionValues;
+    map.set(row.part_id, partMetadata);
+  }
+
+  return map;
+}
+
+function buildAllocationRows(
+  allocations: PartAllocationRow[],
+  metadataMap: Map<number, Record<string, Set<string>>>,
+  countries: string[],
+): SalesQPartAllocationRow[] {
+  const rowMap = new Map<number, SalesQPartAllocationRow>();
+  for (const row of allocations) {
+    const countryCode = asTrimmed(row.country_code).toUpperCase();
+    const hierarchyLevels = [row.hierarchy_1, row.hierarchy_2, row.hierarchy_3, row.hierarchy_4, row.hierarchy_5, row.hierarchy_6, row.hierarchy_7].map(
+      (value) => asTrimmed(value),
+    );
+    const existing =
+      rowMap.get(row.part_id) ??
+      {
+        partId: row.part_id,
+        partNumber: row.part_number,
+        englishTitle: row.default_name,
+        hierarchyLevels,
+        hierarchySummary: hierarchyLevels.filter(Boolean).join(' > '),
+        metadataValues: {},
+        countryStatuses: {},
+        hasBcIds: row.has_bc_ids === true,
+        bcStatus: normalizeBCStatus(row.bc_status, row.has_bc_ids === true),
+      };
+
+    existing.hasBcIds = existing.hasBcIds || row.has_bc_ids === true;
+    existing.bcStatus = existing.bcStatus === 'ok' || normalizeBCStatus(row.bc_status, row.has_bc_ids === true) === 'ok' ? 'ok' : 'nok';
+    if (countryCode) existing.countryStatuses[countryCode] = normalizeStatus(row.active);
+    rowMap.set(row.part_id, existing);
+  }
+
+  return [...rowMap.values()]
+    .map((row) => {
+      const partMetadata = metadataMap.get(row.partId) ?? {};
+      const metadataValues = Object.fromEntries(
+        Object.entries(partMetadata).map(([key, values]) => [key, [...values].sort((a, b) => a.localeCompare(b))]),
+      );
+
+      return {
+        ...row,
+        metadataValues,
+        countryStatuses: Object.fromEntries(
+          countries.map((countryCode) => [countryCode, row.countryStatuses[countryCode] ?? 'inactive']),
+        ) as Record<string, QPartAllocationStatus>,
+      };
+    })
+    .sort((a, b) => a.partNumber.localeCompare(b.partNumber));
+}
+
+function buildHierarchyOptions(rows: SalesQPartAllocationRow[]): Record<number, string[]> {
+  const options: Record<number, string[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+  for (let level = 1; level <= 7; level += 1) {
+    options[level] = [...new Set(rows.map((row) => row.hierarchyLevels[level - 1] ?? '').filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }
+  return options;
+}
+
+function rowMatchesCriteria(
+  row: SalesQPartAllocationRow,
+  criteria: Required<SalesQPartAllocationBulkFilterCriteria>,
+  allCountries: string[],
+): boolean {
+  if (criteria.partNumberSearch && !row.partNumber.toLowerCase().includes(criteria.partNumberSearch)) return false;
+  if (criteria.titleSearch && !row.englishTitle.toLowerCase().includes(criteria.titleSearch)) return false;
+  if (criteria.bcStatuses.length && !criteria.bcStatuses.includes(row.bcStatus)) return false;
+
+  for (const [level, selectedValues] of Object.entries(criteria.hierarchySelection)) {
+    if (!selectedValues.length) continue;
+    const index = Number(level) - 1;
+    if (!selectedValues.includes(row.hierarchyLevels[index] ?? '')) return false;
+  }
+
+  for (const [key, selectedValues] of Object.entries(criteria.metadataSelection)) {
+    if (!selectedValues.length) continue;
+    const partValues = row.metadataValues[key] ?? [];
+    if (!selectedValues.some((value) => partValues.includes(value))) return false;
+  }
+
+  if (criteria.allocationStatuses.length) {
+    const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : allCountries;
+    return targetCountries.some((countryCode) => criteria.allocationStatuses.includes(row.countryStatuses[countryCode] ?? 'inactive'));
+  }
+
+  return true;
+}
+
+export async function getSalesQPartAllocationPageData(
+  input: { page?: number; pageSize?: number; filterCriteria?: SalesQPartAllocationBulkFilterCriteria } = {},
+): Promise<SalesQPartAllocationPageData> {
+  await syncQPartCountryAllocationRows();
+
+  const pageSize = Math.min(500, Math.max(1, asFiniteNumber(input.pageSize, 200)));
+  const requestedPage = Math.max(1, asFiniteNumber(input.page, 1));
+  const criteria = normalizeCriteria(input.filterCriteria ?? {});
+
+  const [allocations, metadataMap, metadataDefinitions, countryMappings] = await Promise.all([
+    listPartAllocationRows(),
+    listPartMetadataMap(),
+    listMetadataDefinitions(true),
+    listCountryMappings(true),
+  ]);
+
+  const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+  const allRows = buildAllocationRows(allocations, metadataMap, countries);
+  const hierarchyOptions = buildHierarchyOptions(allRows);
+  const filteredRows = allRows.filter((row) => rowMatchesCriteria(row, criteria, countries));
+  const totalRows = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const page = Math.min(totalPages, requestedPage);
+  const offset = (page - 1) * pageSize;
+  const rows = filteredRows.slice(offset, offset + pageSize);
+
+  const usedCountries = new Set(countries);
+  const regionMap = new Map<string, Map<string, string[]>>();
+
+  for (const mapping of countryMappings) {
+    const countryCode = asTrimmed(mapping.country_code).toUpperCase();
+    if (!usedCountries.has(countryCode)) continue;
+
+    const region = asTrimmed(mapping.region) || 'Other';
+    const subRegion = asTrimmed(mapping.sub_region) || 'Other';
+    const subRegionMap = regionMap.get(region) ?? new Map<string, string[]>();
+    const subRegionCountries = subRegionMap.get(subRegion) ?? [];
+    if (!subRegionCountries.includes(countryCode)) {
+      subRegionCountries.push(countryCode);
+      subRegionCountries.sort((a, b) => a.localeCompare(b));
+    }
+    subRegionMap.set(subRegion, subRegionCountries);
+    regionMap.set(region, subRegionMap);
+  }
+
+  const mappedCountries = new Set<string>();
+  const territoryRegions: SalesQPartTerritoryFilterRegion[] = [...regionMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([region, subRegionMap]) => ({
+      region,
+      subRegions: [...subRegionMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([subRegion, values]) => {
+          values.forEach((countryCode) => mappedCountries.add(countryCode));
+          return {
+            subRegion,
+            countries: values,
+          };
+        }),
+    }));
+
+  const unmappedCountries = countries.filter((countryCode) => !mappedCountries.has(countryCode));
+  if (unmappedCountries.length) {
+    territoryRegions.push({
+      region: 'Other',
+      subRegions: [
+        {
+          subRegion: 'Unmapped',
+          countries: unmappedCountries,
+        },
+      ],
+    });
+  }
+
+  return {
+    rows,
+    countries,
+    pagination: { page, pageSize, totalRows, totalPages },
+    filterOptions: {
+      countries,
+      territoryRegions,
+      metadataFields: metadataDefinitions.map((definition) => ({ key: definition.key, label: definition.label_en })),
+      hierarchyOptions,
+    },
+  };
+}
+
+export async function toggleQPartCountryAllocation(input: { partId: number; countryCode: string; targetStatus: QPartAllocationStatus; actor?: AllocationAuditActor | null }) {
+  const partId = Number(input.partId);
+  const countryCode = asTrimmed(input.countryCode).toUpperCase();
+
+  if (!Number.isFinite(partId)) throw new Error('partId is required');
+  if (!countryCode) throw new Error('countryCode is required');
+
+  const targetActive = input.targetStatus === 'active';
+
+  const beforeRows = (await sql`select active from qpart_country_allocation where part_id = ${partId} and country_code = ${countryCode}`) as Array<{active:boolean}>;
+  const partInfo = (await sql`
+    select p.part_number, map.bc_status
+    from qpart_parts p
+    left join lateral (
+      select bc_status
+      from public.bc_item_variant_map map
+      where coalesce(trim(map.sku_code), '') = coalesce(trim(p.part_number), '')
+      order by updated_at desc nulls last, id desc
+      limit 1
+    ) map on true
+    where p.id = ${partId}
+    limit 1
+  `) as Array<{part_number:string; bc_status: string | null}>;
+  const before = beforeRows[0]?.active ?? null;
+  const rows = (await sql`
+    update qpart_country_allocation
+    set active = ${targetActive},
+        updated_at = now()
+    where part_id = ${partId}
+      and country_code = ${countryCode}
+      and coalesce(active,false) <> ${targetActive}
+    returning id
+  `) as Array<{ id: number }>;
+  if (rows.length) await insertAllocationAuditRows([{ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_single_toggle', entityType: 'qpart', itemCode: asTrimmed(partInfo[0]?.part_number), countryCode, actionType: targetActive ? 'activated' : 'deactivated', statusBefore: before, statusAfter: targetActive, bigcommerceStatus: partInfo[0]?.bc_status == null ? null : normalizeAuditBCStatus(partInfo[0]?.bc_status) }]);
+
+  const externalSync = rows.length
+    ? await syncQPartAllocationToExternalIfBcOk({ partId, countryCode })
+    : null;
+
+  return {
+    updatedCount: rows.length,
+    targetStatus: input.targetStatus,
+    externalSync,
+  };
+}
+
+export type SalesQPartAllocationBulkFilterCriteria = {
+  partNumberSearch?: string;
+  titleSearch?: string;
+  countryCodes?: string[];
+  allocationStatuses?: QPartAllocationStatus[];
+  hierarchySelection?: Record<string, string[]>;
+  metadataSelection?: Record<string, string[]>;
+  bcStatuses?: QPartBCStatusFilter[];
+};
+
+function normalizeCriteria(input: SalesQPartAllocationBulkFilterCriteria = {}): Required<SalesQPartAllocationBulkFilterCriteria> {
+  const normalizeList = (values: unknown[] | undefined) => [...new Set((values ?? []).map(asTrimmed).filter(Boolean))];
+  return {
+    partNumberSearch: asTrimmed(input.partNumberSearch).toLowerCase(),
+    titleSearch: asTrimmed(input.titleSearch).toLowerCase(),
+    countryCodes: normalizeList(input.countryCodes).map((value) => value.toUpperCase()),
+    allocationStatuses: normalizeList(input.allocationStatuses).filter(
+      (value): value is QPartAllocationStatus => value === 'active' || value === 'inactive',
+    ),
+    hierarchySelection: Object.fromEntries(
+      Object.entries(input.hierarchySelection ?? {}).map(([level, values]) => [level, normalizeList(values)]),
+    ),
+    metadataSelection: Object.fromEntries(
+      Object.entries(input.metadataSelection ?? {}).map(([key, values]) => [key, normalizeList(values)]),
+    ),
+    bcStatuses: normalizeList(input.bcStatuses)
+      .map((value) => value.toLowerCase())
+      .filter((value): value is QPartBCStatusFilter => value === 'ok' || value === 'nok'),
+  };
+}
+
+async function listFilteredQPartAllocationRows(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<{ rows: SalesQPartAllocationRow[]; countries: string[] }> {
+  await syncQPartCountryAllocationRows();
+
+  const criteria = normalizeCriteria(filterCriteria);
+  const [allocations, metadataMap] = await Promise.all([listPartAllocationRows(), listPartMetadataMap()]);
+  const countries = [...new Set(allocations.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))];
+  const rows = buildAllocationRows(allocations, metadataMap, countries).filter((row) =>
+    rowMatchesCriteria(row, criteria, countries),
+  );
+
+  return { rows, countries };
+}
+
+export async function listFilteredQPartAllocationPartIds(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<number[]> {
+  const { rows } = await listFilteredQPartAllocationRows(filterCriteria);
+  return rows.map((row) => row.partId);
+}
+
+export async function listSalesQPartAllocationExternalStatusPairs(
+  filterCriteria: SalesQPartAllocationBulkFilterCriteria = {},
+): Promise<SalesQPartAllocationSkuCountryPair[]> {
+  const criteria = normalizeCriteria(filterCriteria);
+  const { rows, countries } = await listFilteredQPartAllocationRows(filterCriteria);
+  const targetCountries = criteria.countryCodes.length ? criteria.countryCodes : countries;
+  const pairs = new Map<string, SalesQPartAllocationSkuCountryPair>();
+
+  for (const row of rows) {
+    if (!row.hasBcIds) continue;
+    for (const countryCode of targetCountries) {
+      pairs.set(`${row.partNumber}::${countryCode}`, { sku: row.partNumber, countryCode });
+    }
+  }
+
+  return [...pairs.values()];
+}
+
+export async function bulkUpdateQPartCountryAllocation(input: {
+  partIds: number[];
+  countryCodes: string[];
+  targetStatus: QPartAllocationStatus;
+  actor?: AllocationAuditActor | null;
+  scope?: 'current_page' | 'all_filtered_pages';
+}) {
+  const partIds = [...new Set(input.partIds.map((value) => Number(value)).filter(Number.isFinite))];
+  const countryCodes = [...new Set(input.countryCodes.map((value) => asTrimmed(value).toUpperCase()).filter(Boolean))];
+
+  if (!partIds.length) throw new Error('partIds is required');
+  if (!countryCodes.length) throw new Error('countryCodes is required');
+
+  const rows = (await sql`
+    with target_parts as (
+      select value::bigint as part_id
+      from jsonb_array_elements_text(${JSON.stringify(partIds)}::jsonb)
+    ),
+    target_countries as (
+      select value::text as country_code
+      from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
+    )
+    update qpart_country_allocation allocation
+    set active = ${input.targetStatus === 'active'},
+        updated_at = now()
+    where allocation.part_id in (select part_id from target_parts)
+      and allocation.country_code in (select country_code from target_countries)
+      and coalesce(allocation.active,false) <> ${input.targetStatus === 'active'}
+    returning allocation.part_id, allocation.country_code, (not ${input.targetStatus === 'active'}) as status_before
+  `) as Array<{ part_id: number; country_code: string; status_before: boolean }>;
+
+  const uniqueTargets = [
+    ...new Map(
+      rows.map((row) => [
+        `${row.part_id}::${row.country_code}`,
+        { partId: row.part_id, countryCode: row.country_code },
+      ]),
+    ).values(),
+  ];
+  const partRows = (await sql`
+    with updated_targets as (
+      select *
+      from jsonb_to_recordset(${JSON.stringify(uniqueTargets)}::jsonb) as input("partId" bigint, "countryCode" text)
+    )
+    select
+      target."partId" as part_id,
+      target."countryCode" as country_code,
+      p.part_number,
+      allocation.active,
+      map.bc_status
+    from updated_targets target
+    join qpart_parts p on p.id = target."partId"
+    join qpart_country_allocation allocation
+      on allocation.part_id = target."partId"
+     and allocation.country_code = target."countryCode"
+    left join lateral (
+      select bc_status
+      from public.bc_item_variant_map map
+      where coalesce(trim(map.sku_code), '') = coalesce(trim(p.part_number), '')
+      order by updated_at desc nulls last, id desc
+      limit 1
+    ) map on true
+  `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean; bc_status: string | null }>;
+  if (partRows.length) await insertAllocationAuditRows(partRows.map((row) => ({ actor: input.actor, pageKey: 'sales.qpart_allocation', sourceProcess: 'qpart_allocation_bulk_toggle', entityType: 'qpart', itemCode: asTrimmed(row.part_number), countryCode: row.country_code, bigcommerceStatus: row.bc_status == null ? null : normalizeAuditBCStatus(row.bc_status), actionType: input.targetStatus === 'active' ? 'bulk_activated' : 'bulk_deactivated', statusBefore: !row.active, statusAfter: row.active, metadata: { bulk: true, operation: input.targetStatus === 'active' ? 'bulk_activate' : 'bulk_deactivate', affectedCount: partRows.length, scope: input.scope ?? 'current_page' } })));
+
+  const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(partRows.map((row) => ({
+    partId: row.part_id,
+    sku: asTrimmed(row.part_number),
+    countryCode: row.country_code,
+    active: row.active === true,
+  })));
+
+  return {
+    updatedCount: rows.length,
+    partCount: partIds.length,
+    countryCount: countryCodes.length,
+    targetStatus: input.targetStatus,
+    externalSync,
+  };
+}
+
+export async function pushQPartAllocationBcOk(input: {
+  partIds: number[];
+  countryCodes: string[];
+}) {
+  const partIds = [...new Set(input.partIds.map((value) => Number(value)).filter(Number.isFinite))];
+  const countryCodes = [...new Set(input.countryCodes.map((value) => asTrimmed(value).toUpperCase()).filter(Boolean))];
+
+  if (!partIds.length) throw new Error('partIds is required');
+  if (!countryCodes.length) throw new Error('countryCodes is required');
+
+  const rows = (await sql`
+    with target_parts as (
+      select value::bigint as part_id
+      from jsonb_array_elements_text(${JSON.stringify(partIds)}::jsonb)
+    ),
+    target_countries as (
+      select value::text as country_code
+      from jsonb_array_elements_text(${JSON.stringify(countryCodes)}::jsonb)
+    )
+    select distinct allocation.part_id, allocation.country_code, p.part_number, allocation.active
+    from qpart_country_allocation allocation
+    join qpart_parts p on p.id = allocation.part_id
+    where allocation.part_id in (select part_id from target_parts)
+      and allocation.country_code in (select country_code from target_countries)
+  `) as Array<{ part_id: number; country_code: string; part_number: string | null; active: boolean }>;
+
+  const externalSync = await syncQPartAllocationsToExternalIfBcOkBatch(rows.map((row) => ({
+    partId: row.part_id,
+    sku: asTrimmed(row.part_number),
+    countryCode: row.country_code,
+    active: row.active === true,
+  })));
+
+  return {
+    partCount: partIds.length,
+    countryCount: countryCodes.length,
+    targetCount: rows.length,
+    externalSync,
+  };
+}

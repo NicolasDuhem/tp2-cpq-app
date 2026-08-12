@@ -1,0 +1,112 @@
+.page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.filters {
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.filterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #444;
+}
+
+.filterItem select,
+.filterItem input {
+  border: 1px solid #c3c3c3;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.columnPicker {
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.columnPickerTitle {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.columnPickerGrid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.columnPickerItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #333;
+}
+
+.identity {
+  font-size: 12px;
+  color: #555;
+  background: #fafafa;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.matrixTable {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+}
+
+.matrixTable th,
+.matrixTable td {
+  border: 1px solid #ececec;
+  padding: 8px;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.matrixTable th {
+  background: #f7f7f7;
+  font-weight: 700;
+}
+
+.countryMissing {
+  background: #efefef;
+  color: #8a8a8a;
+}
+
+.empty {
+  border: 1px dashed #cfcfcf;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  color: #666;
+}
