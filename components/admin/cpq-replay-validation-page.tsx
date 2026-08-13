@@ -3,9 +3,10 @@
 // Replay validation page.
 //
 // Loading dropdowns, listing references and running the replay are all read-only.
-// The one writing action is "Apply selected replay results", which requires Admin access
-// and archives the previous row content before updating the existing rows. Nothing on this
-// page inserts live rows, pushes external PostgreSQL or updates BigCommerce.
+// The one writing action is "Apply selected replay results", which requires Admin access and
+// archives the previous row content before updating the existing rows. It also performs one
+// targeted external PostgreSQL update (variant_eligibilities."DetailId" only). Nothing on this
+// page inserts live rows, runs the full external push, or updates BigCommerce.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -83,6 +84,19 @@ type ReplaySummary = { total: number; match: number; different: number; failed: 
 
 type OverwriteStatus = 'updated' | 'skipped' | 'failed';
 
+type ExternalEligibilityStatus = 'updated' | 'skipped' | 'warning' | 'failed';
+
+type ExternalEligibilityDetailUpdate = {
+  attempted: boolean;
+  updatedRows: number;
+  status: ExternalEligibilityStatus;
+  message?: string;
+  sku?: string | null;
+  countryCode?: string | null;
+  previousDetailId?: string | null;
+  newDetailId?: string | null;
+};
+
 type OverwriteResultRow = {
   configurationReferenceId: number;
   configurationReference: string;
@@ -95,9 +109,36 @@ type OverwriteResultRow = {
   samplerResultId?: number;
   replayStatus?: ReplayStatus;
   durationMs: number;
+  externalEligibilityDetailUpdate?: ExternalEligibilityDetailUpdate;
 };
 
-type OverwriteSummary = { total: number; updated: number; skipped: number; failed: number };
+type OverwriteSummary = {
+  total: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  externalUpdated: number;
+  externalSkipped: number;
+  externalWarning: number;
+  externalFailed: number;
+};
+
+const EXTERNAL_STATUS_LABEL: Record<ExternalEligibilityStatus, string> = {
+  updated: 'Updated',
+  skipped: 'Skipped',
+  warning: 'Warning',
+  failed: 'Failed',
+};
+
+const externalPillStyle = (status: ExternalEligibilityStatus) => {
+  const palette: Record<ExternalEligibilityStatus, { background: string; color: string }> = {
+    updated: { background: '#dff7e6', color: '#126e2b' },
+    skipped: { background: '#e9edf5', color: '#475569' },
+    warning: { background: '#fff3cd', color: '#8a5b00' },
+    failed: { background: '#fde2e2', color: '#9d1d1d' },
+  };
+  return { ...palette[status], display: 'inline-flex', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 };
+};
 
 const OVERWRITE_STATUS_LABEL: Record<OverwriteStatus, string> = {
   updated: 'Updated',
@@ -380,7 +421,9 @@ export default function CpqReplayValidationPage({
         <br />
         <strong>Apply selected replay results</strong> is the only writing action: it requires Admin access, archives the
         previous row content before each overwrite, and only updates existing configuration-reference and sampler rows —
-        it never inserts new live rows, never pushes external PostgreSQL, and never updates BigCommerce.
+        it never inserts new live rows and never updates BigCommerce. It then makes one targeted external PostgreSQL
+        update, setting only <code>variant_eligibilities.&quot;DetailId&quot;</code> for the matching bike/country row; it
+        never inserts external rows, never touches <code>variants</code>, and never runs the full external push.
       </div>
 
       {errorMessage ? (
@@ -647,6 +690,9 @@ export default function CpqReplayValidationPage({
               <span className="subtle">
                 Total {overwriteSummary.total} • Updated {overwriteSummary.updated} • Skipped {overwriteSummary.skipped} •
                 Failed {overwriteSummary.failed}
+                {' | '}External eligibility — updated {overwriteSummary.externalUpdated} • skipped{' '}
+                {overwriteSummary.externalSkipped} • warning {overwriteSummary.externalWarning} • failed{' '}
+                {overwriteSummary.externalFailed}
               </span>
             ) : null}
             {overwriteBatchId ? <span className="subtle">Archive batch: {overwriteBatchId}</span> : null}
@@ -661,6 +707,9 @@ export default function CpqReplayValidationPage({
                   <th>Status</th>
                   <th>Archive id</th>
                   <th>Sampler row</th>
+                  <th>External eligibility Detail ID</th>
+                  <th>External rows updated</th>
+                  <th>External update status</th>
                   <th>Message / error</th>
                   <th>Duration</th>
                 </tr>
@@ -676,6 +725,27 @@ export default function CpqReplayValidationPage({
                     </td>
                     <td>{row.archiveId ?? '—'}</td>
                     <td>{row.samplerResultId ?? '—'}</td>
+                    <td>
+                      {row.externalEligibilityDetailUpdate?.newDetailId ?? '—'}
+                      {row.externalEligibilityDetailUpdate?.previousDetailId ? (
+                        <div className="subtle">was {row.externalEligibilityDetailUpdate.previousDetailId}</div>
+                      ) : null}
+                      {row.externalEligibilityDetailUpdate?.sku ? (
+                        <div className="subtle">
+                          {row.externalEligibilityDetailUpdate.sku} / {row.externalEligibilityDetailUpdate.countryCode ?? '—'}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>{row.externalEligibilityDetailUpdate ? row.externalEligibilityDetailUpdate.updatedRows : '—'}</td>
+                    <td>
+                      {row.externalEligibilityDetailUpdate ? (
+                        <span style={externalPillStyle(row.externalEligibilityDetailUpdate.status)}>
+                          {EXTERNAL_STATUS_LABEL[row.externalEligibilityDetailUpdate.status]}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td>{row.error ?? row.message ?? '—'}</td>
                     <td>{row.durationMs} ms</td>
                   </tr>
@@ -697,7 +767,12 @@ export default function CpqReplayValidationPage({
             <ul style={{ fontSize: 13, lineHeight: 1.6 }}>
               <li>An archive copy will be created before each overwrite.</li>
               <li>The replay is re-run on the server; the results shown above are not written directly.</li>
-              <li>This will not push external PostgreSQL.</li>
+              <li>
+                It will also update <strong>only</strong> the <code>DetailId</code> column of the matching external
+                PostgreSQL <code>variant_eligibilities</code> row to the new CPQ Detail ID. No external row is inserted and{' '}
+                <code>variants</code> is not touched.
+              </li>
+              <li>This will not run the full external push.</li>
               <li>This will not update BigCommerce.</li>
               <li>This cannot yet be rolled back from the UI.</li>
             </ul>

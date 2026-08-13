@@ -341,3 +341,18 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - Row statuses: `updated`, `skipped`, `failed`. Batch max 25, processed sequentially (each row re-runs a full CPQ replay).
 - No external side effects: no external PostgreSQL push, no BigCommerce write, no `app_allocation_audit_log` row. The archive table is the safety record.
 - Rollback is not implemented in the UI. `app_cpq_replay_overwrite_archive` retains the full old rows, the intended new payloads, actor and batch id so a future rollback can be built from it.
+
+### CPQ replay overwrite — external eligibility Detail ID update (2026-08-13)
+
+The controlled overwrite documented above gained one targeted external PostgreSQL step. Sequence per applied row is now:
+
+1. Re-run the replay server-side.
+2. Archive the old Neon rows (`app_cpq_replay_overwrite_archive`).
+3. Update the Neon rows (`cpq_configuration_references` + `CPQ_sampler_result`) — steps 2 and 3 are one transaction.
+4. Update external `variant_eligibilities."DetailId"` only, for the matching bike/country row.
+5. Return per-row status covering both the Neon result and the external result.
+
+- The external match key is `("Sku", "CountryCode", "DetailId")` taken from the sampler row **as archived before the update**, so the previous detail id pins the WHERE clause and drifted rows are never overwritten. See `docs/EXTERNAL_POSTGRES_ROW_PUSH.md` for the statement.
+- Only `"DetailId"` changes. No external insert, no `public.variants` write, no full external push, no BigCommerce call.
+- Row status (`updated`/`skipped`/`failed`) continues to report the **Neon** outcome; the external outcome is reported separately in `externalEligibilityDetailUpdate` (`updated`/`skipped`/`warning`/`failed`) and in its own summary counters, so an external problem after a committed Neon overwrite is visible rather than collapsed into the Neon status.
+- If the external update fails after Neon committed, the row still reports `updated` for Neon plus `failed` externally with the verbatim error. There is no automatic rollback and no retry loop.

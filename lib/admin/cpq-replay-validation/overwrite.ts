@@ -9,7 +9,10 @@
 //   * The archive insert and both live updates run in ONE transaction, and each update
 //     carries an `exists (...)` guard against the archive row for this batch, so a live
 //     row cannot be updated unless its archive row landed first.
-//   * No external PostgreSQL push, no BigCommerce call, no allocation audit write.
+//   * After Neon commits, exactly one targeted external PostgreSQL statement runs: an UPDATE of
+//     `variant_eligibilities."DetailId"` for the matching Sku/CountryCode/previous-DetailId row.
+//     No external insert, no `public.variants` write, no full external push, no BigCommerce
+//     call, no allocation audit write.
 
 import 'server-only';
 
@@ -17,6 +20,9 @@ import { randomUUID } from 'crypto';
 
 import { sql, sqlTransaction } from '@/lib/db/client';
 import { reduceConfigurationJsonSnapshot } from '@/lib/cpq/runtime/reduce-json-snapshot';
+// Update-only external helper. Deliberately NOT the full push service
+// (`syncExternalVariantTablesForPayload`), which also writes `public.variants`.
+import { updateExternalVariantEligibilityDetailId } from '@/lib/external-pg/variant-tables';
 import type { SamplerSelectedOption } from '@/lib/cpq/replay/matching';
 import type { NormalizedBikeBuilderState } from '@/types/cpq';
 import { replayConfigurationReference, type ReplayResult, type ReplayWritePayload } from './replay';
@@ -34,6 +40,31 @@ export const SOURCE_PROCESS = 'cpq_replay_overwrite';
 export const SAMPLER_PAYLOAD_SOURCE = 'admin-cpq-replay-overwrite';
 
 export type OverwriteRowStatus = 'updated' | 'skipped' | 'failed';
+
+export type ExternalEligibilityUpdateStatus = 'updated' | 'skipped' | 'warning' | 'failed';
+
+/**
+ * Outcome of the targeted external PostgreSQL `variant_eligibilities."DetailId"` update.
+ * `warning` means the update ran but matched no row — never treated as success, never retried,
+ * and never widened into an insert or a looser WHERE clause.
+ */
+export type ExternalEligibilityDetailUpdate = {
+  attempted: boolean;
+  updatedRows: number;
+  status: ExternalEligibilityUpdateStatus;
+  message?: string;
+  sku?: string | null;
+  countryCode?: string | null;
+  previousDetailId?: string | null;
+  newDetailId?: string | null;
+};
+
+/**
+ * The external eligibility row stores `DetailId` via `buildBikeExternalSamplerPayload`, which
+ * falls back to 'Simulator' when the sampler detail id is blank. The same normalisation has to
+ * be applied here or the WHERE clause would miss those rows.
+ */
+const EXTERNAL_DETAIL_ID_FALLBACK = 'Simulator';
 
 export type OverwriteActor = {
   userId?: string | null;
@@ -65,6 +96,7 @@ export type OverwriteRowResult = {
   replayStatus?: ReplayResult['status'];
   replayRunId?: string;
   durationMs: number;
+  externalEligibilityDetailUpdate?: ExternalEligibilityDetailUpdate;
 };
 
 export type OverwriteSummary = {
@@ -72,6 +104,10 @@ export type OverwriteSummary = {
   updated: number;
   skipped: number;
   failed: number;
+  externalUpdated: number;
+  externalSkipped: number;
+  externalWarning: number;
+  externalFailed: number;
 };
 
 const asTrimmedOrNull = (value: unknown): string | null => {
@@ -244,7 +280,11 @@ async function archiveAndUpdate(input: {
       from cpq_configuration_references c
       join CPQ_sampler_result s on s.id = ${samplerResultId}
       where c.id = ${reference.id}
-      returning id
+      returning
+        id,
+        old_sampler_result_row->>'ipn_code' as old_sampler_ipn_code,
+        old_sampler_result_row->>'country_code' as old_sampler_country_code,
+        old_sampler_result_row->>'detail_id' as old_sampler_detail_id
     `,
     sql`
       update cpq_configuration_references
@@ -289,15 +329,117 @@ async function archiveAndUpdate(input: {
     `,
   ]);
 
-  const archiveRows = (results[0] ?? []) as Array<{ id: number }>;
+  const archiveRows = (results[0] ?? []) as Array<{
+    id: number;
+    old_sampler_ipn_code: string | null;
+    old_sampler_country_code: string | null;
+    old_sampler_detail_id: string | null;
+  }>;
   const referenceRows = (results[1] ?? []) as Array<{ id: number }>;
   const samplerRows = (results[2] ?? []) as Array<{ id: number }>;
+  const archived = archiveRows[0];
 
   return {
-    archiveId: archiveRows[0] ? Number(archiveRows[0].id) : null,
+    archiveId: archived ? Number(archived.id) : null,
     referenceUpdated: referenceRows.length,
     samplerUpdated: samplerRows.length,
+    // Pre-update sampler values, read inside the transaction. These are the external
+    // `variant_eligibilities` match key, because the external push writes
+    // Sku = sampler.ipn_code, CountryCode = sampler.country_code, DetailId = sampler.detail_id.
+    previousSampler: archived
+      ? {
+          ipnCode: asTrimmedOrNull(archived.old_sampler_ipn_code),
+          countryCode: asTrimmedOrNull(archived.old_sampler_country_code),
+          detailId: asTrimmedOrNull(archived.old_sampler_detail_id),
+        }
+      : null,
   };
+}
+
+/**
+ * Targeted external follow-up: point the external eligibility row at the new CPQ detail id.
+ *
+ * Scope is deliberately minimal — one row, one column. It uses the pre-update sampler values
+ * captured inside the archive transaction as the match key (including the previous detail id),
+ * so an external row that has drifted is reported as a warning instead of being overwritten.
+ *
+ * This never calls the full external push service, never touches `public.variants`, never
+ * inserts, and never calls BigCommerce.
+ */
+async function updateExternalEligibilityDetailId(input: {
+  previousSampler: { ipnCode: string | null; countryCode: string | null; detailId: string | null } | null;
+  newDetailId: string | null;
+}): Promise<ExternalEligibilityDetailUpdate> {
+  const newDetailId = asTrimmedOrNull(input.newDetailId);
+  if (!newDetailId) {
+    return {
+      attempted: false,
+      updatedRows: 0,
+      status: 'skipped',
+      message: 'Skipped — replay did not return a new Detail ID.',
+    };
+  }
+
+  const sku = asTrimmedOrNull(input.previousSampler?.ipnCode);
+  const countryCode = asTrimmedOrNull(input.previousSampler?.countryCode)?.toUpperCase() ?? null;
+  const previousDetailId = asTrimmedOrNull(input.previousSampler?.detailId) ?? EXTERNAL_DETAIL_ID_FALLBACK;
+
+  if (!sku || !countryCode) {
+    return {
+      attempted: false,
+      updatedRows: 0,
+      status: 'skipped',
+      message: 'Skipped — previous sampler row had no item code/country, so no safe external match key exists.',
+      sku,
+      countryCode,
+      previousDetailId,
+      newDetailId,
+    };
+  }
+
+  try {
+    const result = await updateExternalVariantEligibilityDetailId({
+      sku,
+      countryCode,
+      previousDetailId,
+      newDetailId,
+    });
+    if (result.updatedRows === 0) {
+      return {
+        attempted: true,
+        updatedRows: 0,
+        status: 'warning',
+        message: `Warning — no external variant eligibility row matched (Sku ${sku}, CountryCode ${countryCode}, DetailId ${previousDetailId}). Nothing was inserted.`,
+        sku,
+        countryCode,
+        previousDetailId,
+        newDetailId,
+      };
+    }
+    return {
+      attempted: true,
+      updatedRows: result.updatedRows,
+      status: 'updated',
+      message: `External eligibility Detail ID updated on ${result.updatedRows} row(s).`,
+      sku,
+      countryCode,
+      previousDetailId,
+      newDetailId,
+    };
+  } catch (error) {
+    return {
+      attempted: true,
+      updatedRows: 0,
+      status: 'failed',
+      message: `External eligibility Detail ID update failed after the Neon overwrite committed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      sku,
+      countryCode,
+      previousDetailId,
+      newDetailId,
+    };
+  }
 }
 
 async function applyOverwriteForReference(input: {
@@ -443,6 +585,19 @@ async function applyOverwriteForReference(input: {
       };
     }
 
+    // Neon is now committed. The external update runs afterwards and separately: external
+    // PostgreSQL is a different database, so there is no cross-database transaction. A failure
+    // here leaves Neon updated and is surfaced explicitly rather than rolled back or hidden.
+    const externalEligibilityDetailUpdate = await updateExternalEligibilityDetailId({
+      previousSampler: outcome.previousSampler,
+      newDetailId: replay.replayedDetailId,
+    });
+
+    const neonMessage =
+      replay.status === 'match'
+        ? 'Replayed item code was identical to the stored one; rows refreshed and archived anyway.'
+        : `Item code overwritten (${reference.existingItemCode ?? '—'} → ${replay.replayedItemCode}).`;
+
     return {
       ...base,
       status: 'updated',
@@ -451,10 +606,8 @@ async function applyOverwriteForReference(input: {
       archiveId: outcome.archiveId,
       samplerResultId: samplerMatch.id,
       samplerMatchedOn: samplerMatch.matchedOn,
-      message:
-        replay.status === 'match'
-          ? 'Replayed item code was identical to the stored one; rows refreshed and archived anyway.'
-          : `Item code overwritten (${reference.existingItemCode ?? '—'} → ${replay.replayedItemCode}).`,
+      message: `${neonMessage} ${externalEligibilityDetailUpdate.message ?? ''}`.trim(),
+      externalEligibilityDetailUpdate,
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
@@ -519,9 +672,16 @@ export async function runReplayOverwriteBatch(input: {
     (acc, result) => {
       acc.total += 1;
       acc[result.status] += 1;
+      const external = result.externalEligibilityDetailUpdate;
+      if (external) {
+        if (external.status === 'updated') acc.externalUpdated += 1;
+        else if (external.status === 'skipped') acc.externalSkipped += 1;
+        else if (external.status === 'warning') acc.externalWarning += 1;
+        else acc.externalFailed += 1;
+      }
       return acc;
     },
-    { total: 0, updated: 0, skipped: 0, failed: 0 },
+    { total: 0, updated: 0, skipped: 0, failed: 0, externalUpdated: 0, externalSkipped: 0, externalWarning: 0, externalFailed: 0 },
   );
 
   return { overwriteBatchId, results, summary };

@@ -325,3 +325,9 @@ External bike allocation pushes use the extracted full `ForecastAs` as `public.v
 ### Schema note
 
 `sql/schema.sql` still does not declare `cpq_configuration_references.canonical_header_id` / `canonical_detail_id` / `source_working_detail_id` / `source_session_id`, although runtime code reads and writes them (pre-existing gap already flagged above). The overwrite flow updates the canonical detail columns, so deployed environments must have them.
+
+### External `variant_eligibilities` writes from the admin replay overwrite (2026-08-13)
+
+- The admin CPQ replay overwrite updates external `variant_eligibilities."DetailId"` (only that column) for the applied bike/country row, so the external eligibility keeps pointing at the CPQ detail id that the replay generated.
+- Match key includes the previous `"DetailId"` alongside `"Sku"` and `"CountryCode"`, which prevents multiple/unrelated eligibility rows for the same bike/country from being changed.
+- No external insert, no `public.variants` write, no BigCommerce call. Full details in `docs/EXTERNAL_POSTGRES_ROW_PUSH.md`.
