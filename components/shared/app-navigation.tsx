@@ -22,6 +22,12 @@ const links: NavLink[] = [
   { href: '/cpq/setup?tab=accounts', label: 'Setup Accounts', pageKey: 'cpq.setup.accounts', section: 'Bike Configurator' },
   { href: '/cpq/setup?tab=rulesets', label: 'Setup Rulesets', pageKey: 'cpq.setup.rulesets', section: 'Bike Configurator' },
   { href: '/cpq/setup?tab=pictures', label: 'Setup Pictures', pageKey: 'cpq.setup.pictures', section: 'Bike Configurator' },
+  {
+    href: '/admin/cpq-replay-validation',
+    label: 'CPQ replay validation',
+    pageKey: 'admin.cpq_replay_validation',
+    section: 'Bike Configurator',
+  },
   { href: '/qpart/parts', label: 'QPart PIM', pageKey: 'qpart.parts', section: 'QPart Data Management' },
   { href: '/setup/users', label: 'Setup User', pageKey: 'setup.users', section: 'User Management' },
   { href: '/cpq/results', label: 'Sampler Results', adminOnly: true, section: 'Information' },
