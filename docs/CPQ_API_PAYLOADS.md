@@ -251,3 +251,24 @@ Response:
 }
 ```
 No external PostgreSQL push, no BigCommerce write, no allocation audit row, and no live row is ever inserted.
+
+### `POST /api/admin/cpq-replay-validation/overwrite` — external eligibility result (2026-08-13)
+
+Each entry in `results` may now carry the outcome of the targeted external PostgreSQL update:
+```json
+{
+  "externalEligibilityDetailUpdate": {
+    "attempted": true,
+    "updatedRows": 1,
+    "status": "updated | skipped | warning | failed",
+    "message": "...",
+    "sku": "IPN-OLD-111",
+    "countryCode": "GB",
+    "previousDetailId": "detail-old-1",
+    "newDetailId": "detail-new-999"
+  }
+}
+```
+`summary` also gains `externalUpdated`, `externalSkipped`, `externalWarning` and `externalFailed`.
+
+The response's top-level flags are now `externalVariantsUpdated: false`, `externalRowsInserted: false` and `bigcommerceUpdated: false` — only `variant_eligibilities."DetailId"` is written externally.

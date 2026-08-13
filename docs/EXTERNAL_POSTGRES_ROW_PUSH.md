@@ -271,3 +271,31 @@ select
 from public.variants
 where "Sku" = '<IPN_CODE>';
 ```
+
+## Targeted eligibility Detail ID update from admin CPQ replay overwrite (2026-08-13)
+
+Separate from the full push path documented above. The controlled overwrite on
+`/admin/cpq-replay-validation` performs one narrow external write per applied row.
+
+- Helper: `updateExternalVariantEligibilityDetailId()` in `lib/external-pg/variant-tables.ts`, using the existing `withExternalPgClient` connection/config.
+- Table: external `variant_eligibilities` (schema from `EXTERNAL_PG_SCHEMA`, i.e. `public.variant_eligibilities` by default).
+- Column updated: **`"DetailId"` only**. `"IsActive"` and every other column are left untouched.
+- Match key (parameterised, no string concatenation):
+  ```sql
+  update <schema>."variant_eligibilities"
+  set "DetailId" = $4
+  where "Sku" = $1 and "CountryCode" = $2 and "DetailId" = $3
+  returning "Sku", "CountryCode", "DetailId"
+  ```
+  Pinning the previous `"DetailId"` is deliberate: a row whose detail id has drifted from what the app recorded is left alone rather than overwritten.
+- Where the values come from (they mirror how the full push writes the row: `Sku` = `CPQ_sampler_result.ipn_code`, `CountryCode` = `CPQ_sampler_result.country_code`, `DetailId` = `CPQ_sampler_result.detail_id`):
+  - `Sku` / `CountryCode` / previous `DetailId` — read from `old_sampler_result_row` in the archive statement, i.e. the sampler row exactly as it was before the Neon overwrite.
+  - new `DetailId` — the detail id CPQ returned when finalizing the replay (`replayedDetailId`), which is the same value written to `CPQ_sampler_result.detail_id`.
+  - The `'Simulator'` fallback the push applies for a blank sampler detail id is applied here too, so those rows still match.
+- Never inserts, never deletes, never writes `public.variants`, never calls the full push service, never calls BigCommerce.
+- Ordering: runs **after** the Neon archive+update transaction commits. External PostgreSQL is a separate database, so there is no cross-database transaction.
+- Outcomes per row (`externalEligibilityDetailUpdate`):
+  - `updated` — one or more rows updated (`updatedRows`).
+  - `skipped` — replay returned no new Detail ID, or the previous sampler row had no item code/country, so no safe match key exists. Nothing is attempted.
+  - `warning` — the update ran and matched **no** row. Reported explicitly; no insert, no widened WHERE, no retry.
+  - `failed` — the external statement threw. Neon stays updated and the error text is surfaced verbatim; nothing is rolled back automatically and the inconsistency is not hidden.

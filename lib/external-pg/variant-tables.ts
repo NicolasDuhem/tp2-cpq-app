@@ -20,6 +20,23 @@ export type ExternalVariantEligibilityStatusInput = {
   countryCode: string;
 };
 
+/** Input for the update-only `DetailId` change used by the admin CPQ replay overwrite. */
+export type ExternalVariantEligibilityDetailIdUpdateInput = {
+  sku: string;
+  countryCode: string;
+  /** Detail id currently expected on the external row; pins the WHERE clause. */
+  previousDetailId: string;
+  newDetailId: string;
+};
+
+export type ExternalVariantEligibilityDetailIdUpdateResult = {
+  sku: string;
+  countryCode: string;
+  previousDetailId: string;
+  newDetailId: string;
+  updatedRows: number;
+};
+
 export type ExternalVariantEligibilityStatus = {
   sku: string;
   countryCode: string;
@@ -598,6 +615,67 @@ async function syncExternalVariantEligibilityWithClient(
       stage: "variant_eligibilities_sync_execute",
     });
   }
+}
+
+/**
+ * Targeted, update-only change of a single eligibility row's `DetailId`.
+ *
+ * Used by the admin CPQ replay overwrite: after a replay regenerates a configuration, the
+ * external eligibility row must point at the new CPQ detail id. Deliberately narrow:
+ *
+ *   * updates `"DetailId"` and nothing else — `"IsActive"` and every other column are untouched
+ *   * never inserts, never deletes, never touches `public.variants`
+ *   * the WHERE clause pins `"Sku"`, `"CountryCode"` AND the previous `"DetailId"`, so a row
+ *     whose detail id has drifted from what we recorded is left alone rather than overwritten
+ *
+ * Returns the number of rows actually updated; 0 means nothing matched (caller should warn).
+ */
+export async function updateExternalVariantEligibilityDetailId(
+  input: ExternalVariantEligibilityDetailIdUpdateInput,
+  options: ExternalVariantPushOptions = {},
+): Promise<ExternalVariantEligibilityDetailIdUpdateResult> {
+  const sku = asTrimmed(input.sku);
+  const countryCode = asTrimmed(input.countryCode).toUpperCase();
+  const previousDetailId = asTrimmed(input.previousDetailId);
+  const newDetailId = asTrimmed(input.newDetailId);
+
+  if (!sku) throw new Error("sku is required for external variant_eligibilities detail id update");
+  if (!countryCode) {
+    throw new Error("countryCode is required for external variant_eligibilities detail id update");
+  }
+  if (!previousDetailId) {
+    throw new Error("previousDetailId is required for external variant_eligibilities detail id update");
+  }
+  if (!newDetailId) {
+    throw new Error("newDetailId is required for external variant_eligibilities detail id update");
+  }
+
+  return withExternalPgClient(async (client, schema) => {
+    const tableName = qualifiedTableName(schema, "variant_eligibilities");
+    const businessKey = { sku, countryCode, previousDetailId };
+
+    try {
+      options.onStage?.("update_start", { tableName, businessKey, detailIdOnly: true });
+      const response = await client.query(
+        `
+        update ${tableName}
+        set "DetailId" = $4
+        where "Sku" = $1
+          and "CountryCode" = $2
+          and "DetailId" = $3
+        returning "Sku", "CountryCode", "DetailId"
+        `,
+        [sku, countryCode, previousDetailId, newDetailId],
+      );
+      const updatedRows = response.rows.length;
+      options.onStage?.("update_success", { tableName, businessKey, updatedRows, detailIdOnly: true });
+      return { sku, countryCode, previousDetailId, newDetailId, updatedRows };
+    } catch (error) {
+      throw normalizeExternalPgError(error, {
+        stage: "variant_eligibilities_detail_id_update",
+      });
+    }
+  }, options);
 }
 
 export async function syncExternalVariant(

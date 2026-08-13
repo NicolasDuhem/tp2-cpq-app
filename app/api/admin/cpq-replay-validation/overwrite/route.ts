@@ -4,8 +4,11 @@
 // existing rows, and only after the previous row content has been archived in the same
 // transaction. It requires Admin access on `admin.cpq_replay_validation`.
 //
-// It must not push external PostgreSQL, must not call BigCommerce, must not write the
-// allocation audit log, and must not insert live configuration-reference or sampler rows.
+// After the Neon transaction commits it performs one targeted external PostgreSQL update:
+// `variant_eligibilities."DetailId"` only, for the matching bike/country row. It must not run the
+// full external push, must not write `public.variants`, must not insert external rows, must not
+// call BigCommerce, must not write the allocation audit log, and must not insert live
+// configuration-reference or sampler rows.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PAGE_KEYS } from '@/lib/auth/page-keys';
@@ -98,7 +101,11 @@ export async function POST(req: NextRequest) {
       invalidRowCount: invalid,
       maxRows: OVERWRITE_MAX_ROWS,
       archivedBeforeUpdate: true,
-      externalSideEffects: false,
+      // The only external write is the targeted variant_eligibilities."DetailId" update,
+      // reported per row under externalEligibilityDetailUpdate.
+      externalVariantsUpdated: false,
+      externalRowsInserted: false,
+      bigcommerceUpdated: false,
     });
   } catch (error) {
     return NextResponse.json(
