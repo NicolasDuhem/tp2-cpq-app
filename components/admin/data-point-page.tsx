@@ -22,57 +22,76 @@ export default function DataPointPage() {
 
   const selected = filteredPages.find((p) => p.route === selectedRoute) ?? filteredPages[0];
 
-  if (!isAdminModeReady) return <main className="panel"><p>Loading admin mode state…</p></main>;
+  if (!isAdminModeReady) return <main className="opPage"><p className="opLoading">Loading admin mode state…</p></main>;
   if (!isAdminMode) {
     return (
-      <main className="panel">
-        <h1>Admin - Data point</h1>
-        <p>This page is internal-only. Enable admin mode from the top navigation to view data contracts.</p>
+      <main className="opPage">
+        <header className="opHeader">
+          <div className="opHeaderMain">
+            <h1>Admin · Data point</h1>
+            <p>Internal page-contract and data-flow registry.</p>
+          </div>
+        </header>
+        <div className="opEmpty">
+          <strong>Admin mode required</strong>
+          Enable admin mode from the top navigation to view data contracts.
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="panel" style={{ display: 'grid', gap: 16 }}>
-      <header>
-        <h1 style={{ margin: 0 }}>Admin - Data point</h1>
-        <p className="subtle" style={{ marginTop: 8 }}>
-          Internal page-contract and data-flow registry. Source paths are implementation-based and should be updated with code changes.
-        </p>
+    <main className="opPage">
+      <header className="opHeader">
+        <div className="opHeaderMain">
+          <h1>Admin · Data point</h1>
+          <p>Internal page-contract and data-flow registry. Source paths are implementation-based and should be updated with code changes.</p>
+        </div>
+        <div className="opHeaderActions">
+          <label className="opField" style={{ minWidth: 280 }}>
+            Search pages / data points
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Try: sampler_result, qpart, push, configure" />
+          </label>
+        </div>
       </header>
 
-      <label style={{ display: 'grid', gap: 6 }}>
-        Search pages / data points
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Try: sampler_result, qpart, push, configure" />
-      </label>
-
-      <section style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
-        <aside className="panel" style={{ maxHeight: '70vh', overflow: 'auto' }}>
-          <strong>Pages ({filteredPages.length})</strong>
-          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+      <section className="dataPointLayout">
+        <aside className="opPanel dataPointList">
+          <div className="opSectionTitleRow">
+            <h2 className="opSectionTitle">Pages</h2>
+            <span className="opCount">{filteredPages.length}</span>
+          </div>
+          <div className="dataPointListItems">
             {filteredPages.map((p) => (
               <button
                 key={p.route}
                 type="button"
+                aria-current={p.route === selected?.route ? 'true' : undefined}
                 onClick={() => setSelectedRoute(p.route)}
-                style={{ textAlign: 'left', padding: 8, borderRadius: 8, border: p.route === selected?.route ? '2px solid #0ea5e9' : '1px solid #d1d5db' }}
+                className={`dataPointItem${p.route === selected?.route ? ' isSelected' : ''}`}
               >
-                <div style={{ fontWeight: 600 }}>{p.pageName}</div>
-                <div className="subtle" style={{ fontSize: 12 }}>{p.route}</div>
+                <span className="dataPointItemName">{p.pageName}</span>
+                <span className="secondaryText">{p.route}</span>
               </button>
             ))}
+            {!filteredPages.length ? <div className="opEmpty"><strong>No matches</strong>Try a different search term.</div> : null}
           </div>
         </aside>
 
         {selected ? (
-          <article className="panel" style={{ overflowX: 'auto' }}>
-            <h2 style={{ marginTop: 0 }}>{selected.pageName}</h2>
-            <p><strong>Route:</strong> {selected.route}</p>
-            <p><strong>Purpose:</strong> {selected.purpose}</p>
-            <p><strong>Access:</strong> {selected.access}</p>
-            <p><strong>Feature flags:</strong> {selected.featureFlags?.join(', ') || 'None explicit in this registry'}</p>
+          <article className="opPanel opPanelStack dataPointDetail">
+            <div>
+              <h2 className="opModalTitle">{selected.pageName}</h2>
+              <div className="dataPointMeta">
+                <span><span className="k">Route</span> <span className="codeCellMono">{selected.route}</span></span>
+                <span><span className="k">Access</span> {selected.access}</span>
+                <span><span className="k">Feature flags</span> {selected.featureFlags?.join(', ') || 'None explicit in this registry'}</span>
+              </div>
+              <p className="secondaryText" style={{ margin: '6px 0 0' }}>{selected.purpose}</p>
+            </div>
 
-            <table>
+            <div className="opTableWrap opTableWrapViewport">
+            <table className="opTable">
               <thead>
                 <tr>
                   <th>Data point</th><th>Type</th><th>Source</th><th>Target / write path</th><th>Process/API</th><th>Attributes</th>
@@ -82,25 +101,29 @@ export default function DataPointPage() {
                 {selected.dataPoints.map((dp) => (
                   <tr key={dp.label}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{dp.label}</div>
-                      <div className="subtle" style={{ fontSize: 12 }}>{dp.behavior}</div>
+                      <div className="emphasis">{dp.label}</div>
+                      <div className="secondaryText">{dp.behavior}</div>
                     </td>
                     <td>{dp.componentType}</td>
                     <td>{dp.source}</td>
                     <td>{dp.target ?? 'Read-only (no write target)'}</td>
                     <td>{dp.process ?? 'N/A'}</td>
                     <td>
-                      {dp.readOnly ? 'Read-only' : 'Editable'} / {dp.dynamic ? 'Dynamic' : 'Static'}
+                      <span className={dp.readOnly ? 'pill pillNeutral' : 'pill pillInfo'}>{dp.readOnly ? 'Read-only' : 'Editable'}</span>{' '}
+                      <span className="secondaryText">{dp.dynamic ? 'Dynamic' : 'Static'}</span>
                       {dp.derived ? ' / Derived' : ''}
-                      {dp.dependencies ? <div className="subtle" style={{ fontSize: 12 }}>Depends on: {dp.dependencies}</div> : null}
+                      {dp.dependencies ? <div className="secondaryText">Depends on: {dp.dependencies}</div> : null}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </article>
         ) : (
-          <article className="panel">No results for current search.</article>
+          <article className="opPanel">
+            <div className="opEmpty"><strong>No results</strong>Nothing matches the current search.</div>
+          </article>
         )}
       </section>
     </main>

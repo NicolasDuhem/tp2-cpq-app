@@ -3489,20 +3489,21 @@ const styles: Record<string, CSSProperties> = {
   page: {
     maxWidth: 1560,
     margin: '0 auto',
-    padding: '0.75rem 1rem 1rem',
+    padding: '0.35rem 0.75rem 0.75rem',
     display: 'grid',
-    gap: '0.75rem',
+    gap: '0.5rem',
     width: '100%',
     minHeight: 0,
     alignContent: 'start',
   },
   controls: {
-    border: '1px solid #d4d4d8',
+    border: '1px solid #dde5f6',
     borderRadius: 12,
-    padding: '0.6rem',
+    padding: '0.5rem 0.6rem',
     display: 'grid',
-    gap: '0.45rem',
+    gap: '0.4rem',
     background: '#fff',
+    boxShadow: '0 4px 14px rgba(17, 35, 77, 0.05)',
   },
   controlsHeader: {
     display: 'flex',
@@ -3513,11 +3514,11 @@ const styles: Record<string, CSSProperties> = {
   },
   sectionTitle: {
     margin: 0,
-    fontSize: '1.35rem',
+    fontSize: '1.15rem',
   },
   sectionSubtitle: {
     margin: 0,
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     color: '#1e3059',
   },
   adminBadge: {
