@@ -64,3 +64,16 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
 - Allocation audit rows for Bike/QPart toggles also include nullable `bigcommerce_status` (`OK|NOK|ERR|DISABLED|UNKNOWN`) sourced from existing Neon-side BC mapping data, without additional per-row BigCommerce API calls.
 
 - New page key: `sales.allocation_audit` (read-only page; read/edit/admin/system-admin can view, none cannot).
+
+## CPQ replay validation admin page (2026-08-13)
+
+- New page key: `admin.cpq_replay_validation` (added to `PAGE_KEYS`, seeded by `sql/migrations/2026-08-13_admin_cpq_replay_validation_permission.sql`, and surfaced automatically in the Setup → Users matrix because that matrix is driven by `app_permission_pages`).
+- Route: `/admin/cpq-replay-validation`, nav entry `CPQ replay validation` in the Bike Configurator section.
+- Access behaviour:
+  - `none` → hidden from nav, page shows access denied, APIs return 403.
+  - `read` → can load dropdowns/references and run replay validation.
+  - `edit` → same as read (the page performs no writes).
+  - `admin` → same as read.
+  - system admin → bypass.
+- All three APIs use `requirePageRead(PAGE_KEYS.adminCpqReplayValidation)`; there is deliberately no `requirePageEdit` path because the feature is read-only against Neon.
+- No global login lock was added.

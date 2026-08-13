@@ -300,3 +300,26 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 4. Bike external PostgreSQL push batch-loads relevant active configuration references for the selected SKU/IPN set, extracts the primary full ForecastAs in memory, and maps it to `variants."ForecastCtyCode"`.
 5. The external push path avoids unbounded or per-row snapshot reads: bulk push uses one bounded lookup for the selected SKUs, and single-row push uses the same lookup helper for one SKU.
 6. QPart external push remains separate in behavior and continues writing `Qpart` for QPart forecast/ruleset/detail fields.
+
+## CPQ replay validation admin page (read-only)
+
+- Route: `/admin/cpq-replay-validation`. Permission key: `admin.cpq_replay_validation`.
+- Purpose: re-run saved `cpq_configuration_references` rows through CPQ and compare the regenerated IPN/item code against the stored `final_ipn_code`. Validation only — no controlled-overwrite phase is implemented.
+- APIs (all `read`-gated):
+  - `GET /api/admin/cpq-replay-validation/options` → `{ bikeTypes, countries, bikeTypeSource, countrySource }`
+  - `GET /api/admin/cpq-replay-validation/references?bikeType=...&countryCode=...&limit=...` → lightweight reference rows
+  - `POST /api/admin/cpq-replay-validation/run` → `{ referenceIds, limit? }` → `{ results, summary }`
+- Option sourcing:
+  - bike type = `CPQ_setup_ruleset.bike_type` joined on `cpq_configuration_references.ruleset`, falling back to the ruleset name when a ruleset has no `bike_type` mapping (the references table has no bike-type column).
+  - country = distinct `cpq_configuration_references.country_code` for active rows.
+- Replay sequence per reference (mirrors the `/cpq` "Configure all ticked items" execution unit minus every persistence step):
+  1. resolve the recorded option set. `json_snapshot` is reduced on write and no longer carries `selectedOptions`, so the option set comes from `CPQ_sampler_result.json_result` (matched by detail id, then session id, then ipn/ruleset/country); if no sampler payload exists, a CPQ source-copy StartConfiguration recovers it from the saved header/detail lineage.
+  2. fresh `StartConfiguration` with a **new random `detailId`** and no source lineage, so the stored CPQ record is never targeted.
+  3. `Configure` per option, skipping `cpq_image_management.ignore_during_configure = true` rows and options already selected.
+  4. `FinalizeConfiguration`; the finalize `detailId` is returned per row as `replayedDetailId`.
+  5. compare stored vs replayed item code.
+- Comparison rule: `replayedItemCode` is taken from the latest Configure/Start state (the same source the stored `final_ipn_code` was written from); the finalize-response IPN is reported separately as `finalizedItemCode`.
+- Result statuses: `match`, `different`, `failed`, `skipped` (skipped = no recorded option set, no ruleset, or no stored IPN to compare).
+- Batch safety: references list default limit 100 / max 500; replay run default batch 10 / hard max 25, processed sequentially (no parallel CPQ calls). `maxDuration = 300` is set on the run route; keep batches small on Vercel because each reference costs one Start + N Configure + one Finalize CPQ round trip.
+- No-write guarantee: every Neon statement in `lib/admin/cpq-replay-validation/*` is a `select`. The page and its routes never write `cpq_configuration_references`, never write `CPQ_sampler_result`, never write `app_allocation_audit_log`, never push external PostgreSQL, and never call BigCommerce write APIs. `edit`/`admin` do not unlock writes.
+- A future phase may add a controlled overwrite of stored item codes; it is intentionally not implemented here.

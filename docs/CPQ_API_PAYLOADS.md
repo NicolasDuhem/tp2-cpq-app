@@ -141,3 +141,66 @@ Bulk updates `CPQ_sampler_result.active` for matching ruleset/IPN/country sets.
 }
 ```
 Returns launch context (`ruleset`, `countryCode`, `accountCode`) + replay options resolved from sampler JSON payload.
+
+## Admin CPQ replay validation (read-only)
+
+## `GET /api/admin/cpq-replay-validation/options`
+```json
+{ "bikeTypes": ["..."], "countries": ["GB"], "bikeTypeSource": "...", "countrySource": "..." }
+```
+
+## `GET /api/admin/cpq-replay-validation/references`
+Query: `bikeType` (required), `countryCode` (required), `limit` (optional, default 100, max 500).
+```json
+{
+  "rows": [
+    {
+      "id": 1,
+      "configurationReference": "CFG-YYYYMMDD-XXXXXXXX",
+      "countryCode": "GB",
+      "bikeType": "...",
+      "ruleset": "...",
+      "existingItemCode": "...",
+      "productDescription": "...",
+      "accountCode": "...",
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ],
+  "limit": 100,
+  "maxLimit": 500
+}
+```
+`json_snapshot` / `finalize_response_json` are never selected by this route.
+
+## `POST /api/admin/cpq-replay-validation/run`
+```json
+{ "referenceIds": [1, 2], "limit": 10 }
+```
+Default batch 10, hard max 25, processed sequentially. Response:
+```json
+{
+  "results": [
+    {
+      "referenceId": 1,
+      "configurationReference": "CFG-...",
+      "countryCode": "GB",
+      "bikeType": "...",
+      "existingItemCode": "...",
+      "replayedItemCode": "...",
+      "finalizedItemCode": "...",
+      "replayedDetailId": "...",
+      "replaySessionId": "...",
+      "status": "match | different | failed | skipped",
+      "message": "...",
+      "error": "...",
+      "durationMs": 1234,
+      "selectionSource": "sampler:detail_id | sampler:session_id | sampler:ipn_ruleset_country | cpq-source-copy | none",
+      "steps": []
+    }
+  ],
+  "summary": { "total": 1, "match": 1, "different": 0, "failed": 0, "skipped": 0 },
+  "readOnly": true
+}
+```
+This route calls CPQ StartConfiguration/Configure/FinalizeConfiguration only. It performs no Neon writes, no sampler write, no configuration-reference write, no audit write, no external PostgreSQL push and no BigCommerce update.

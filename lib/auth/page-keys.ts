@@ -8,6 +8,7 @@ export const PAGE_KEYS = {
   cpqSetupRulesets: 'cpq.setup.rulesets',
   cpqSetupPictures: 'cpq.setup.pictures',
   setupUsers: 'setup.users',
+  adminCpqReplayValidation: 'admin.cpq_replay_validation',
 } as const;
 
 export type PageKey = (typeof PAGE_KEYS)[keyof typeof PAGE_KEYS];
