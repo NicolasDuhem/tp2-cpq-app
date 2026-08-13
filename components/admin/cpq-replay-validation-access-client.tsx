@@ -7,7 +7,7 @@ import { PAGE_KEYS } from '@/lib/auth/page-keys';
 export default function CpqReplayValidationAccessClient() {
   return (
     <PageAccessGate pageKey={PAGE_KEYS.adminCpqReplayValidation}>
-      {(access) => <CpqReplayValidationPage permissionLevel={access.permissionLevel} />}
+      {(access) => <CpqReplayValidationPage permissionLevel={access.permissionLevel} canOverwrite={access.canAdmin} />}
     </PageAccessGate>
   );
 }

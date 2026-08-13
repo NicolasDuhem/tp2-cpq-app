@@ -15,7 +15,9 @@ Release process smoke-test note: this README-only update is intended to validate
 - `/dashboard` → executive operational dashboard (territory coverage, bike-type health, picture completeness, and gap leaderboards).
 - `/cpq/ui-docs` → UI-label-to-code mapping page (content is admin-mode gated in UI component).
 - `/admin/data-point` → internal admin page contract and data-point lineage viewer (admin mode only).
-- `/admin/cpq-replay-validation` → read-only CPQ replay validation: re-runs saved configuration references through CPQ (init → configure per option → finalize) and compares the replayed IPN/item code with the stored one. Permission key `admin.cpq_replay_validation`. Writes nothing to Neon, sampler, audit, external PostgreSQL or BigCommerce.
+- `/admin/cpq-replay-validation` → CPQ replay validation: re-runs saved configuration references through CPQ (init → configure per option → finalize) and compares the replayed IPN/item code with the stored one. Permission key `admin.cpq_replay_validation`.
+  - Validation/replay is read-only (no Neon writes at all).
+  - **Apply selected replay results** (Admin access only) overwrites the existing configuration-reference and sampler rows after archiving the previous content into `app_cpq_replay_overwrite_archive` in the same transaction. It re-runs the replay server-side, only ever updates existing rows (never inserts), and does not push external PostgreSQL, update BigCommerce or write the allocation audit log. Rollback from the archive is not implemented yet.
 - `/sales/bike-allocation` → sales allocation matrix with active/inactive toggles and replay launch to `/cpq`.
   - Active/Inactive now updates Neon `CPQ_sampler_result.active` and then automatically pushes external PostgreSQL `variants` and `variant_eligibilities` when BC status is OK. The cell also shows a compact external sync state (`Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync`), and **Push all BC OK** retries eligible current-scope rows.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.

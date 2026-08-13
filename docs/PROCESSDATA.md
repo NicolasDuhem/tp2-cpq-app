@@ -322,4 +322,22 @@ Bike and QPart allocation pages now enforce page permissions directly (without g
 - Result statuses: `match`, `different`, `failed`, `skipped` (skipped = no recorded option set, no ruleset, or no stored IPN to compare).
 - Batch safety: references list default limit 100 / max 500; replay run default batch 10 / hard max 25, processed sequentially (no parallel CPQ calls). `maxDuration = 300` is set on the run route; keep batches small on Vercel because each reference costs one Start + N Configure + one Finalize CPQ round trip.
 - No-write guarantee: every Neon statement in `lib/admin/cpq-replay-validation/*` is a `select`. The page and its routes never write `cpq_configuration_references`, never write `CPQ_sampler_result`, never write `app_allocation_audit_log`, never push external PostgreSQL, and never call BigCommerce write APIs. `edit`/`admin` do not unlock writes.
-- A future phase may add a controlled overwrite of stored item codes; it is intentionally not implemented here.
+- The replay/validation path above stays read-only. A separate, explicitly triggered controlled-overwrite action was added later — see "CPQ replay controlled overwrite" below.
+
+## CPQ replay controlled overwrite (2026-08-13)
+
+- Action: **Apply selected replay results** on `/admin/cpq-replay-validation`, backed by `POST /api/admin/cpq-replay-validation/overwrite`.
+- Permission: requires `admin` on `admin.cpq_replay_validation` (server-enforced via `requirePageAdmin`, not just a disabled button). `read`/`edit` can still validate but cannot overwrite.
+- The browser sends only reference ids plus the values it believes it displayed. It never sends a payload that gets written:
+  1. server loads the live reference rows and rejects any row whose submitted country/ruleset/bike type/item code no longer matches (stale results),
+  2. server **re-runs the replay itself** (Start → Configure per option → Finalize) and computes the write payload from that run,
+  3. server resolves the existing sampler row,
+  4. server archives and updates.
+- Only replays whose comparison finished (`match` or `different`) with a replayed item code are eligible; `failed`/`skipped` are never written. Applying a `match` refreshes the rows and is flagged in the confirmation modal.
+- Archive-before-update is database-enforced: the archive insert and both updates run in one transaction (`sqlTransaction`), the archive captures the live rows with `to_jsonb(...)` inside that transaction, and each update carries `exists (select 1 from app_cpq_replay_overwrite_archive where overwrite_batch_id = <batch> and configuration_reference_id = <id>)`. A live row therefore cannot change unless its archive row landed first. The batch id is always generated server-side so the guard can never match an older batch.
+- `cpq_configuration_references` updated fields: `final_ipn_code`, `product_description`, `canonical_header_id`, `header_id`, `canonical_detail_id`, `finalized_detail_id`, `finalized_session_id`, `finalize_response_json`, `json_snapshot` (rebuilt through `reduceConfigurationJsonSnapshot`), `updated_at`. Identity (`configuration_reference`), ruleset/namespace, account/country context and source lineage are left untouched.
+- `CPQ_sampler_result` updated fields: `ipn_code`, `namespace`, `header_id`, `detail_id`, `session_id`, `json_result` (rebuilt in the `/cpq` sampler payload shape, tagged `source: "admin-cpq-replay-overwrite"`), `updated_at`. `active` and `processed_for_image_sync` are deliberately left alone — allocation status is owned by the sales flow.
+- Overwrite-only, never create: if no existing sampler row matches (detail id, then session id, then exact ipn+ruleset+country), the row is reported `skipped` with "Existing sampler row not found; no insert performed." No live row is ever inserted by this flow.
+- Row statuses: `updated`, `skipped`, `failed`. Batch max 25, processed sequentially (each row re-runs a full CPQ replay).
+- No external side effects: no external PostgreSQL push, no BigCommerce write, no `app_allocation_audit_log` row. The archive table is the safety record.
+- Rollback is not implemented in the UI. `app_cpq_replay_overwrite_archive` retains the full old rows, the intended new payloads, actor and batch id so a future rollback can be built from it.

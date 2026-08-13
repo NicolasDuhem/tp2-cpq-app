@@ -215,6 +215,43 @@ export function resolveReplayOption(feature: BikeBuilderFeature, selection: Repl
   return { option: null, strategy: null };
 }
 
+/** Sampler-shaped selected option, mirroring `buildSamplerSelectedOptions` on `/cpq`. */
+export type SamplerSelectedOption = {
+  featureLabel: string;
+  featureId: string;
+  optionLabel: string;
+  optionId: string;
+  optionValue: string;
+};
+
+/**
+ * Build the sampler `selectedOptions` array from a normalized CPQ state, matching the
+ * shape and ordering `/cpq` writes into `CPQ_sampler_result.json_result`.
+ */
+export function buildSamplerSelectedOptions(state: NormalizedBikeBuilderState): SamplerSelectedOption[] {
+  return state.features
+    .map((feature): SamplerSelectedOption | null => {
+      const featureId = feature.featureId.trim();
+      const selectedOptionId = (feature.selectedOptionId ?? '').trim();
+      if (!featureId || !selectedOptionId) return null;
+
+      const selectedOption =
+        feature.availableOptions.find((option) => option.optionId === selectedOptionId) ??
+        feature.availableOptions.find((option) => option.selected) ??
+        null;
+
+      return {
+        featureLabel: feature.featureLabel.trim(),
+        featureId,
+        optionLabel: (selectedOption?.label ?? selectedOptionId).trim() || selectedOptionId,
+        optionId: (selectedOption?.optionId ?? selectedOptionId).trim(),
+        optionValue: (selectedOption?.value ?? feature.selectedValue ?? feature.currentValue ?? '').trim(),
+      };
+    })
+    .filter((entry): entry is SamplerSelectedOption => entry !== null)
+    .sort((a, b) => a.featureId.localeCompare(b.featureId));
+}
+
 /**
  * Derive the selection set of a normalized CPQ state (one entry per visible feature
  * that currently has a selected option). Used when the recorded selection set has to

@@ -204,3 +204,50 @@ Default batch 10, hard max 25, processed sequentially. Response:
 }
 ```
 This route calls CPQ StartConfiguration/Configure/FinalizeConfiguration only. It performs no Neon writes, no sampler write, no configuration-reference write, no audit write, no external PostgreSQL push and no BigCommerce update.
+
+## `POST /api/admin/cpq-replay-validation/overwrite`
+Requires Admin on `admin.cpq_replay_validation`. Archives before updating; updates existing rows only.
+
+Request (the server re-runs the replay itself; no replay payload is accepted from the client):
+```json
+{
+  "overwriteBatchId": "optional client label, stored in archive metadata only",
+  "rows": [
+    {
+      "configurationReferenceId": 123,
+      "configurationReference": "CFG-YYYYMMDD-XXXXXXXX",
+      "existingItemCode": "...",
+      "countryCode": "GB",
+      "bikeType": "...",
+      "ruleset": "..."
+    }
+  ]
+}
+```
+`configurationReferenceId` and `configurationReference` are required per row; the remaining fields are optional assertions validated against the live row (mismatch → `skipped`). Max 25 rows.
+
+Response:
+```json
+{
+  "overwriteBatchId": "<server-generated uuid>",
+  "summary": { "total": 1, "updated": 1, "skipped": 0, "failed": 0 },
+  "results": [
+    {
+      "configurationReferenceId": 123,
+      "configurationReference": "CFG-...",
+      "existingItemCode": "IPN-OLD",
+      "replayedItemCode": "IPN-NEW",
+      "status": "updated | skipped | failed",
+      "message": "...",
+      "error": "...",
+      "archiveId": 1,
+      "samplerResultId": 45,
+      "replayStatus": "different",
+      "durationMs": 4200
+    }
+  ],
+  "archivedBeforeUpdate": true,
+  "externalSideEffects": false
+}
+```
+No external PostgreSQL push, no BigCommerce write, no allocation audit row, and no live row is ever inserted.

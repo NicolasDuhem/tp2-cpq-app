@@ -1,13 +1,18 @@
 'use client';
 
-// Read-only validation page: this UI only calls select-backed read APIs and the
-// replay run API. It never triggers sampler saves, configuration-reference saves,
-// audit writes, external PostgreSQL pushes or BigCommerce updates.
+// Replay validation page.
+//
+// Loading dropdowns, listing references and running the replay are all read-only.
+// The one writing action is "Apply selected replay results", which requires Admin access
+// and archives the previous row content before updating the existing rows. Nothing on this
+// page inserts live rows, pushes external PostgreSQL or updates BigCommerce.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const RUN_MAX_LIMIT = 25;
 const RUN_DEFAULT_LIMIT = 10;
+const OVERWRITE_MAX_ROWS = 25;
+const OVERWRITE_CONFIRM_PHRASE = 'OVERWRITE';
 
 type OptionsResponse = {
   bikeTypes?: string[];
@@ -76,6 +81,43 @@ type ReplayResultRow = {
 
 type ReplaySummary = { total: number; match: number; different: number; failed: number; skipped: number };
 
+type OverwriteStatus = 'updated' | 'skipped' | 'failed';
+
+type OverwriteResultRow = {
+  configurationReferenceId: number;
+  configurationReference: string;
+  existingItemCode: string | null;
+  replayedItemCode: string | null;
+  status: OverwriteStatus;
+  message?: string;
+  error?: string;
+  archiveId?: number;
+  samplerResultId?: number;
+  replayStatus?: ReplayStatus;
+  durationMs: number;
+};
+
+type OverwriteSummary = { total: number; updated: number; skipped: number; failed: number };
+
+const OVERWRITE_STATUS_LABEL: Record<OverwriteStatus, string> = {
+  updated: 'Updated',
+  skipped: 'Skipped',
+  failed: 'Failed',
+};
+
+const overwritePillStyle = (status: OverwriteStatus) => {
+  const palette: Record<OverwriteStatus, { background: string; color: string }> = {
+    updated: { background: '#dff7e6', color: '#126e2b' },
+    skipped: { background: '#e9edf5', color: '#475569' },
+    failed: { background: '#fde2e2', color: '#9d1d1d' },
+  };
+  return { ...palette[status], display: 'inline-flex', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 };
+};
+
+/** Only a completed comparison can be written back; failed/skipped replays are not eligible. */
+const isOverwriteEligible = (row: ReplayResultRow) =>
+  (row.status === 'different' || row.status === 'match') && Boolean(row.replayedItemCode);
+
 const STATUS_LABEL: Record<ReplayStatus, string> = {
   match: 'Match',
   different: 'Different',
@@ -99,7 +141,13 @@ const formatDateTime = (value: string | null) => {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 };
 
-export default function CpqReplayValidationPage({ permissionLevel }: { permissionLevel: string }) {
+export default function CpqReplayValidationPage({
+  permissionLevel,
+  canOverwrite,
+}: {
+  permissionLevel: string;
+  canOverwrite: boolean;
+}) {
   const [bikeTypes, setBikeTypes] = useState<string[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
   const [optionSources, setOptionSources] = useState<{ bikeTypeSource: string; countrySource: string } | null>(null);
@@ -118,9 +166,27 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [selectedResultIds, setSelectedResultIds] = useState<number[]>([]);
+  const [overwriteResults, setOverwriteResults] = useState<OverwriteResultRow[]>([]);
+  const [overwriteSummary, setOverwriteSummary] = useState<OverwriteSummary | null>(null);
+  const [overwriteBatchId, setOverwriteBatchId] = useState<string | null>(null);
+  const [overwriteRunning, setOverwriteRunning] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmPhrase, setConfirmPhrase] = useState('');
+
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCount = selectedIds.length;
   const overSelected = selectedCount > RUN_MAX_LIMIT;
+
+  const selectedResultIdSet = useMemo(() => new Set(selectedResultIds), [selectedResultIds]);
+  const eligibleResults = useMemo(() => results.filter(isOverwriteEligible), [results]);
+  const selectedOverwriteRows = useMemo(
+    () => eligibleResults.filter((row) => selectedResultIdSet.has(row.referenceId)),
+    [eligibleResults, selectedResultIdSet],
+  );
+  const overwriteSelectedCount = selectedOverwriteRows.length;
+  const overwriteOverSelected = overwriteSelectedCount > OVERWRITE_MAX_ROWS;
+  const overwriteMatchCount = selectedOverwriteRows.filter((row) => row.status === 'match').length;
 
   const loadOptions = useCallback(async () => {
     setOptionsLoading(true);
@@ -212,6 +278,11 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
       if (!response.ok) throw new Error(payload.error ?? 'Replay validation run failed');
       setResults(payload.results ?? []);
       setSummary(payload.summary ?? null);
+      // A fresh replay invalidates any previous overwrite selection/results.
+      setSelectedResultIds([]);
+      setOverwriteResults([]);
+      setOverwriteSummary(null);
+      setOverwriteBatchId(null);
       const runSummary = payload.summary;
       setMessage(
         runSummary
@@ -229,6 +300,68 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
     setResults([]);
     setSummary(null);
     setMessage(null);
+    setSelectedResultIds([]);
+    setOverwriteResults([]);
+    setOverwriteSummary(null);
+    setOverwriteBatchId(null);
+  };
+
+  const toggleResult = (referenceId: number) => {
+    setSelectedResultIds((current) =>
+      current.includes(referenceId) ? current.filter((entry) => entry !== referenceId) : [...current, referenceId],
+    );
+  };
+
+  const selectAllEligibleResults = () => setSelectedResultIds(eligibleResults.map((row) => row.referenceId));
+
+  const openConfirm = () => {
+    setConfirmPhrase('');
+    setConfirmOpen(true);
+  };
+
+  const runOverwrite = async () => {
+    setConfirmOpen(false);
+    setOverwriteRunning(true);
+    setErrorMessage(null);
+    setMessage(`Applying ${overwriteSelectedCount} replay result(s) — archiving before each overwrite…`);
+    try {
+      const response = await fetch('/api/admin/cpq-replay-validation/overwrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          rows: selectedOverwriteRows.map((row) => ({
+            configurationReferenceId: row.referenceId,
+            configurationReference: row.configurationReference,
+            existingItemCode: row.existingItemCode,
+            countryCode: row.countryCode,
+            bikeType: row.bikeType,
+            ruleset: row.ruleset,
+          })),
+        }),
+      });
+      const payload = (await response.json()) as {
+        overwriteBatchId?: string;
+        results?: OverwriteResultRow[];
+        summary?: OverwriteSummary;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? 'Overwrite failed');
+      setOverwriteResults(payload.results ?? []);
+      setOverwriteSummary(payload.summary ?? null);
+      setOverwriteBatchId(payload.overwriteBatchId ?? null);
+      const applied = payload.summary;
+      setMessage(
+        applied
+          ? `Overwrite finished: ${applied.updated} updated, ${applied.skipped} skipped, ${applied.failed} failed.`
+          : 'Overwrite finished.',
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Overwrite failed');
+    } finally {
+      setOverwriteRunning(false);
+      setConfirmPhrase('');
+    }
   };
 
   return (
@@ -243,8 +376,11 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
       </header>
 
       <div className="note" role="note">
-        <strong>Read-only validation:</strong> this page does not save sampler results, update configuration references,
-        write audit logs, or push external PostgreSQL.
+        <strong>Replay validation is read-only.</strong> Loading references and running the replay never write to Neon.
+        <br />
+        <strong>Apply selected replay results</strong> is the only writing action: it requires Admin access, archives the
+        previous row content before each overwrite, and only updates existing configuration-reference and sampler rows —
+        it never inserts new live rows, never pushes external PostgreSQL, and never updates BigCommerce.
       </div>
 
       {errorMessage ? (
@@ -258,7 +394,7 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
             Bike type
-            <select value={bikeType} onChange={(event) => setBikeType(event.target.value)} disabled={optionsLoading || running}>
+            <select value={bikeType} onChange={(event) => setBikeType(event.target.value)} disabled={optionsLoading || running || overwriteRunning}>
               <option value="">{optionsLoading ? 'Loading…' : 'Select bike type'}</option>
               {bikeTypes.map((entry) => (
                 <option key={entry} value={entry}>
@@ -272,7 +408,7 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
             <select
               value={countryCode}
               onChange={(event) => setCountryCode(event.target.value)}
-              disabled={optionsLoading || running}
+              disabled={optionsLoading || running || overwriteRunning}
             >
               <option value="">{optionsLoading ? 'Loading…' : 'Select country'}</option>
               {countries.map((entry) => (
@@ -282,10 +418,10 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadReferences()} disabled={referencesLoading || running}>
+          <button type="button" onClick={() => void loadReferences()} disabled={referencesLoading || running || overwriteRunning}>
             {referencesLoading ? 'Loading references…' : 'Load references'}
           </button>
-          <button type="button" onClick={() => void loadOptions()} disabled={optionsLoading || running}>
+          <button type="button" onClick={() => void loadOptions()} disabled={optionsLoading || running || overwriteRunning}>
             Refresh dropdowns
           </button>
         </div>
@@ -300,10 +436,10 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
         <section className="card" style={{ display: 'grid', gap: 8 }}>
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <strong>References ({references.length})</strong>
-            <button type="button" onClick={selectAllVisible} disabled={running}>
+            <button type="button" onClick={selectAllVisible} disabled={running || overwriteRunning}>
               Select all visible
             </button>
-            <button type="button" onClick={clearSelection} disabled={running}>
+            <button type="button" onClick={clearSelection} disabled={running || overwriteRunning}>
               Clear selection
             </button>
             <span className="subtle">
@@ -313,12 +449,12 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
               className="primary"
               type="button"
               onClick={() => void runReplay()}
-              disabled={running || selectedCount === 0 || overSelected}
+              disabled={running || overwriteRunning || selectedCount === 0 || overSelected}
               title={overSelected ? `Select at most ${RUN_MAX_LIMIT} references per run.` : undefined}
             >
               {running ? `Running replay validation (${selectedCount})…` : `Run replay validation (${selectedCount})`}
             </button>
-            <button type="button" onClick={clearResults} disabled={running || results.length === 0}>
+            <button type="button" onClick={clearResults} disabled={running || overwriteRunning || results.length === 0}>
               Clear results
             </button>
           </div>
@@ -350,7 +486,7 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
                         type="checkbox"
                         checked={selectedIdSet.has(row.id)}
                         onChange={() => toggleReference(row.id)}
-                        disabled={running}
+                        disabled={running || overwriteRunning}
                         aria-label={`Select ${row.configurationReference}`}
                       />
                     </td>
@@ -384,10 +520,56 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
               </span>
             ) : null}
           </div>
+
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <button
+              type="button"
+              onClick={selectAllEligibleResults}
+              disabled={!canOverwrite || overwriteRunning || eligibleResults.length === 0}
+            >
+              Select all eligible ({eligibleResults.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedResultIds([])}
+              disabled={!canOverwrite || overwriteRunning || overwriteSelectedCount === 0}
+            >
+              Clear selection
+            </button>
+            <button
+              className="primary"
+              type="button"
+              onClick={openConfirm}
+              disabled={!canOverwrite || overwriteRunning || overwriteSelectedCount === 0 || overwriteOverSelected}
+              title={
+                !canOverwrite
+                  ? 'You need Admin access on this page to overwrite stored records.'
+                  : overwriteOverSelected
+                    ? `Select at most ${OVERWRITE_MAX_ROWS} rows per overwrite batch.`
+                    : undefined
+              }
+            >
+              {overwriteRunning
+                ? `Applying replay results (${overwriteSelectedCount})…`
+                : `Apply selected replay results (${overwriteSelectedCount})`}
+            </button>
+            {!canOverwrite ? (
+              <span className="subtle">
+                Read-only for your access level ({permissionLevel}). Admin access is required to overwrite stored records.
+              </span>
+            ) : null}
+            {overwriteOverSelected ? (
+              <span className="subtle" style={{ color: '#9d1d1d' }}>
+                {overwriteSelectedCount} selected — reduce to {OVERWRITE_MAX_ROWS} or fewer.
+              </span>
+            ) : null}
+          </div>
+
           <div className="tableWrap">
             <table>
               <thead>
                 <tr>
+                  <th>Apply</th>
                   <th>Configuration reference</th>
                   <th>Bike type / ruleset</th>
                   <th>Country</th>
@@ -404,6 +586,20 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
               <tbody>
                 {results.map((row) => (
                   <tr key={`${row.referenceId}-${row.configurationReference}`}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedResultIdSet.has(row.referenceId)}
+                        onChange={() => toggleResult(row.referenceId)}
+                        disabled={!canOverwrite || overwriteRunning || !isOverwriteEligible(row)}
+                        aria-label={`Apply replay result for ${row.configurationReference}`}
+                        title={
+                          !isOverwriteEligible(row)
+                            ? 'Only completed comparisons with a replayed item code can be applied.'
+                            : undefined
+                        }
+                      />
+                    </td>
                     <td>{row.configurationReference}</td>
                     <td>
                       {row.bikeType ?? '—'}
@@ -441,6 +637,100 @@ export default function CpqReplayValidationPage({ permissionLevel }: { permissio
             </table>
           </div>
         </section>
+      ) : null}
+
+      {overwriteResults.length > 0 ? (
+        <section className="card" style={{ display: 'grid', gap: 8 }}>
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <strong>Overwrite results</strong>
+            {overwriteSummary ? (
+              <span className="subtle">
+                Total {overwriteSummary.total} • Updated {overwriteSummary.updated} • Skipped {overwriteSummary.skipped} •
+                Failed {overwriteSummary.failed}
+              </span>
+            ) : null}
+            {overwriteBatchId ? <span className="subtle">Archive batch: {overwriteBatchId}</span> : null}
+          </div>
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Configuration reference</th>
+                  <th>Previous IPN</th>
+                  <th>Applied IPN</th>
+                  <th>Status</th>
+                  <th>Archive id</th>
+                  <th>Sampler row</th>
+                  <th>Message / error</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overwriteResults.map((row) => (
+                  <tr key={`overwrite-${row.configurationReferenceId}`}>
+                    <td>{row.configurationReference}</td>
+                    <td>{row.existingItemCode ?? '—'}</td>
+                    <td>{row.replayedItemCode ?? '—'}</td>
+                    <td>
+                      <span style={overwritePillStyle(row.status)}>{OVERWRITE_STATUS_LABEL[row.status]}</span>
+                    </td>
+                    <td>{row.archiveId ?? '—'}</td>
+                    <td>{row.samplerResultId ?? '—'}</td>
+                    <td>{row.error ?? row.message ?? '—'}</td>
+                    <td>{row.durationMs} ms</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {confirmOpen ? (
+        <div className="modalBackdrop" onClick={() => setConfirmOpen(false)}>
+          <div className="modalCard" style={{ width: 'min(640px, 92vw)' }} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Apply selected replay results</h3>
+            <p>
+              This will overwrite existing Neon CPQ configuration and sampler rows for {overwriteSelectedCount} selected
+              reference{overwriteSelectedCount === 1 ? '' : 's'}.
+            </p>
+            <ul style={{ fontSize: 13, lineHeight: 1.6 }}>
+              <li>An archive copy will be created before each overwrite.</li>
+              <li>The replay is re-run on the server; the results shown above are not written directly.</li>
+              <li>This will not push external PostgreSQL.</li>
+              <li>This will not update BigCommerce.</li>
+              <li>This cannot yet be rolled back from the UI.</li>
+            </ul>
+            {overwriteMatchCount > 0 ? (
+              <div className="note" style={{ background: '#fff8e6', borderColor: '#f0d9a0' }}>
+                {overwriteMatchCount} selected row{overwriteMatchCount === 1 ? ' is' : 's are'} already a <strong>Match</strong> —
+                applying will refresh the stored rows without changing the item code.
+              </div>
+            ) : null}
+            <label style={{ display: 'grid', gap: 6, fontSize: 13, marginTop: 8 }}>
+              Type <strong>{OVERWRITE_CONFIRM_PHRASE}</strong> to confirm
+              <input
+                autoFocus
+                value={confirmPhrase}
+                onChange={(event) => setConfirmPhrase(event.target.value)}
+                placeholder={OVERWRITE_CONFIRM_PHRASE}
+              />
+            </label>
+            <div className="modalActions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void runOverwrite()}
+                disabled={confirmPhrase.trim() !== OVERWRITE_CONFIRM_PHRASE || overwriteRunning}
+              >
+                Overwrite {overwriteSelectedCount} row{overwriteSelectedCount === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </main>
   );

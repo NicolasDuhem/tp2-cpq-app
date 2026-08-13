@@ -21,12 +21,14 @@ import { mapCpqToNormalizedState } from '@/lib/cpq/runtime/mappers';
 import { createTraceId } from '@/lib/cpq/runtime/debug';
 import {
   buildReplaySelectionsFromState,
+  buildSamplerSelectedOptions,
   normalizeConfigureDecisionKey,
   resolveReplayFeature,
   resolveReplayOption,
   type FeatureMatchStrategy,
   type OptionMatchStrategy,
   type ReplaySelection,
+  type SamplerSelectedOption,
 } from '@/lib/cpq/replay/matching';
 import type { InitConfiguratorRequest, NormalizedBikeBuilderState } from '@/types/cpq';
 import {
@@ -98,6 +100,33 @@ export type ReplayResult = {
   replayedDetailId: string | null;
   finalizeSucceeded: boolean;
   steps: ReplayStep[];
+  writePayload?: ReplayWritePayload;
+};
+
+/**
+ * Server-computed artifacts needed to write a replay result back over the live rows.
+ * Only populated when a caller explicitly asks for it (the read-only run route does not),
+ * and it is always produced here on the server — never accepted from the browser.
+ */
+export type ReplayWritePayload = {
+  /** `/cpq` save-source rule: latest Configure snapshot, else latest Start snapshot. */
+  snapshotSource: 'configure' | 'start';
+  snapshotState: NormalizedBikeBuilderState;
+  finalizeRawResponse: unknown;
+  selectedOptions: SamplerSelectedOption[];
+  sessionId: string;
+  headerId: string;
+  namespace: string;
+  ruleset: string;
+  detailId: string | null;
+  itemCode: string | null;
+  productDescription: string | null;
+  configuredPrice: number | null;
+};
+
+export type ReplayOptions = {
+  /** Capture the snapshot/finalize artifacts required by the controlled overwrite flow. */
+  captureWritePayload?: boolean;
 };
 
 export type ReplaySummary = {
@@ -184,6 +213,7 @@ const extractItemCode = (state: NormalizedBikeBuilderState | null): string | nul
 export async function replayConfigurationReference(
   reference: ReplayReferenceContextRow,
   ignoreRules: IgnoredConfigureRules,
+  options?: ReplayOptions,
 ): Promise<ReplayResult> {
   const traceId = createTraceId();
   const startedAt = Date.now();
@@ -399,6 +429,25 @@ export async function replayConfigurationReference(
     base.finalizedItemCode = extractItemCode(finalizedState);
     base.replayedDetailId = trimmedOrNull(finalizedState.detailId) ?? base.replayedDetailId;
     base.replayedItemCode = configuredItemCode ?? base.finalizedItemCode;
+
+    if (options?.captureWritePayload) {
+      // Same save-source rule as `/cpq`: the snapshot is the latest Configure state
+      // (fallback Start state); the finalize body is captured as metadata only.
+      base.writePayload = {
+        snapshotSource: configuredCount > 0 ? 'configure' : 'start',
+        snapshotState: workingState,
+        finalizeRawResponse: finalizeResponse,
+        selectedOptions: buildSamplerSelectedOptions(workingState),
+        sessionId: workingState.sessionId,
+        headerId,
+        namespace: reference.namespace,
+        ruleset,
+        detailId: base.replayedDetailId,
+        itemCode: base.replayedItemCode,
+        productDescription: trimmedOrNull(workingState.productDescription),
+        configuredPrice: typeof workingState.configuredPrice === 'number' ? workingState.configuredPrice : null,
+      };
+    }
 
     const existing = trimmedOrNull(reference.existingItemCode);
     const replayed = base.replayedItemCode;
