@@ -1,77 +1,101 @@
+/* Bike allocation matrix.
+   Styling is aligned with /sales/qpart-allocation so both allocation screens read as
+   the same product. Class names are unchanged — this is presentation only. */
+
 .page {
-  padding: 6px 8px 8px;
+  padding: 4px 10px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   max-width: 100%;
   margin: 0;
   min-width: 0;
+  background: linear-gradient(180deg, #f7f9ff 0%, #f4f7fb 100%);
 }
 
 .header h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
+  line-height: 1.2;
+  color: #0f1f42;
 }
 
 .header p {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   font-size: 12px;
-  color: #555;
+  color: #55607a;
 }
 
+/* --- Filters -------------------------------------------------------------- */
 .filters {
   background: #fff;
-  border: 1px solid #e2e8f4;
-  border-radius: 10px;
+  border: 1px solid #dde5f6;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(17, 35, 77, 0.05);
   padding: 8px 10px;
   display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
 }
 
 .filterItem {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   font-size: 12px;
-  color: #444;
+  color: #4e5a75;
+  font-weight: 600;
+  min-width: 0;
 }
 
 .filterItem select {
-  border: 1px solid #c3c3c3;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 11px;
+  border: 1px solid #ccd5ea;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: #1e2a45;
+  background: #fff;
+  font-weight: 400;
+  min-width: 0;
 }
 
-.multiSelect {
-  min-height: 56px;
+.filterItem select:focus-visible {
+  outline: 2px solid #002FA7;
+  outline-offset: 1px;
+  border-color: #002FA7;
 }
 
+.multiSelect { min-height: 56px; }
+
+/* --- Bulk action bar ------------------------------------------------------ */
 .bulkActions {
   background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 6px;
+  border: 1px solid #dde5f6;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(17, 35, 77, 0.05);
+  padding: 8px 10px;
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 
 .bulkSummary {
   font-size: 12px;
-  color: #4d4d4d;
+  color: #46526e;
   font-weight: 700;
 }
 
+/* Bounded so a long country list never dominates the page. */
 .bulkCountryList {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  max-height: 84px;
+  gap: 6px 14px;
+  max-height: 76px;
   overflow: auto;
-  border: 1px solid #ececec;
-  border-radius: 8px;
-  padding: 6px;
+  border: 1px solid #d7e0f4;
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: #fbfcff;
 }
 
 .bulkCountryItem {
@@ -79,14 +103,37 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #444;
+  color: #33415f;
+  font-weight: 500;
 }
+
+.bulkCountryItem input { margin: 0; }
 
 .bulkButtons {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
+
+.bulkButtons button {
+  border: 1px solid #e2e8f4;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.bulkButtons button:hover:not(:disabled) {
+  background: #f0f4ff;
+  border-color: #002FA7;
+  color: #002FA7;
+}
+
+.bulkButtons button:disabled { opacity: 0.65; cursor: not-allowed; }
 
 .bcCheckActions {
   display: flex;
@@ -95,53 +142,41 @@
   gap: 8px;
 }
 
-.bulkButtons button {
-  border: 1px solid #b8c8eb;
-  border-radius: 8px;
-  background: #fff;
-  color: #183b7b;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 9px;
-}
+.bcCheckMeta { font-size: 11px; color: #5a6787; }
+.helperText { font-size: 12px; color: #4e5a75; }
 
-.bcCheckMeta {
-  font-size: 11px;
-  color: #53617b;
-}
-
-.helperText {
-  font-size: 12px;
-  color: #445;
-}
-
+/* --- Messages ------------------------------------------------------------- */
 .message {
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: 12px;
+  padding: 9px 11px;
   font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 2px 8px rgba(17, 35, 77, 0.05);
 }
 
 .messageSuccess {
-  border: 1px solid #b4e1c1;
-  background: #eefbf2;
-  color: #156336;
+  border: 1px solid #bde7ca;
+  background: #f0fcf4;
+  color: #155f34;
 }
 
 .messageError {
-  border: 1px solid #edb7b7;
-  background: #fff2f2;
-  color: #8f2020;
+  border: 1px solid #efc1c1;
+  background: #fff4f4;
+  color: #8f2222;
 }
 
+/* --- Table ---------------------------------------------------------------- */
 .tableWrap {
   overflow: auto;
-  border: 1px solid #ddd;
-  border-radius: 10px;
+  border: 1px solid #d8e2f5;
+  border-radius: 16px;
   background: #fff;
   max-width: 100%;
   width: 100%;
-  max-height: calc(100vh - 360px);
+  max-height: calc(100vh - 300px);
   min-height: 340px;
+  box-shadow: 0 10px 24px rgba(21, 37, 72, 0.08);
 }
 
 .matrixTable {
@@ -153,9 +188,9 @@
 
 .matrixTable th,
 .matrixTable td {
-  border-right: 1px solid #ececec;
-  border-bottom: 1px solid #ececec;
-  padding: 4px 6px;
+  border-right: 1px solid #eef2fb;
+  border-bottom: 1px solid #e9eef9;
+  padding: 5px 8px;
   font-size: 12px;
   text-align: left;
   white-space: nowrap;
@@ -163,27 +198,26 @@
   background: #fff;
 }
 
-.matrixTable tr > *:first-child {
-  border-left: 1px solid #ececec;
-}
-
-.matrixTable thead tr:first-child th {
-  border-top: 1px solid #ececec;
-}
+.matrixTable tr > *:first-child { border-left: 1px solid #e9eef9; }
+.matrixTable thead tr:first-child th { border-top: 1px solid #d1d9f0; }
 
 .matrixTable thead th {
-  background: #f7f7f7;
+  background: #edf2ff;
   font-weight: 700;
+  font-size: 11px;
+  color: #1e3a6e;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #d1d9f0;
   position: sticky;
   top: 0;
   z-index: 3;
 }
 
 .filterRow th {
-  top: 30px;
+  top: 29px;
   z-index: 4;
-  background: #f2f6ff;
-  padding: 3px 4px;
+  background: #f4f7ff;
+  padding: 3px 5px;
 }
 
 .filterRow input,
@@ -191,9 +225,10 @@
   width: 100%;
   min-width: 80px;
   font-size: 11px;
-  border: 1px solid #c6cfea;
+  border: 1px solid #ccd5ea;
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 3px 6px;
+  background: #fff;
 }
 
 .stickyFirstColumn {
@@ -205,16 +240,13 @@
   font-weight: 700;
 }
 
-.matrixTable thead .stickyFirstColumn {
-  background: #f7f7f7;
-  z-index: 7;
-}
+.matrixTable thead .stickyFirstColumn { background: #edf2ff; z-index: 7; }
 
 .stickyFirstColumnFilter {
   position: sticky;
   left: 84px;
   z-index: 8;
-  background: #f2f6ff !important;
+  background: #f4f7ff !important;
 }
 
 .stickyBCStatus {
@@ -226,18 +258,34 @@
   text-align: center !important;
 }
 
-.matrixTable thead .stickyBCStatus {
-  background: #f7f7f7;
-  z-index: 9;
-}
+.matrixTable thead .stickyBCStatus { background: #edf2ff; z-index: 9; }
 
 .stickyBCStatusFilter {
   position: sticky;
   left: 0;
   z-index: 9;
-  background: #f2f6ff !important;
+  background: #f4f7ff !important;
 }
 
+.stickyHeader {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.stickyBCStatus,
+.stickyFirstColumn,
+.stickyBCStatusFilter,
+.stickyFirstColumnFilter {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
+}
+
+.tableBodyRow { transition: background-color 0.15s ease; }
+.tableBodyRow:hover td { background: #f0f4ff; }
+
+/* --- Status + BC pills ---------------------------------------------------- */
 .statusButton {
   display: inline-flex;
   align-items: center;
@@ -247,95 +295,58 @@
   line-height: 1.2;
   font-weight: 700;
   border: 1px solid transparent;
-  padding: 3px 8px;
+  padding: 3px 9px;
   background: transparent;
   cursor: pointer;
+  min-width: 70px;
 }
 
-.statusButton:hover:not(:disabled) {
-  filter: brightness(0.96);
-  box-shadow: 0 0 0 1px rgba(0, 47, 167, 0.2) inset;
-}
+.statusButton:hover:not(:disabled) { filter: brightness(0.97); }
+.statusButton:disabled { opacity: 0.7; cursor: not-allowed; }
+.statusButton:focus-visible { outline: 2px solid #002FA7; outline-offset: 1px; }
 
-.statusButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.statusActive {
-  background: #d7f4df;
-  color: #146c2e;
-  border-color: #9ad4ad;
-}
-
-.statusNotActive {
-  background: #ffe5e5;
-  color: #a32626;
-  border-color: #e3b1b1;
-}
-
-.statusNotConfigured {
-  background: #ececec;
-  color: #666;
-  border-color: #d3d3d3;
-}
+.statusActive { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.statusActive:hover:not(:disabled) { background: #bbf7d0; }
+.statusNotActive { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+.statusNotActive:hover:not(:disabled) { background: #f1f5f9; }
+.statusNotConfigured { background: #fff; color: #9ca3af; border: 1px dashed #d1d5db; }
 
 .bcBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.2;
   font-weight: 700;
   border: 1px solid transparent;
-  min-width: 60px;
-  padding: 2px 6px;
+  min-width: 64px;
+  padding: 3px 8px;
 }
 
-.bcStatusChecking {
-  background: #eef1f7;
-  color: #4b5876;
-  border-color: #d2d9e7;
-}
+.bcStatusChecking { background: #eef1f7; color: #4b5876; border-color: #d2d9e7; }
+.bcStatusError { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.bcStatusDisabled { background: #eef1f7; color: #5f6981; border-color: #d5dbea; }
+.bcNotChecked { font-size: 11px; color: #5f6981; }
 
-.bcStatusError {
-  background: #ffe5e5;
-  color: #a32626;
-  border-color: #e3b1b1;
-}
-
-.bcStatusDisabled {
-  background: #eef1f7;
-  color: #5f6981;
-  border-color: #d5dbea;
-}
-
-.bcNotChecked {
-  font-size: 11px;
-  color: #5f6981;
-}
-
+/* --- Empty + pagination --------------------------------------------------- */
 .empty {
-  border: 1px dashed #cfcfcf;
-  border-radius: 10px;
-  padding: 16px;
+  border: 1px dashed #c7d3ee;
+  border-radius: 14px;
+  padding: 20px;
   text-align: center;
-  color: #666;
+  color: #5d6f91;
+  background: #fbfcff;
+  font-size: 13px;
 }
 
-
-.cellActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
+.cellActions { display: inline-flex; align-items: center; gap: 4px; }
 
 .pushButton {
-  border: 1px solid #c8d0e8;
+  border: 1px solid #e2e8f4;
   background: #fff;
-  color: #2b3f72;
-  border-radius: 999px;
+  color: #64748b;
+  border-radius: 6px;
   font-size: 10px;
   line-height: 1.2;
   font-weight: 700;
@@ -343,43 +354,31 @@
   cursor: pointer;
 }
 
-.pushButton:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
+.pushButton:hover:not(:disabled) { background: #eff3ff; border-color: #002FA7; color: #002FA7; }
+.pushButton:disabled { opacity: 0.65; cursor: not-allowed; }
 
-
-.paginationBar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:8px; }
-.paginationSummary { font-size:12px; color:#445; font-weight:600; }
-.paginationControls { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.paginationControls button { border:1px solid #c6d1ea; border-radius:8px; background:#fff; padding:4px 8px; font-size:12px; }
-.paginationCurrent { background:#1f3f7e !important; color:#fff; border-color:#1f3f7e !important; }
-.paginationEllipsis { color:#738; padding:0 2px; }
-
-.filters {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: end;
-}
-.stickyHeader {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+.paginationBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e2e8f4;
+  border-radius: 10px;
+  padding: 7px 12px;
 }
-.tableBodyRow {
-  transition: background-color 0.15s ease;
-}
-.tableBodyRow:hover td {
-  background: #f9fafb;
-}
-.stickyBCStatus,
-.stickyFirstColumn,
-.stickyBCStatusFilter,
-.stickyFirstColumnFilter {
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
-}
-@media (max-width: 980px) {
+
+.paginationSummary { font-size: 12px; color: #46526e; font-weight: 600; }
+.paginationControls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.paginationControls button { border: 1px solid #c6d1ea; border-radius: 7px; background: #fff; padding: 4px 9px; font-size: 12px; }
+.paginationControls button:disabled { opacity: 0.65; cursor: not-allowed; }
+.paginationCurrent { background: #002FA7 !important; color: #fff; border-color: #002FA7 !important; }
+.paginationEllipsis { color: #7387a8; padding: 0 2px; }
+
+@media (max-width: 1180px) {
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 780px) {
+  .filters { grid-template-columns: 1fr; }
 }

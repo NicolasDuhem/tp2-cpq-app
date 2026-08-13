@@ -24,5 +24,65 @@ export default function LoginPage() {
     setMe(await res.json());
   };
 
-  return <main className='page'><h1>Login</h1><div className='card' style={{ maxWidth: 520 }}><label>Email<input value={email} onChange={e => setEmail(e.target.value)} /></label><label>Password<input type='password' value={password} onChange={e => setPassword(e.target.value)} /></label>{error ? <p>{error}</p> : null}<div className='toolbar'><button className='primary' onClick={submit}>Login</button><button onClick={testLogin}>Test current login</button></div>{me ? <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(me, null, 2)}</pre> : null}</div></main>;
+  return (
+    <main className="opPage">
+      <header className="opHeader">
+        <div className="opHeaderMain">
+          <h1>Login</h1>
+          <p>Sign in with your Brompton Operations account.</p>
+        </div>
+      </header>
+
+      <section className="opPanel opPanelStack" style={{ maxWidth: 460 }}>
+        <form
+          className="opPanelStack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <label className="opField">
+            Email
+            <input
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label className="opField">
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+
+          {error ? (
+            <div className="opMessage opMessageError" role="alert">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="opBar">
+            <button className="btn btnPrimary" type="submit">
+              Login
+            </button>
+            <button className="btn" type="button" onClick={() => void testLogin()}>
+              Test current login
+            </button>
+          </div>
+        </form>
+
+        {me ? (
+          <details open>
+            <summary className="opSectionTitle" style={{ cursor: 'pointer' }}>Current session</summary>
+            <pre className="apiDocsExample" style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{JSON.stringify(me, null, 2)}</pre>
+          </details>
+        ) : null}
+      </section>
+    </main>
+  );
 }

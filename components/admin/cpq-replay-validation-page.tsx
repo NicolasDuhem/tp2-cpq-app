@@ -130,14 +130,14 @@ const EXTERNAL_STATUS_LABEL: Record<ExternalEligibilityStatus, string> = {
   failed: 'Failed',
 };
 
-const externalPillStyle = (status: ExternalEligibilityStatus) => {
-  const palette: Record<ExternalEligibilityStatus, { background: string; color: string }> = {
-    updated: { background: '#dff7e6', color: '#126e2b' },
-    skipped: { background: '#e9edf5', color: '#475569' },
-    warning: { background: '#fff3cd', color: '#8a5b00' },
-    failed: { background: '#fde2e2', color: '#9d1d1d' },
+const externalPillClass = (status: ExternalEligibilityStatus) => {
+  const tone: Record<ExternalEligibilityStatus, string> = {
+    updated: 'pillOk',
+    skipped: 'pillNeutral',
+    warning: 'pillWarn',
+    failed: 'pillDanger',
   };
-  return { ...palette[status], display: 'inline-flex', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 };
+  return `pill ${tone[status]}`;
 };
 
 const OVERWRITE_STATUS_LABEL: Record<OverwriteStatus, string> = {
@@ -146,13 +146,13 @@ const OVERWRITE_STATUS_LABEL: Record<OverwriteStatus, string> = {
   failed: 'Failed',
 };
 
-const overwritePillStyle = (status: OverwriteStatus) => {
-  const palette: Record<OverwriteStatus, { background: string; color: string }> = {
-    updated: { background: '#dff7e6', color: '#126e2b' },
-    skipped: { background: '#e9edf5', color: '#475569' },
-    failed: { background: '#fde2e2', color: '#9d1d1d' },
+const overwritePillClass = (status: OverwriteStatus) => {
+  const tone: Record<OverwriteStatus, string> = {
+    updated: 'pillOk',
+    skipped: 'pillNeutral',
+    failed: 'pillDanger',
   };
-  return { ...palette[status], display: 'inline-flex', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 };
+  return `pill ${tone[status]}`;
 };
 
 /** Only a completed comparison can be written back; failed/skipped replays are not eligible. */
@@ -166,14 +166,14 @@ const STATUS_LABEL: Record<ReplayStatus, string> = {
   skipped: 'Skipped',
 };
 
-const statusPillStyle = (status: ReplayStatus) => {
-  const palette: Record<ReplayStatus, { background: string; color: string }> = {
-    match: { background: '#dff7e6', color: '#126e2b' },
-    different: { background: '#fff3cd', color: '#8a5b00' },
-    failed: { background: '#fde2e2', color: '#9d1d1d' },
-    skipped: { background: '#e9edf5', color: '#475569' },
+const statusPillClass = (status: ReplayStatus) => {
+  const tone: Record<ReplayStatus, string> = {
+    match: 'pillOk',
+    different: 'pillWarn',
+    failed: 'pillDanger',
+    skipped: 'pillNeutral',
   };
-  return { ...palette[status], display: 'inline-flex', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 };
+  return `pill ${tone[status]}`;
 };
 
 const formatDateTime = (value: string | null) => {
@@ -406,17 +406,24 @@ export default function CpqReplayValidationPage({
   };
 
   return (
-    <main className="page" style={{ display: 'grid', gap: 12 }}>
-      <header>
-        <h1 style={{ margin: 0 }}>CPQ replay validation</h1>
-        <p className="subtle" style={{ marginTop: 6 }}>
-          Re-run saved configuration references without writing to Neon, then compare replayed IPN codes with stored IPN
-          codes.
-        </p>
-        <p className="subtle" style={{ marginTop: 2 }}>Access: {permissionLevel}</p>
+    <main className="opPage">
+      <header className="opHeader">
+        <div className="opHeaderMain">
+          <h1>CPQ replay validation</h1>
+          <p>
+            Re-run saved configuration references without writing to Neon, then compare replayed IPN codes with stored
+            IPN codes.
+          </p>
+        </div>
+        <div className="opHeaderActions">
+          <span className="opCount">Access: {permissionLevel}</span>
+          <span className={canOverwrite ? 'pill pillWarn' : 'pill pillOutline'}>
+            {canOverwrite ? 'Overwrite enabled' : 'Read-only'}
+          </span>
+        </div>
       </header>
 
-      <div className="note" role="note">
+      <div className="opMessage opMessageWarn" role="note">
         <strong>Replay validation is read-only.</strong> Loading references and running the replay never write to Neon.
         <br />
         <strong>Apply selected replay results</strong> is the only writing action: it requires Admin access, archives the
@@ -427,15 +434,15 @@ export default function CpqReplayValidationPage({
       </div>
 
       {errorMessage ? (
-        <div className="note" style={{ background: '#fff1f2', borderColor: '#f4c7c7', color: '#9d1d1d' }}>
+        <div className="opMessage opMessageError" role="alert">
           {errorMessage}
         </div>
       ) : null}
-      {message ? <p className="subtle" style={{ margin: 0 }}>{message}</p> : null}
+      {message ? <div className="opMessage opMessageInfo">{message}</div> : null}
 
-      <section className="card" style={{ display: 'grid', gap: 10 }}>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+      <section className="opPanel opPanelStack">
+        <div className="opBar">
+          <label className="opField" style={{ minWidth: 200 }}>
             Bike type
             <select value={bikeType} onChange={(event) => setBikeType(event.target.value)} disabled={optionsLoading || running || overwriteRunning}>
               <option value="">{optionsLoading ? 'Loading…' : 'Select bike type'}</option>
@@ -446,7 +453,7 @@ export default function CpqReplayValidationPage({
               ))}
             </select>
           </label>
-          <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+          <label className="opField" style={{ minWidth: 160 }}>
             Country
             <select
               value={countryCode}
@@ -461,35 +468,35 @@ export default function CpqReplayValidationPage({
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadReferences()} disabled={referencesLoading || running || overwriteRunning}>
+          <button type="button" className="btn" onClick={() => void loadReferences()} disabled={referencesLoading || running || overwriteRunning}>
             {referencesLoading ? 'Loading references…' : 'Load references'}
           </button>
-          <button type="button" onClick={() => void loadOptions()} disabled={optionsLoading || running || overwriteRunning}>
+          <button type="button" className="btn" onClick={() => void loadOptions()} disabled={optionsLoading || running || overwriteRunning}>
             Refresh dropdowns
           </button>
         </div>
         {optionSources ? (
-          <p className="subtle" style={{ margin: 0 }}>
+          <p className="opBarNote" style={{ margin: 0 }}>
             Bike type source: {optionSources.bikeTypeSource}. Country source: {optionSources.countrySource}.
           </p>
         ) : null}
       </section>
 
       {references.length > 0 ? (
-        <section className="card" style={{ display: 'grid', gap: 8 }}>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
+        <section className="opPanel opPanelStack">
+          <div className="opBar">
             <strong>References ({references.length})</strong>
-            <button type="button" onClick={selectAllVisible} disabled={running || overwriteRunning}>
+            <button type="button" className="btn" onClick={selectAllVisible} disabled={running || overwriteRunning}>
               Select all visible
             </button>
-            <button type="button" onClick={clearSelection} disabled={running || overwriteRunning}>
+            <button type="button" className="btn" onClick={clearSelection} disabled={running || overwriteRunning}>
               Clear selection
             </button>
             <span className="subtle">
               Selected: {selectedCount} (max {RUN_MAX_LIMIT} per run, default batch {RUN_DEFAULT_LIMIT})
             </span>
             <button
-              className="primary"
+              className="btn btnPrimary"
               type="button"
               onClick={() => void runReplay()}
               disabled={running || overwriteRunning || selectedCount === 0 || overSelected}
@@ -497,17 +504,17 @@ export default function CpqReplayValidationPage({
             >
               {running ? `Running replay validation (${selectedCount})…` : `Run replay validation (${selectedCount})`}
             </button>
-            <button type="button" onClick={clearResults} disabled={running || overwriteRunning || results.length === 0}>
+            <button type="button" className="btn" onClick={clearResults} disabled={running || overwriteRunning || results.length === 0}>
               Clear results
             </button>
           </div>
           {overSelected ? (
-            <p className="subtle" style={{ margin: 0, color: '#9d1d1d' }}>
+            <p className="opMessage opMessageError" style={{ margin: 0 }}>
               {selectedCount} references selected — reduce the selection to {RUN_MAX_LIMIT} or fewer before running.
             </p>
           ) : null}
-          <div className="tableWrap">
-            <table>
+          <div className="opTableWrap opTableWrapViewport">
+            <table className="opTable">
               <thead>
                 <tr>
                   <th>Run</th>
@@ -536,7 +543,7 @@ export default function CpqReplayValidationPage({
                     <td>{row.configurationReference}</td>
                     <td>
                       {row.bikeType ?? '—'}
-                      <div className="subtle">{row.ruleset ?? '—'}</div>
+                      <div className="secondaryText">{row.ruleset ?? '—'}</div>
                     </td>
                     <td>{row.countryCode ?? '—'}</td>
                     <td>{row.existingItemCode ?? '—'}</td>
@@ -553,8 +560,8 @@ export default function CpqReplayValidationPage({
       ) : null}
 
       {results.length > 0 ? (
-        <section className="card" style={{ display: 'grid', gap: 8 }}>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
+        <section className="opPanel opPanelStack">
+          <div className="opBar">
             <strong>Comparison results</strong>
             {summary ? (
               <span className="subtle">
@@ -564,7 +571,7 @@ export default function CpqReplayValidationPage({
             ) : null}
           </div>
 
-          <div className="toolbar" style={{ marginBottom: 0 }}>
+          <div className="opBar">
             <button
               type="button"
               onClick={selectAllEligibleResults}
@@ -580,7 +587,7 @@ export default function CpqReplayValidationPage({
               Clear selection
             </button>
             <button
-              className="primary"
+              className="btn btnPrimary"
               type="button"
               onClick={openConfirm}
               disabled={!canOverwrite || overwriteRunning || overwriteSelectedCount === 0 || overwriteOverSelected}
@@ -602,14 +609,14 @@ export default function CpqReplayValidationPage({
               </span>
             ) : null}
             {overwriteOverSelected ? (
-              <span className="subtle" style={{ color: '#9d1d1d' }}>
+              <span className="pill pillDanger">
                 {overwriteSelectedCount} selected — reduce to {OVERWRITE_MAX_ROWS} or fewer.
               </span>
             ) : null}
           </div>
 
-          <div className="tableWrap">
-            <table>
+          <div className="opTableWrap opTableWrapViewport">
+            <table className="opTable">
               <thead>
                 <tr>
                   <th>Apply</th>
@@ -646,7 +653,7 @@ export default function CpqReplayValidationPage({
                     <td>{row.configurationReference}</td>
                     <td>
                       {row.bikeType ?? '—'}
-                      <div className="subtle">{row.ruleset ?? '—'}</div>
+                      <div className="secondaryText">{row.ruleset ?? '—'}</div>
                     </td>
                     <td>{row.countryCode ?? '—'}</td>
                     <td>{row.existingItemCode ?? '—'}</td>
@@ -654,14 +661,14 @@ export default function CpqReplayValidationPage({
                     <td>{row.finalizedItemCode ?? '—'}</td>
                     <td>
                       {row.replayedDetailId ?? '—'}
-                      <div className="subtle">session {row.replaySessionId ?? '—'}</div>
+                      <div className="secondaryText">session {row.replaySessionId ?? '—'}</div>
                     </td>
                     <td>
-                      <span style={statusPillStyle(row.status)}>{STATUS_LABEL[row.status]}</span>
+                      <span className={statusPillClass(row.status)}>{STATUS_LABEL[row.status]}</span>
                     </td>
                     <td>
                       {row.error ?? row.message ?? '—'}
-                      <div className="subtle">
+                      <div className="secondaryText">
                         source {row.selectionSource}
                         {row.samplerRowId ? ` (sampler ${row.samplerRowId})` : ''} • configured {row.configuredCount}/
                         {row.selectionCount} • ignored {row.ignoredCount} • unmatched {row.unmatchedCount}
@@ -683,8 +690,8 @@ export default function CpqReplayValidationPage({
       ) : null}
 
       {overwriteResults.length > 0 ? (
-        <section className="card" style={{ display: 'grid', gap: 8 }}>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
+        <section className="opPanel opPanelStack">
+          <div className="opBar">
             <strong>Overwrite results</strong>
             {overwriteSummary ? (
               <span className="subtle">
@@ -697,8 +704,8 @@ export default function CpqReplayValidationPage({
             ) : null}
             {overwriteBatchId ? <span className="subtle">Archive batch: {overwriteBatchId}</span> : null}
           </div>
-          <div className="tableWrap">
-            <table>
+          <div className="opTableWrap opTableWrapViewport">
+            <table className="opTable">
               <thead>
                 <tr>
                   <th>Configuration reference</th>
@@ -721,17 +728,17 @@ export default function CpqReplayValidationPage({
                     <td>{row.existingItemCode ?? '—'}</td>
                     <td>{row.replayedItemCode ?? '—'}</td>
                     <td>
-                      <span style={overwritePillStyle(row.status)}>{OVERWRITE_STATUS_LABEL[row.status]}</span>
+                      <span className={overwritePillClass(row.status)}>{OVERWRITE_STATUS_LABEL[row.status]}</span>
                     </td>
                     <td>{row.archiveId ?? '—'}</td>
                     <td>{row.samplerResultId ?? '—'}</td>
                     <td>
                       {row.externalEligibilityDetailUpdate?.newDetailId ?? '—'}
                       {row.externalEligibilityDetailUpdate?.previousDetailId ? (
-                        <div className="subtle">was {row.externalEligibilityDetailUpdate.previousDetailId}</div>
+                        <div className="secondaryText">was {row.externalEligibilityDetailUpdate.previousDetailId}</div>
                       ) : null}
                       {row.externalEligibilityDetailUpdate?.sku ? (
-                        <div className="subtle">
+                        <div className="secondaryText">
                           {row.externalEligibilityDetailUpdate.sku} / {row.externalEligibilityDetailUpdate.countryCode ?? '—'}
                         </div>
                       ) : null}
@@ -739,7 +746,7 @@ export default function CpqReplayValidationPage({
                     <td>{row.externalEligibilityDetailUpdate ? row.externalEligibilityDetailUpdate.updatedRows : '—'}</td>
                     <td>
                       {row.externalEligibilityDetailUpdate ? (
-                        <span style={externalPillStyle(row.externalEligibilityDetailUpdate.status)}>
+                        <span className={externalPillClass(row.externalEligibilityDetailUpdate.status)}>
                           {EXTERNAL_STATUS_LABEL[row.externalEligibilityDetailUpdate.status]}
                         </span>
                       ) : (
@@ -759,12 +766,12 @@ export default function CpqReplayValidationPage({
       {confirmOpen ? (
         <div className="modalBackdrop" onClick={() => setConfirmOpen(false)}>
           <div className="modalCard" style={{ width: 'min(640px, 92vw)' }} onClick={(event) => event.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Apply selected replay results</h3>
+            <h3 className="opModalTitle">Apply selected replay results</h3>
             <p>
               This will overwrite existing Neon CPQ configuration and sampler rows for {overwriteSelectedCount} selected
               reference{overwriteSelectedCount === 1 ? '' : 's'}.
             </p>
-            <ul style={{ fontSize: 13, lineHeight: 1.6 }}>
+            <ul className="opModalBody" style={{ paddingLeft: 18 }}>
               <li>An archive copy will be created before each overwrite.</li>
               <li>The replay is re-run on the server; the results shown above are not written directly.</li>
               <li>
@@ -777,13 +784,13 @@ export default function CpqReplayValidationPage({
               <li>This cannot yet be rolled back from the UI.</li>
             </ul>
             {overwriteMatchCount > 0 ? (
-              <div className="note" style={{ background: '#fff8e6', borderColor: '#f0d9a0' }}>
+              <div className="opMessage opMessageWarn">
                 {overwriteMatchCount} selected row{overwriteMatchCount === 1 ? ' is' : 's are'} already a <strong>Match</strong> —
                 applying will refresh the stored rows without changing the item code.
               </div>
             ) : null}
-            <label style={{ display: 'grid', gap: 6, fontSize: 13, marginTop: 8 }}>
-              Type <strong>{OVERWRITE_CONFIRM_PHRASE}</strong> to confirm
+            <label className="opField" style={{ marginTop: 10 }}>
+              <span>Type <strong>{OVERWRITE_CONFIRM_PHRASE}</strong> to confirm</span>
               <input
                 autoFocus
                 value={confirmPhrase}
@@ -791,12 +798,12 @@ export default function CpqReplayValidationPage({
                 placeholder={OVERWRITE_CONFIRM_PHRASE}
               />
             </label>
-            <div className="modalActions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button type="button" onClick={() => setConfirmOpen(false)}>
+            <div className="opModalFooter">
+              <button type="button" className="btn" onClick={() => setConfirmOpen(false)}>
                 Cancel
               </button>
               <button
-                className="primary"
+                className="btn btnPrimary"
                 type="button"
                 onClick={() => void runOverwrite()}
                 disabled={confirmPhrase.trim() !== OVERWRITE_CONFIRM_PHRASE || overwriteRunning}
