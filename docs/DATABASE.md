@@ -301,3 +301,27 @@ Runtime saves reduce `json_snapshot` to captioned CPQ reference values needed by
 - Historical rows are not automatically rewritten by the runtime reducer.
 
 External bike allocation pushes use the extracted full `ForecastAs` as `public.variants."ForecastCtyCode"`. If no valid full ForecastAs is found, updates preserve the existing external value and inserts retain the legacy fallback. QPart allocation pushes keep their existing `Qpart` hardcoding.
+
+## CPQ replay overwrite archive (2026-08-13)
+
+- Table: `app_cpq_replay_overwrite_archive` (migration `sql/migrations/2026-08-13_cpq_replay_overwrite_archive.sql`).
+- Written only by the controlled overwrite action on `/admin/cpq-replay-validation`.
+- Captures, per overwritten reference:
+  - actor (`actor_user_id`, `actor_email`, `actor_display_name`) and provenance (`source_page`, `source_process`, `replay_run_id`, `overwrite_batch_id`)
+  - identity (`configuration_reference_id`, `configuration_reference`, `sampler_result_id`, `country_code`, `bike_type`, `ruleset`)
+  - item codes before/after (`existing_item_code`, `replayed_item_code`)
+  - full previous rows (`old_configuration_reference_row`, `old_sampler_result_row`) captured with `to_jsonb(...)` inside the overwrite transaction
+  - intended new payloads (`new_configuration_reference_payload`, `new_sampler_result_payload`)
+  - `status` and free-form `metadata` (replay status, selection source, configure/ignore/unmatched counts, sampler match key, previous item code)
+- Indexes: `created_at desc`, `configuration_reference`, `overwrite_batch_id`, `actor_user_id`, and `(overwrite_batch_id, configuration_reference_id)` which backs the archive-before-update guard.
+- Rollback source of truth. No rollback code exists yet; the table is populated so it can be added later.
+
+### Transaction support on the Neon client
+
+- `lib/db/client.ts` now also exports `sqlTransaction(queries)`, which runs a fixed list of `sql` queries as one non-interactive Postgres transaction over HTTP.
+- The exported `sql` is a wrapper function, so `sql.transaction` does not exist at runtime; `sqlTransaction` reaches the underlying Neon client. Queries must be passed **unawaited** (Neon query objects are lazy).
+- Non-interactive: the statement list is fixed up front, so a later statement cannot consume an earlier one's result. The overwrite flow works within that constraint by having the archive statement read the live rows itself and the update statements guard on the archive row's existence.
+
+### Schema note
+
+`sql/schema.sql` still does not declare `cpq_configuration_references.canonical_header_id` / `canonical_detail_id` / `source_working_detail_id` / `source_session_id`, although runtime code reads and writes them (pre-existing gap already flagged above). The overwrite flow updates the canonical detail columns, so deployed environments must have them.

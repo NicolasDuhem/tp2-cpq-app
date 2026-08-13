@@ -77,3 +77,15 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
   - system admin → bypass.
 - All three APIs use `requirePageRead(PAGE_KEYS.adminCpqReplayValidation)`; there is deliberately no `requirePageEdit` path because the feature is read-only against Neon.
 - No global login lock was added.
+
+## CPQ replay controlled overwrite permission (2026-08-13)
+
+- `POST /api/admin/cpq-replay-validation/overwrite` requires **Admin** on `admin.cpq_replay_validation`.
+- New helper `requirePageAdmin(pageKey)` in `lib/auth/page-access.ts` returns `{ user, forbidden }`: a 403 response when the caller is not logged in or lacks Admin, and the resolved user on success so the acting user can be recorded on the archive row.
+- Effective behaviour on this page:
+  - `none` → no access at all.
+  - `read` / `edit` → run replay validation and view comparison results; the overwrite button is disabled and the API rejects the call.
+  - `admin` → may apply selected replay results.
+  - system admin → bypass.
+- Server-side enforcement is the control; the disabled button is only a UI affordance.
+- The overwrite writes an archive row (`app_cpq_replay_overwrite_archive`) capturing the acting user, but deliberately does **not** write `app_allocation_audit_log`.

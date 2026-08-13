@@ -253,6 +253,64 @@ export async function loadIgnoredConfigureRules(): Promise<IgnoredConfigureRules
   return { featureLabels, tripleKeys };
 }
 
+export type SamplerRowMatch = {
+  id: number;
+  matchedOn: 'detail_id' | 'session_id' | 'ipn_ruleset_country';
+};
+
+/**
+ * Resolve the single live `CPQ_sampler_result` row that belongs to a saved configuration
+ * reference, using the same precedence as the recorded-selection lookup: detail id, then
+ * session id, then ipn/ruleset/country. Existence only — no payload parsing — because the
+ * overwrite flow needs a target row id even when the stored payload is unusable.
+ *
+ * Returns null when no row matches; the caller must then skip (this flow never inserts).
+ */
+export async function resolveSamplerRowForReference(
+  reference: ReplayReferenceContextRow,
+): Promise<SamplerRowMatch | null> {
+  const detailIds = [reference.canonicalDetailId, reference.finalizedDetailId].filter(
+    (value): value is string => Boolean(value),
+  );
+
+  if (detailIds.length > 0) {
+    const rows = (await sql`
+      select id
+      from CPQ_sampler_result
+      where coalesce(trim(detail_id), '') = any(${detailIds}::text[])
+      order by updated_at desc nulls last, id desc
+      limit 1
+    `) as Array<{ id: number }>;
+    if (rows[0]) return { id: Number(rows[0].id), matchedOn: 'detail_id' };
+  }
+
+  if (reference.finalizedSessionId) {
+    const rows = (await sql`
+      select id
+      from CPQ_sampler_result
+      where coalesce(trim(session_id), '') = ${reference.finalizedSessionId}
+      order by updated_at desc nulls last, id desc
+      limit 1
+    `) as Array<{ id: number }>;
+    if (rows[0]) return { id: Number(rows[0].id), matchedOn: 'session_id' };
+  }
+
+  if (reference.existingItemCode && reference.ruleset) {
+    const rows = (await sql`
+      select id
+      from CPQ_sampler_result
+      where coalesce(trim(ipn_code), '') = ${reference.existingItemCode}
+        and coalesce(trim(ruleset), '') = ${reference.ruleset}
+        and coalesce(trim(country_code), '') = ${reference.countryCode ?? ''}
+      order by updated_at desc nulls last, id desc
+      limit 1
+    `) as Array<{ id: number }>;
+    if (rows[0]) return { id: Number(rows[0].id), matchedOn: 'ipn_ruleset_country' };
+  }
+
+  return null;
+}
+
 const parseSelectionsFromSamplerPayload = (jsonResult: unknown): ReplaySelection[] => {
   const payload = toRecord(jsonResult);
   const selectedOptions = Array.isArray(payload.selectedOptions) ? payload.selectedOptions : [];
