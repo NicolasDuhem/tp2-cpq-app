@@ -1,6 +1,13 @@
 # Data Metro Map — forensic audit methodology, coverage and maintenance
 
-Companion document to [`docs/data-metro-map.html`](./data-metro-map.html).
+Companion document to two artefacts built from the same audit:
+
+| File | What it is | Who it is for |
+|---|---|---|
+| [`docs/data-journeys.html`](./data-journeys.html) | **Start here.** 15 journeys through the app. Pick one, press **Play**, and watch each exchange animate step by step with plain-English narration. Technical detail — endpoint, payload, SQL, validation, source line — sits in a side panel, in the order the events happen. | Anyone: product, operations, a new engineer, a stakeholder who needs to understand a flow |
+| [`docs/data-metro-map.html`](./data-metro-map.html) | The exhaustive reference: 307 stations and 386 edges covering **every** page, control, endpoint, table and external system in one zoomable map. | Engineers auditing coverage, tracing a specific control, or checking nothing was missed |
+
+The journeys file is a readable path through the same evidence, not a simplification of it: every step carries the same `file:line` citations. It covers the flows that matter; the metro map is what guarantees nothing is missing.
 
 - **Audited commit:** `cf1000de5625801a57164a957fd6b9402cd881ce` (branch `UATNew`)
 - **Audit date:** 2026-09-30
@@ -272,6 +279,22 @@ No application file was modified by this audit. `git status` shows only new file
 No credential value is embedded. Three in-repo literals were deliberately **not** reproduced: the client-side admin-mode password, the QPart update-all fallback password, and any API key. Each reads `[secret — value intentionally omitted]`, and the automated scan asserts the literals are absent. No customer or personal data appears; all payload examples use invented placeholders (`A000286`, `BBLV6-GL-M-BLK`, `ops.user@example.com`).
 
 ---
+
+## 7b. The journey player
+
+`docs/data-journeys.html` presents the same audited truth as **15 journeys, 108 steps**, grouped into five categories: Everyday, Building and saving a bike, Allocating stock to countries, Product data, and Admin and maintenance. Each journey is a sequence diagram whose lanes are the real participants — the operator, the browser page, the app server, the internal database, and whichever external systems are involved.
+
+Pressing **Play** reveals one exchange at a time: an arrow with a verb (READ, INSERT, UPSERT, PUSH, CHECK, RETURN…), a label naming the data that moves, and a plain-English sentence in the caption bar. Past steps stay visible but dimmed. Transport controls allow pause, single-step in both directions, restart, three speeds, and clicking any step on the diagram. When the journey ends, a summary states what was read, what was written in our database, what was sent to another system, whether the whole thing is all-or-nothing, and what happens if a step fails.
+
+The **Technical detail** panel is the nerdy half, and it is deliberately the same ordered sequence rather than a separate reference: entry *n* in the panel is step *n* in the diagram, and the panel follows the playback, expanding and scrolling to the current step. Each entry carries the endpoint, the authorization applied, the validation in code order, the request payload, the SQL or downstream request, the response and error shapes, and the `file:line` evidence. Warnings and things done well are called out inline where they belong.
+
+Findings surface where they are felt rather than in a list: the three untransacted writes appear as callouts on the CPQ save journey, the deletes-before-validation hazard is step 4 of *Save a part*, the fail-open check is step 3 of *Create a user*, and the file-before-record deletion order is step 6 of *Add and remove a part picture*. The replay-overwrite journey is marked as the one that gets it right, with its interlocks explained step by step.
+
+Verified by **53 browser assertions** run offline: self-containment, play/pause/step/restart, panel synchronisation in both directions, deep links, keyboard control, the end-of-journey summary classifying by destination actor, accessibility, and phone-width layout. Three defects were caught and fixed during that testing:
+
+- **Playback died after one step.** `syncTech()` sets `details.open` on the current entry; `<details>` fires a `toggle` event when it does, the handler treated that echo as a user click and called `goTo()`, which calls `stop()`. Now the handler ignores a toggle whose index is already the current step.
+- **The landing page and the player rendered on top of each other.** `.stageWrap{display:grid}` outranks the user-agent rule for the `hidden` attribute. Fixed with an explicit `[hidden]{display:none!important}`; the test now asserts computed display rather than the attribute, which is what let the bug through.
+- **On a phone the narrated step was off-screen.** The diagram overflowed sideways. It now scales to the viewport, and the scroll maths derives the scale factor from what was actually laid out.
 
 ## 8. Using the map
 

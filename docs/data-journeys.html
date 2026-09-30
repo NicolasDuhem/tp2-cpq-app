@@ -1,0 +1,1501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TP2 CPQ Journeys</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#fff; --line:#e2e8f4; --text:#14213d; --muted:#64748b;
+  --accent:#002FA7; --accent-soft:#eff3ff;
+  --read:#0f766e; --write:#1d4ed8; --push:#b45309; --destroy:#b91c1c;
+  --gate:#7c3aed; --ret:#475569; --derive:#0891b2;
+  --warn-bg:#fff5f5; --warn-bd:#e2acac; --warn-fg:#96231f;
+  --ok-bg:#ecfdf5; --ok-bd:#9dd8ac; --ok-fg:#126e2b;
+  --shadow:0 6px 20px rgba(20,33,61,.09);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+/* A class selector that sets `display` outranks the user-agent rule for [hidden],
+   so anything toggled with the hidden attribute needs this to actually disappear. */
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);color:var(--text);overflow:hidden}
+.app{display:grid;grid-template-rows:auto 1fr;height:100dvh}
+
+header.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:linear-gradient(135deg,#002FA7,#1d53da);color:#fff;padding:9px 16px}
+.brand{font-size:17px;font-weight:800;letter-spacing:-.01em}
+.brand small{display:block;font-weight:500;opacity:.9;font-size:12px}
+.barActions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.barBtn{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.12);color:#fff;
+  border-radius:8px;padding:6px 11px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none}
+.barBtn:hover{background:rgba(255,255,255,.24)}
+.barBtn[aria-pressed=true]{background:#fff;color:var(--accent)}
+
+.main{display:grid;grid-template-columns:270px 1fr;min-height:0;position:relative}
+.main.techOpen{grid-template-columns:270px 1fr 440px}
+.main.picking{grid-template-columns:1fr}
+
+/* ---------- journey picker ---------- */
+aside.picker{background:var(--card);border-right:1px solid var(--line);overflow:auto;padding:12px;min-height:0}
+.picker h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 7px}
+.picker h2:first-child{margin-top:0}
+.jBtn{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;
+  border-radius:10px;padding:8px 10px;margin-bottom:6px;font:inherit;cursor:pointer;color:var(--text)}
+.jBtn:hover{background:var(--accent-soft);border-color:#b9d0f7}
+.jBtn[aria-current=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.jBtn[aria-current=true] .jMeta{color:rgba(255,255,255,.8)}
+.jName{font-weight:700;font-size:13.5px;display:block}
+.jMeta{font-size:11.5px;color:var(--muted);display:block;margin-top:1px}
+.jBtn .riskDot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn-fg);margin-right:5px;vertical-align:middle}
+
+/* ---------- landing ---------- */
+.landing{overflow:auto;padding:26px clamp(16px,4vw,52px) 60px;min-height:0}
+.landing h1{font-size:clamp(22px,3.2vw,32px);margin:0 0 6px;letter-spacing:-.02em}
+.landing .lede{color:var(--muted);max-width:74ch;margin:0 0 6px;font-size:15.5px}
+.landing .lede strong{color:var(--text)}
+.howto{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 26px}
+.howStep{flex:1 1 210px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.howStep b{display:block;font-size:12.5px;color:var(--accent);margin-bottom:2px}
+.howStep span{font-size:13px;color:var(--muted)}
+.cat{margin-bottom:24px}
+.cat h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 4px}
+.cat p.catSub{margin:0 0 10px;font-size:13.5px;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer;
+  text-align:left;font:inherit;color:var(--text);box-shadow:0 2px 6px rgba(20,33,61,.04);
+  display:flex;flex-direction:column;gap:7px;transition:transform .12s,box-shadow .12s,border-color .12s}
+.card:hover,.card:focus-visible{transform:translateY(-2px);box-shadow:var(--shadow);border-color:#b9d0f7;outline:none}
+.card h3{margin:0;font-size:16px;letter-spacing:-.01em}
+.card .sub{font-size:13.5px;color:var(--muted);margin:0}
+.card .foot{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:auto;padding-top:3px}
+.tag{font-size:11px;font-weight:700;border-radius:999px;padding:2.5px 8px;border:1px solid var(--line);color:var(--muted);background:#f8faff}
+.tag.risk{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-fg)}
+.tag.good{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok-fg)}
+.tag.steps{background:#fff}
+.card .playHint{font-size:12px;font-weight:800;color:var(--accent)}
+
+/* ---------- stage ---------- */
+.stageWrap{display:grid;grid-template-rows:auto 1fr auto;min-height:0;background:
+  radial-gradient(circle at 20% 0%, #fff 0, rgba(255,255,255,0) 55%), var(--bg)}
+.jHead{padding:12px 18px 8px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.7)}
+.jHead h1{margin:0;font-size:19px;letter-spacing:-.01em}
+.jHead p{margin:3px 0 0;color:var(--muted);font-size:13.5px;max-width:92ch}
+.jHeadRow{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.jTags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.scroller{overflow:auto;min-height:0;position:relative;padding:0 10px}
+svg#seq{display:block;margin:0 auto}
+/* The actor columns stay pinned while the steps scroll, so it is always clear
+   which lane is which — otherwise the labels disappear after two or three steps. */
+.seqHeadWrap{position:sticky;top:0;z-index:2;display:flex;justify-content:center;
+  background:linear-gradient(to bottom,var(--bg) 0,var(--bg) 78%,rgba(244,246,251,0) 100%);padding-bottom:8px}
+svg#seqHead{display:block}
+.caption{border-top:1px solid var(--line);background:var(--card);padding:10px 16px;display:grid;
+  grid-template-columns:auto 1fr;gap:12px;align-items:center;min-height:74px}
+.capNum{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:800;
+  background:var(--accent);color:#fff;font-size:15px;flex:none}
+.capText{font-size:15px;line-height:1.45}
+.capText .what{color:var(--muted);font-size:13px;display:block;margin-top:2px}
+.transport{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:9px 16px;border-top:1px solid var(--line);background:var(--card)}
+.tBtn{border:1px solid var(--line);background:#fff;color:var(--accent);border-radius:9px;
+  padding:7px 12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.tBtn:hover:not(:disabled){background:var(--accent-soft)}
+.tBtn:disabled{opacity:.45;cursor:not-allowed}
+.tBtn.primary{background:var(--accent);color:#fff;border-color:var(--accent);min-width:108px}
+.tBtn.primary:hover:not(:disabled){background:#0a3fbf}
+.progressWrap{flex:1;min-width:150px;display:flex;align-items:center;gap:9px}
+.progress{flex:1;height:7px;border-radius:99px;background:#e6ecf8;overflow:hidden;min-width:90px}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+.stepCount{font-size:12.5px;color:var(--muted);font-weight:700;white-space:nowrap}
+.spd{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted)}
+.spd select{border:1px solid var(--line);border-radius:8px;padding:5px 7px;font:inherit;font-size:12.5px;background:#fff;color:var(--text)}
+
+/* ---------- sequence graphics ---------- */
+.lifeline{stroke:#c9d5ec;stroke-width:1.5;stroke-dasharray:4 4}
+.actorBox{fill:#fff;stroke-width:1.8}
+.actorName{font-size:12px;font-weight:800;fill:var(--text);text-anchor:middle}
+.actorKind{font-size:9.5px;font-weight:700;fill:var(--muted);text-anchor:middle;text-transform:uppercase;letter-spacing:.04em}
+.arrow{fill:none;stroke-width:2.2;marker-end:url(#ah)}
+.arrowSelf{fill:none;stroke-width:2.2;marker-end:url(#ah)}
+.stepRow{opacity:0}
+.stepRow.shown{opacity:1}
+.stepRow.past{opacity:.34}
+.stepRow.current .verbChip{filter:drop-shadow(0 2px 5px rgba(20,33,61,.25))}
+.verbChip rect{stroke-width:1.4}
+.verbTxt{font-size:10.5px;font-weight:800;text-anchor:middle;dominant-baseline:middle}
+.dataTxt{font-size:11px;font-weight:600;fill:var(--ret);text-anchor:middle;
+  paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round}
+.stepNo{font-size:10.5px;font-weight:800;fill:#94a3b8;text-anchor:end}
+.packet{opacity:0}
+.noteBox rect{fill:#fff8ec;stroke:#e6c98f;stroke-width:1.3}
+.noteTxt{font-size:11px;fill:#8a5a12;font-weight:600}
+.warnBox rect{fill:var(--warn-bg);stroke:var(--warn-bd);stroke-width:1.3}
+.warnTxt{font-size:11px;fill:var(--warn-fg);font-weight:700}
+.okBox rect{fill:var(--ok-bg);stroke:var(--ok-bd);stroke-width:1.3}
+.okTxt{font-size:11px;fill:var(--ok-fg);font-weight:700}
+.stepHit{fill:transparent;cursor:pointer}
+
+/* ---------- technical drawer ---------- */
+.tech{background:var(--card);border-left:1px solid var(--line);overflow:auto;min-height:0;display:none}
+.main.techOpen .tech{display:block}
+.techHead{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:11px 14px;z-index:3}
+.techHead h2{margin:0;font-size:15px}
+.techHead p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.techClose{position:absolute;right:9px;top:9px;border:1px solid var(--line);background:#fff;border-radius:8px;
+  width:28px;height:28px;font-size:16px;cursor:pointer;color:var(--muted);line-height:1}
+.techBody{padding:8px 12px 50px}
+.tStep{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;background:#fff}
+.tStep.isCurrent{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.tStep > summary{padding:9px 11px;cursor:pointer;display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:start;list-style:none}
+.tStep > summary::-webkit-details-marker{display:none}
+.tStep > summary:hover{background:#fafcff}
+.tNum{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;
+  background:#eef2fb;color:var(--ret)}
+.tStep.isCurrent .tNum{background:var(--accent);color:#fff}
+.tTitle{font-size:13.5px;font-weight:700;line-height:1.35}
+.tSub{font-size:11.5px;color:var(--muted);margin-top:2px;display:block}
+.tBody{padding:0 11px 11px;border-top:1px solid var(--line);margin-top:2px}
+.tBody h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 0 4px}
+.kv{display:grid;grid-template-columns:78px 1fr;gap:2px 8px;font-size:12.5px;margin:0}
+.kv dt{color:var(--muted);font-weight:700}
+.kv dd{margin:0;word-break:break-word}
+pre.code{background:#0f172a;color:#e2e8f4;border-radius:8px;padding:8px 10px;overflow:auto;
+  font-family:var(--mono);font-size:11px;line-height:1.45;margin:0 0 6px;max-height:260px}
+ul.tight{margin:0;padding-left:17px;font-size:12.5px}
+ul.tight li{margin-bottom:3px}
+code.ev{display:block;font-family:var(--mono);font-size:11px;background:#f8faff;border:1px solid #dce5f5;
+  border-radius:6px;padding:4px 7px;word-break:break-all;margin-bottom:3px}
+.note{border-radius:9px;padding:7px 10px;font-size:12.5px;margin:8px 0 0;border:1px solid}
+.note.warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-fg)}
+.note.ok{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok-fg)}
+.note.plain{background:#f8faff;border-color:#dce5f5;color:#33415f}
+.verbPill{display:inline-block;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;border:1px solid}
+
+/* ---------- summary ---------- */
+.summary{padding:14px 16px;border-top:1px solid var(--line);background:#fbfdff}
+.summary h3{margin:0 0 8px;font-size:14px}
+.sumGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px}
+.sumCell{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:9px;padding:8px 10px;background:#fff}
+.sumCell b{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.sumCell span{font-size:13px}
+.sumCell.warn{border-left-color:var(--warn-fg)}
+.sumCell.ok{border-left-color:var(--ok-fg)}
+
+@media (max-width:1150px){
+  .main.techOpen{grid-template-columns:270px 1fr}
+  .tech{position:absolute;inset:0 0 0 auto;width:min(440px,94vw);z-index:20;box-shadow:-8px 0 30px rgba(10,20,40,.18)}
+}
+@media (max-width:820px){
+  .main,.main.techOpen{grid-template-columns:1fr}
+  aside.picker{position:absolute;inset:0 auto 0 0;width:min(280px,86vw);z-index:22;transform:translateX(-101%);transition:transform .2s}
+  aside.picker.open{transform:none;box-shadow:6px 0 30px rgba(10,20,40,.2)}
+  .caption{grid-template-columns:1fr}
+  .capNum{display:none}
+  /* Scale the diagram to the viewport rather than letting it overflow sideways —
+     otherwise the step being narrated is off-screen and only the caption is visible. */
+  svg#seq,svg#seqHead{width:100%;height:auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{
+  body{overflow:visible}.app{height:auto;display:block}
+  aside.picker,.transport,.barActions{display:none!important}
+  .main,.main.techOpen{display:block}.scroller{overflow:visible}
+  .tech{display:block!important;border:0;page-break-before:always}
+  .stepRow{opacity:1!important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="bar">
+  <div class="brand">TP2 CPQ · Journeys
+    <small>Press play and watch the information move — the technical detail is one click away</small>
+  </div>
+  <div class="barActions">
+    <button class="barBtn" id="btnPicker" aria-expanded="false" hidden>☰ Journeys</button>
+    <button class="barBtn" id="btnAll">All journeys</button>
+    <button class="barBtn" id="btnTech" aria-pressed="false">Technical detail</button>
+    <a class="barBtn" href="./data-metro-map.html">Full detailed map →</a>
+  </div>
+</header>
+
+<div class="main picking" id="main">
+  <aside class="picker" id="picker" aria-label="Journey list" hidden></aside>
+
+  <div class="landing" id="landing">
+    <h1>What happens when someone uses this application?</h1>
+    <p class="lede">Each card below is one real journey through the app. Pick one and press <strong>Play</strong>: you will see every message that travels between the browser, the server, the database and the outside world — what is <strong>read</strong>, what is <strong>written</strong>, and what is <strong>pushed</strong> to another system.</p>
+    <p class="lede">Nothing here is invented. Every step is taken from the code, and the exact endpoint, payload, SQL and source line is available in the <strong>Technical detail</strong> panel, in the order the events actually happen.</p>
+    <div class="howto">
+      <div class="howStep"><b>1 · Pick a journey</b><span>Grouped by who does it and why.</span></div>
+      <div class="howStep"><b>2 · Press Play</b><span>Watch each exchange, one step at a time. Pause or step manually whenever you like.</span></div>
+      <div class="howStep"><b>3 · Open Technical detail</b><span>The full sequence of events, with payloads, SQL and source evidence.</span></div>
+    </div>
+    <div id="cats"></div>
+  </div>
+
+  <div class="stageWrap" id="stageWrap" hidden>
+    <div class="jHead">
+      <div class="jHeadRow">
+        <div>
+          <h1 id="jTitle"></h1>
+          <p id="jSub"></p>
+        </div>
+        <div class="jTags" id="jTags"></div>
+      </div>
+    </div>
+    <div class="scroller" id="scroller">
+      <div class="seqHeadWrap"><svg id="seqHead" aria-hidden="true"></svg></div>
+      <svg id="seq" role="img" aria-label="Sequence of information exchanges for this journey"></svg>
+      <div class="summary" id="summary" hidden></div>
+    </div>
+    <div class="caption" id="caption">
+      <div class="capNum" id="capNum">0</div>
+      <div class="capText" id="capText">Press <strong>Play</strong> to walk through this journey.</div>
+    </div>
+    <div class="transport">
+      <button class="tBtn" id="btnRestart" title="Restart (R)">⟲ Restart</button>
+      <button class="tBtn" id="btnPrev" title="Previous step (←)">‹ Back</button>
+      <button class="tBtn primary" id="btnPlay" title="Play or pause (Space)">▶ Play</button>
+      <button class="tBtn" id="btnNext" title="Next step (→)">Next ›</button>
+      <div class="progressWrap">
+        <div class="progress"><i id="progBar"></i></div>
+        <span class="stepCount" id="stepCount">Step 0 of 0</span>
+      </div>
+      <label class="spd">Speed
+        <select id="speed" aria-label="Playback speed">
+          <option value="1800">Relaxed</option>
+          <option value="1250" selected>Normal</option>
+          <option value="800">Brisk</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="tech" id="tech" aria-label="Technical detail"></div>
+</div>
+</div>
+
+<script>
+"use strict";
+/* ===========================================================================
+   Journey data — every step taken from the audited code. The detailed station
+   map (docs/data-metro-map.html) holds the exhaustive graph; this file holds
+   the same truth arranged as ordered journeys a non-developer can follow.
+   Secrets never appear: credential values read "[secret - omitted]".
+   ========================================================================= */
+const ACTORS = {
+  you:     {name:'Operator',          kind:'person',   color:'#334155'},
+  browser: {name:'Browser page',      kind:'browser',  color:'#0891b2'},
+  storage: {name:'Browser storage',   kind:'on device',color:'#0891b2'},
+  app:     {name:'App server',        kind:'next.js',  color:'#002FA7'},
+  neon:    {name:'Internal database', kind:'neon',     color:'#1d4ed8'},
+  extpg:   {name:'External database', kind:'postgres', color:'#b45309'},
+  cpq:     {name:'Infor CPQ',         kind:'external', color:'#b45309'},
+  bc:      {name:'BigCommerce',       kind:'external', color:'#b45309'},
+  blob:    {name:'Vercel Blob',       kind:'external', color:'#b45309'},
+  openai:  {name:'OpenAI',            kind:'external', color:'#b45309'}
+};
+const VERBS = {
+  READ:{c:'var(--read)',bg:'#ecfeff',bd:'#a5e8f0',t:'reads data'},
+  INSERT:{c:'var(--write)',bg:'#eff6ff',bd:'#b9d0f7',t:'creates a new record'},
+  UPDATE:{c:'var(--write)',bg:'#eff6ff',bd:'#b9d0f7',t:'changes an existing record'},
+  UPSERT:{c:'var(--write)',bg:'#eff6ff',bd:'#b9d0f7',t:'creates or updates a record'},
+  DELETE:{c:'var(--destroy)',bg:'#fff5f5',bd:'#e2acac',t:'removes a record'},
+  PUSH:{c:'var(--push)',bg:'#fffbeb',bd:'#f0d9a3',t:'sends data to another system'},
+  UPLOAD:{c:'var(--push)',bg:'#fffbeb',bd:'#f0d9a3',t:'sends a file to another system'},
+  CHECK:{c:'var(--gate)',bg:'#f5f3ff',bd:'#d3c7f7',t:'permission or validation check'},
+  ASK:{c:'var(--ret)',bg:'#f8fafc',bd:'#dbe2ec',t:'asks the person something'},
+  RETURN:{c:'var(--ret)',bg:'#f8fafc',bd:'#dbe2ec',t:'sends the answer back'},
+  SAVE:{c:'var(--derive)',bg:'#ecfeff',bd:'#a5e8f0',t:'stores on this device'},
+  GO:{c:'var(--ret)',bg:'#f8fafc',bd:'#dbe2ec',t:'moves to another screen'}
+};
+const JOURNEYS = [
+{
+  id:"signin", category:"Everyday", categoryNote:"What happens the moment someone arrives.",
+  name:"Signing in", subtitle:"An operator enters their email and password, and the app decides what they are allowed to see.",
+  page:"/login", risk:"No rate limiting",
+  transaction:"None — the login stamp and the session record are two separate writes.",
+  ifItFails:"Wrong password gives the same message as an unknown account, so the endpoint does not reveal which. Nothing is written.",
+  contract:{kind:"warn",title:"Nothing throttles this endpoint.",body:"There is no lockout, no delay, no attempt counter and no CAPTCHA anywhere on this path, so passwords can be guessed as fast as the network allows. Sessions also accumulate: every successful sign-in inserts a row and only signing out removes one."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"email + password",plain:"The operator types their email and password and presses Login.",
+     title:"Operator presses Login",
+     tech:{what:"A plain button on the login page. The password never touches browser storage — it goes straight into the request body.",
+      evidence:["app/login/page.tsx:12-20 — submit()","app/login/page.tsx:27 — button.primary"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"credentials",plain:"The browser sends the credentials to the server.",
+     title:"POST the credentials",
+     tech:{endpoint:"POST /api/auth/login",auth:"None required — this is the call that establishes identity",statuses:["200","401"],
+      what:"Sent with credentials: 'include' so the session cookie comes back, and cache: 'no-store' so nothing is cached.",
+      payload:{email:"ops.user@example.com",password:"[secret - omitted]"},
+      validation:["The body is parsed with a fallback to an empty object, so a malformed body becomes empty rather than a 400.","No rate limiting of any kind."],
+      evidence:["app/api/auth/login/route.ts:7-14"]}},
+    {from:"app",to:"neon",verb:"READ",data:"the user record",plain:"The server looks the person up by email address.",
+     title:"Find the user",
+     tech:{store:"app_users",what:"Email is trimmed and lowercased before the lookup, so capitalisation does not matter.",
+      sql:"select * from app_users where lower(email) = $1 limit 1",
+      evidence:["lib/auth/user-service.ts:32 — authenticateUser","lib/auth/password.ts:3 — normalizeEmail"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"is the password right?",plain:"The server checks the account is active and the password matches.",
+     title:"Verify the password",
+     callout:"Same error for a wrong password and an unknown account",calloutKind:"note",
+     tech:{what:"The stored value is a scrypt hash in the form salt:hash. The server re-derives the hash from the supplied password and compares the two in constant time.",
+      validation:["The account must exist.","app_users.is_active must be true.","The scrypt hash must match, compared with timingSafeEqual."],
+      errors:{status:401,body:{error:"Invalid credentials"}},
+      note:"The same message is returned for an unknown email and a wrong password, so the endpoint does not leak which accounts exist.",
+      evidence:["lib/auth/password.ts:5 — verifyPassword","lib/auth/user-service.ts:32"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"last-login timestamp",plain:"The server records that this person just signed in.",
+     title:"Stamp last_login_at",
+     tech:{store:"app_users",sql:"update app_users set last_login_at = now() where id = $1",
+      evidence:["lib/auth/user-service.ts:32"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"a new session",plain:"A new session is created — but only a fingerprint of it is stored.",
+     title:"Create the session",
+     callout:"The database never stores the session token itself",calloutKind:"ok",
+     tech:{store:"app_sessions",what:"A 32-byte random token is generated. The database stores only its SHA-256 hash, so a leak of the table cannot be replayed as a login.",
+      sql:"insert into app_sessions (user_id, session_token_hash, expires_at)\nvalues ($1, sha256($token), $3)   -- 7 day expiry",
+      good:"Storing only the hash is the right call, and the session lookup additionally requires the user to still be active — so deactivating someone kills their live sessions immediately.",
+      evidence:["lib/auth/session.ts:20-25 — createSession"]}},
+    {from:"app",to:"browser",verb:"RETURN",data:"session cookie + permissions",plain:"The browser receives a session cookie and the full list of what this person may do.",
+     title:"Return the session and permission map",
+     tech:{what:"The cookie is httpOnly, so page scripts cannot read it. The response body carries the permission level for every page.",
+      response:{user:{id:"4f1c…",email:"ops.user@example.com",displayName:"Ops User",isSystemAdmin:false,permissions:{"sales.bike_allocation":"edit","cpq.configure":"read"}}},
+      note:"Cookie flags: httpOnly, sameSite=lax, 7-day expiry, and secure only when running in production.",
+      evidence:["lib/auth/session.ts:10-16 — authCookieOptions"]}},
+    {from:"browser",to:"you",verb:"GO",data:"Bike Allocation",plain:"The operator lands on Bike Allocation, with menu entries filtered to their permissions.",
+     title:"Redirect and refresh the menu",
+     tech:{what:"The page fires an 'auth:changed' event so the header and navigation re-read the session, then routes to /sales/bike-allocation.",
+      note:"It always lands on Bike Allocation, not on the page the person originally asked for.",
+      evidence:["app/login/page.tsx:17-19","components/shared/app-navigation.tsx:55-66 — visibleLinks"]}}
+  ]
+},
+{
+  id:"cpq-save", category:"Building and saving a bike", categoryNote:"How a configured bike comes into existence and becomes sellable.",
+  name:"Configure a bike and save it", subtitle:"The central journey of the app: open a CPQ session, choose options, then finalise and store the result.",
+  page:"/cpq", risk:"3 writes, no transaction",
+  transaction:"None across the three calls — the browser issues finalise, then the canonical save, then the sampler save, each committing on its own.",
+  ifItFails:"Three different half-finished states are reachable. See the warning on steps 7 and 9.",
+  contract:{kind:"warn",title:"This is the riskiest sequence in the application.",body:"Finalising at CPQ, saving the canonical reference and saving the sampler row are three separate requests from the browser, with nothing joining them. CPQ has no un-finalise call, so once step 6 succeeds there is no way to undo it from the interface if a later step fails."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"account + ruleset",plain:"The operator picks an account code and a bike ruleset, then presses Start a new session.",
+     title:"Choose the account and ruleset",
+     tech:{what:"Both lists were loaded when the page opened, from the CPQ Setup tables. The ruleset row supplies the namespace and header id used for every later CPQ call.",
+      validation:["An account must be selected, else 'Select an account code to start configuration.'","A ruleset must be selected, else 'Select a ruleset to start configuration.'"],
+      note:"Both checks run in the browser only. The endpoint itself validates nothing and would substitute environment defaults for anything missing.",
+      evidence:["components/cpq/bike-builder-page.tsx:649-782 — startConfiguration","components/cpq/bike-builder-page.tsx:2826-2832"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"new session request",plain:"The browser asks the server to open a fresh configuration session.",
+     title:"Request a new CPQ session",
+     tech:{endpoint:"POST /api/cpq/init",auth:"None — this endpoint has no permission check",
+      what:"The browser generates a brand-new detail id with crypto.randomUUID() for this session.",
+      payload:{ruleset:"BBLV6_G-LineMY26",namespace:"Default",headerId:"Simulator",detailId:"3f2b9c40-…",context:{accountCode:"A000286",currency:"GBP",language:"en-GB",countryCode:"GB"}},
+      warn:"None of the /api/cpq/* endpoints check who is calling. The page is gated in the browser, but the endpoints behind it are not.",
+      evidence:["app/api/cpq/init/route.ts:9-113"]}},
+    {from:"app",to:"cpq",verb:"PUSH",data:"StartConfiguration",plain:"The server opens the session with Infor CPQ.",
+     title:"StartConfiguration",
+     tech:{what:"The request is assembled from the ruleset row layered over the CPQ_* environment defaults, and abandoned if CPQ does not answer in time.",
+      payload:"POST {CPQ_BASE_URL}/StartConfiguration\nAuthorization: ApiKey [secret - omitted]\n\n{ inputParameters: { mode: 0, profile: 'Default',\n    application: { instance: 'BROMPTON_TRN' },\n    part: { namespace: 'Default', name: 'BBLV6_G-LineMY26' },\n    headerDetail: { headerId: 'Simulator', detailId: '3f2b9c40-…' },\n    integrationParameters: [ AccountType, CurrencyCode, Company,\n      AccountCode, CustomerLocation ] } }",
+      note:"If CPQ_USE_MOCK is set to true this whole call is skipped and fixture data is returned instead, in exactly the same shape.",
+      evidence:["lib/cpq/runtime/client.ts:249-294","lib/cpq/runtime/config.ts:86-138"]}},
+    {from:"cpq",to:"browser",verb:"RETURN",data:"the feature tree",plain:"CPQ returns the list of features and the options available for each.",
+     title:"Normalised feature tree",
+     tech:{what:"The raw CPQ envelope is flattened into a predictable shape before it reaches the page.",
+      response:{sessionId:"SES-90211",parsed:{detailId:"…",ipnCode:null,features:"[ { featureId, label, isVisible, availableOptions[] } ]"}},
+      evidence:["lib/cpq/runtime/mappers.ts — mapCpqToNormalizedState"]}},
+    {from:"you",to:"browser",verb:"ASK",data:"one option choice",plain:"The operator picks an option — a handlebar type, a colour — and the whole tree is recalculated.",
+     title:"Choose an option (repeats many times)",
+     callout:"Repeats once per option the operator changes",calloutKind:"note",
+     tech:{endpoint:"POST /api/cpq/configure",
+      what:"Each choice is sent individually and CPQ answers with a completely recomputed feature tree, which may hide, reveal or invalidate other options.",
+      payload:{sessionId:"SES-90211",featureId:"FEAT_HANDLEBAR",optionValue:"M"},
+      sql:"-- reaches CPQ as:\n{ sessionID: 'SES-90211', selections: [ { id: 'FEAT_HANDLEBAR', value: 'M' } ] }",
+      warn:"The endpoint builds a context object and passes it on, but the client discards it with `void context`. The TypeScript signature advertises a parameter that has no effect at runtime.",
+      evidence:["app/api/cpq/configure/route.ts:16-126","lib/cpq/runtime/client.ts:311 — void context"]}},
+    {from:"app",to:"neon",verb:"READ",data:"picture layers",plain:"After each choice the app looks up which picture layers make up the preview image.",
+     title:"Resolve the preview image layers",
+     tech:{store:"cpq_image_management",endpoint:"POST /api/cpq/image-layers",
+      what:"Each chosen option is matched to a picture and a stacking order, and the layers are composited in the browser.",
+      sql:"select feature_label, option_label, option_value, feature_layer_order, picture_url\nfrom cpq_image_management\nwhere (feature_label, option_label, option_value) matches the selection\n  and coalesce(ignore_during_configure, false) = false",
+      note:"Features flagged 'Ignore during configure' on the CPQ Setup page silently disappear from the preview. That flag is the link between the setup screen and what the operator sees here.",
+      evidence:["lib/cpq/setup/service.ts:539-633"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"finalise this session",plain:"The operator presses Save Configuration. The configuration is locked in at CPQ first.",
+     title:"Finalise at CPQ — the point of no return",
+     callout:"After this step there is no undo",calloutKind:"warn",
+     tech:{endpoint:"POST /api/cpq/finalize",statuses:["200","400","500"],
+      payload:{sessionID:"SES-90211"},
+      what:"Success is stricter than an HTTP 200: the reply must also carry no error, errors or exception field. An empty 200 body counts as success.",
+      validation:["A session id must exist, else 'Missing session ID before finalize'.","A ruleset must be resolvable, else 'Missing ruleset before finalize'.","The reply must contain a finalised detail id."],
+      warn:"There is no mock branch on finalise, so this call is always live even when the rest of the app is in mock mode. And there is no un-finalise endpoint — if the next two steps fail, this cannot be rolled back from the interface.",
+      evidence:["components/cpq/bike-builder-page.tsx:1491-1630","lib/cpq/runtime/client.ts:327-377"]}},
+    {from:"browser",to:"neon",verb:"UPSERT",data:"the saved configuration",plain:"The browser now asks the server to store the finished configuration under a reference like CFG-20260930-A17C4B9E.",
+     title:"Save the canonical reference",
+     tech:{store:"cpq_configuration_references",endpoint:"POST /api/cpq/configuration-references",statuses:["201","400"],
+      what:"A reference code is generated if the browser did not supply one. Saving the same reference again updates it rather than duplicating it.",
+      validation:["ruleset, namespace and a finalised detail id are all required.","The two JSON fields must each be an object, not an array.","The stored snapshot is reduced first to bound its size."],
+      sql:"insert into cpq_configuration_references (…27 columns…) values (…)\non conflict (configuration_reference) do update set …, updated_at = now()\nreturning *",
+      warn:"If this fails, CPQ has already finalised and there is no local record of it. The error message says exactly that: 'Finalize succeeded but saving reference in database failed'.",
+      evidence:["lib/cpq/runtime/configuration-references.ts:95-266"]}},
+    {from:"browser",to:"neon",verb:"INSERT",data:"the sampler row",plain:"A second record is written — and this is the one that makes the bike appear on the allocation screens.",
+     title:"Save the sampler row",
+     callout:"This row is what makes the bike allocatable",calloutKind:"warn",
+     tech:{store:"CPQ_sampler_result",endpoint:"POST /api/cpq/sampler-result",statuses:["201","400"],
+      what:"Bike allocation state is the `active` column on this table — there is no separate allocation table. The row is inserted with active already set to true.",
+      validation:["ruleset and account_code are required.","Every other text field is trimmed, and blanks become empty."],
+      sql:"insert into CPQ_sampler_result (ipn_code, ruleset, account_code, country_code,\n  detail_id, session_id, active, json_result)\nvalues ($1, …, true, $8::jsonb) returning id, created_at",
+      warn:"This is always an insert, never an update, so retrying a save creates duplicate rows. Everything downstream copes by picking the newest row per bike and country. If this step fails after step 8 succeeded, the configuration is stored but the bike never shows up on the allocation matrix.",
+      evidence:["lib/cpq/runtime/persistence.ts:39-79"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"saved, session closed",plain:"The operator sees the reference code, and the session is closed so it can no longer be edited.",
+     title:"Confirm and close the session",
+     tech:{what:"The page reports the reference and the sampler row id, then clears its own state and marks the session finalised-and-closed.",
+      response:"Saved CFG-20260930-A17C4B9E with finalized detailId 9a71e2c4-… using configure snapshot.\nAuto-saved sampler row 41207 from configure after canonical save.",
+      note:"If the sampler save failed but the canonical save succeeded, the page still reports overall success — the failure is only visible in a secondary message.",
+      evidence:["components/cpq/bike-builder-page.tsx:1560-1630"]}}
+  ]
+},
+{
+  id:"cpq-retrieve", category:"Building and saving a bike", categoryNote:"How a configured bike comes into existence and becomes sellable.",
+  name:"Reopen a saved configuration", subtitle:"Typing a CFG- reference brings a saved bike back on screen — as a brand-new session.",
+  page:"/cpq",
+  transaction:"None needed — nothing in this app's database is written.",
+  ifItFails:"An unknown reference returns 'Configuration reference not found' and the screen is left untouched.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"CFG- reference",plain:"The operator types a saved reference code and presses Retrieve Configuration.",
+     title:"Enter the reference",
+     tech:{what:"The reference is the code shown when the configuration was saved.",evidence:["components/cpq/bike-builder-page.tsx:1635-1694"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the reference code",plain:"The browser sends the reference to the server.",
+     title:"POST the reference",
+     tech:{endpoint:"POST /api/cpq/retrieve-configuration",statuses:["200","400","404"],
+      payload:{configuration_reference:"CFG-20260930-A17C4B9E"},
+      evidence:["app/api/cpq/retrieve-configuration/route.ts:7-98"]}},
+    {from:"app",to:"neon",verb:"READ",data:"the stored configuration",plain:"The server finds the stored configuration.",
+     title:"Look up the reference",
+     tech:{store:"cpq_configuration_references",
+      what:"Only the columns needed to restart the session are selected — the two large JSON columns are deliberately left out so a replay does not drag them across the wire.",
+      sql:"select id, configuration_reference, canonical_header_id, canonical_detail_id,\n       ruleset, namespace, account_code, country_code, …   -- 28 named columns, not select *\nfrom cpq_configuration_references\nwhere configuration_reference = $1 and is_active = true\norder by updated_at desc, id desc limit 1",
+      good:"Selecting named columns rather than everything keeps this read cheap even though the table holds large JSON snapshots.",
+      evidence:["lib/cpq/runtime/configuration-references.ts:272-349"]}},
+    {from:"app",to:"cpq",verb:"PUSH",data:"StartConfiguration",plain:"The server opens a completely new CPQ session, seeded from the stored details.",
+     title:"Start a NEW session from the stored ids",
+     callout:"Reopening creates a new session — not the original one",calloutKind:"note",
+     tech:{what:"The stored canonical ids are fed into a fresh StartConfiguration call. Several fields fall back through layers if the stored row is incomplete.",
+      payload:"{ ruleset, namespace, headerId: canonical_header_id ?? header_id ?? 'Simulator',\n  detailId: canonical_detail_id ?? finalized_detail_id ?? '',\n  context: { accountCode, currency, language, countryCode } }",
+      note:"An empty detail id is passed through rather than rejected.",
+      evidence:["app/api/cpq/retrieve-configuration/route.ts:32-57"]}},
+    {from:"cpq",to:"you",verb:"RETURN",data:"the configuration, editable again",plain:"The bike reappears on screen with a new session id, ready to be changed.",
+     title:"Configuration restored",
+     tech:{response:"Retrieved CFG-20260930-A17C4B9E. New session SES-90477.",
+      note:"Retrieving is read-only for this application's data, but it does create a live session at CPQ each time.",
+      evidence:["components/cpq/bike-builder-page.tsx:1660-1694"]}}
+  ]
+},
+{
+  id:"bike-toggle", category:"Allocating stock to countries", categoryNote:"Deciding which bikes and parts are sold where, and telling the other systems about it.",
+  name:"Allocate one bike to one country", subtitle:"A single click on the matrix — which quietly turns into a database write, an audit entry and a push to another system.",
+  page:"/sales/bike-allocation", risk:"5 steps, no transaction",
+  transaction:"None. Five sequential operations, each committing on its own.",
+  ifItFails:"If the audit write fails, the allocation has already changed. If the external push fails, the internal database and the external one now disagree — and the response is still a success.",
+  contract:{kind:"warn",title:"One click does five things.",body:"What looks like flipping a switch reads the BigCommerce status, reads the previous state, updates the allocation, writes an audit record, and then pushes to an entirely separate database. Nothing joins them, so a failure part-way leaves the steps before it committed."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"one cell",plain:"The operator clicks a cell in the matrix to allocate a bike to a country.",
+     title:"Click the Active/Inactive cell",
+     tech:{what:"The matrix is bikes down the side and countries across the top. Clicking a cell flips it. A cell showing a dot has never been configured — clicking that opens the configurator instead.",
+      note:"There is no confirmation dialog on a single toggle.",
+      evidence:["components/sales/allocation-matrix-cell.tsx:1-99","components/sales/sales-bike-allocation-table.client.tsx:440-470"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"bike + country + new state",plain:"The browser sends the change to the server.",
+     title:"POST the toggle",
+     tech:{endpoint:"POST /api/sales/bike-allocation/toggle",auth:"Requires Edit on sales.bike_allocation — checked on the server",statuses:["200","400","403","404"],
+      payload:{ruleset:"BBLV6_G-LineMY26",ipnCode:"BBLV6-GL-M-BLK",countryCode:"GB",targetStatus:"active"},
+      validation:["targetStatus must be exactly 'active' or 'not_active'.","ruleset, ipnCode and countryCode are all required."],
+      good:"This endpoint does check permission properly, before doing any work.",
+      evidence:["app/api/sales/bike-allocation/toggle/route.ts:8-41"]}},
+    {from:"app",to:"neon",verb:"READ",data:"BigCommerce readiness",plain:"The server checks whether this product is ready to sell in BigCommerce.",
+     title:"Read the BigCommerce status",
+     tech:{store:"public.bc_item_variant_map",
+      what:"This is only read here so it can be recorded on the audit entry — but the same value decides, later, whether the push happens at all.",
+      sql:"select bc_status from public.bc_item_variant_map\nwhere coalesce(trim(sku_code),'') = $1\norder by updated_at desc nulls last, id desc limit 1",
+      evidence:["lib/sales/bike-allocation/service.ts:353-360"]}},
+    {from:"app",to:"neon",verb:"READ",data:"the previous state",plain:"The server notes what the value was before, so the change can be recorded.",
+     title:"Read the prior state",
+     tech:{store:"CPQ_sampler_result",sql:"select active from CPQ_sampler_result\nwhere ruleset = $1 and ipn_code = $2 and country_code = $3",
+      evidence:["lib/sales/bike-allocation/service.ts:361"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"the allocation",plain:"The allocation is changed.",
+     title:"Flip the allocation flag",
+     tech:{store:"CPQ_sampler_result",
+      what:"Allocation lives in the `active` column of the sampler table. The statement deliberately skips rows already in the requested state.",
+      sql:"update CPQ_sampler_result set active = $4, updated_at = now()\nwhere ruleset = $1 and ipn_code = $2 and country_code = $3\n  and coalesce(active,false) <> $4      -- skips no-op toggles\nreturning id",
+      note:"Because no-ops are skipped, clicking to the state it is already in updates nothing and returns 'No matching sampler rows found for this cell' — the same message as a cell that does not exist.",
+      evidence:["lib/sales/bike-allocation/service.ts:363"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"who changed what",plain:"An audit entry records who made the change, when, and what it was before.",
+     title:"Write the audit record",
+     tech:{store:"app_allocation_audit_log",
+      what:"Only written if something actually changed.",
+      payload:{actor_email:"ops.user@example.com",page_key:"sales.bike_allocation",source_process:"bike_allocation_single_toggle",item_code:"BBLV6-GL-M-BLK",country_code:"GB",bigcommerce_status:"OK",action_type:"activated",status_before:false,status_after:true},
+      good:"The audit trail captures the actor, the before and after state, and the BigCommerce status at the time.",
+      evidence:["lib/audit/allocation-audit.ts:27-94"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"is it sellable?",plain:"Before telling anyone else, the server checks the product is properly set up in BigCommerce.",
+     title:"The BigCommerce gate",
+     callout:"Not ready in BigCommerce = no push, but still a success",calloutKind:"note",
+     tech:{what:"The push only happens when the product has both BigCommerce ids AND a status of exactly OK. A product with no row at all counts as not ready.",
+      validation:["bc_product_id must not be null.","bc_variant_id must not be null.","bc_status, uppercased, must equal 'OK'."],
+      note:"If the gate fails the response is still a success, with skipped: true and a message explaining why. The cell shows a 'BC' marker rather than a tick.",
+      warn:"The table this gate reads can be written by an endpoint that has no permission check at all, so the condition that unlocks external pushes is itself unprotected.",
+      evidence:["lib/sales/allocation-external-sync.ts:92-143"]}},
+    {from:"app",to:"extpg",verb:"PUSH",data:"the product row",plain:"The product record is written to the external database first.",
+     title:"Write the product row externally",
+     tech:{store:"variants (external)",
+      what:"The order matters: the product row is always written before the country row, so the parent exists first.",
+      sql:"select 1 from \"variants\" where \"Sku\" = $1\nupdate \"variants\" set \"BcVariantId\"=$2, \"BcProductId\"=$3,\n  \"ForecastCtyCode\"=$4, \"BblRuleSetItem\"=$5 where \"Sku\"=$1\n-- or an insert when the row does not exist yet",
+      evidence:["lib/external-pg/variant-tables.ts:709-787"]}},
+    {from:"app",to:"extpg",verb:"PUSH",data:"the country allocation",plain:"Then the country-level allocation is written.",
+     title:"Write the country row externally",
+     callout:"No transaction — a failure here leaves the write above committed",calloutKind:"warn",
+     tech:{store:"variant_eligibilities (external)",
+      sql:"select 1 from \"variant_eligibilities\" where \"Sku\"=$1 and \"CountryCode\"=$2\nupdate \"variant_eligibilities\" set \"DetailId\"=$3, \"IsActive\"=$4\nwhere \"Sku\"=$1 and \"CountryCode\"=$2\n-- or an insert when the row does not exist yet",
+      warn:"There is no transaction anywhere in the production external write path — the only begin/rollback in the whole codebase is inside a diagnostic that always rolls back. If this statement fails after the previous one succeeded, the external database is left half-updated with nothing to undo it.",
+      evidence:["lib/external-pg/variant-tables.ts:709-787","lib/external-pg/client.ts:108-152"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"result + sync state",plain:"The cell updates, and a tick appears to show the other system agrees.",
+     title:"Report the outcome",
+     tech:{response:{result:{updatedCount:1,targetStatus:"active",externalSync:{state:"pushed",skipped:false,message:"External PostgreSQL push completed for BBLV6-GL-M-BLK / GB."}}},
+      note:"If the external push failed, the reply is still HTTP 200 — the failure appears only inside the message. The change looks successful unless the operator reads it.",
+      evidence:["components/sales/sales-bike-allocation-table.client.tsx:440-486"]}}
+  ]
+},
+{
+  id:"bc-check", category:"Allocating stock to countries", categoryNote:"Deciding which bikes and parts are sold where, and telling the other systems about it.",
+  name:"Check BigCommerce readiness", subtitle:"Asking the shop which products are actually sellable, and storing the answer so pushes can use it.",
+  page:"/sales/bike-allocation", risk:"Unprotected write",
+  transaction:"None — three separate requests orchestrated by the browser.",
+  ifItFails:"If the last step fails, the screen shows a status that was never saved, so a later push may skip unexpectedly.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"check this page",plain:"The operator presses Check BC Status for the bikes currently on screen.",
+     title:"Press Check BC Status",
+     tech:{what:"Scope is the current page of the matrix only.",evidence:["components/sales/sales-bike-allocation-table.client.tsx:635-745"]}},
+    {from:"browser",to:"neon",verb:"READ",data:"what we already know",plain:"First the app checks what it already knows about these products locally.",
+     title:"Look up the local mapping",
+     tech:{store:"public.bc_item_variant_map",endpoint:"POST /api/bigcommerce/item-map/lookup",auth:"None",
+      payload:{skus:["BBLV6-GL-M-BLK","BBLV6-GL-M-RED"]},
+      validation:["skus must be an array.","At most 2500 entries."],
+      warn:"No permission check. Anyone who can reach this endpoint can read the internal mapping between product codes and BigCommerce ids.",
+      evidence:["app/api/bigcommerce/item-map/lookup/route.ts:4-17"]}},
+    {from:"app",to:"bc",verb:"PUSH",data:"are these sellable?",plain:"The server asks BigCommerce about each product.",
+     title:"Query the BigCommerce catalogue",
+     tech:{endpoint:"POST /api/bigcommerce/variant-status → GET BigCommerce catalog/variants",
+      what:"Products are queried in batches. The whole feature is switched off unless a flag is set to exactly 'true', in which case the call is skipped and nothing is returned.",
+      sql:"GET {BIGCOMMERCE_API_BASE_URL}/stores/{storeHash}/v3/catalog/variants?sku:in=…\n  &include_fields=id,product_id,sku,image_url,inventory_level,\n                  purchasing_disabled,is_visible,product_name\nX-Auth-Token: [secret - omitted]",
+      note:"If the feature flag is off the reply is a perfectly successful empty result, and the screen simply shows 'Not checked'.",
+      evidence:["lib/bigcommerce/client.ts:29-139","app/api/bigcommerce/variant-status/route.ts:4-26"]}},
+    {from:"bc",to:"neon",verb:"UPSERT",data:"the readiness answer",plain:"The answer is saved so that future pushes can rely on it.",
+     title:"Store the readiness status",
+     callout:"This write is what unlocks external pushes — and it is unprotected",calloutKind:"warn",
+     tech:{store:"public.bc_item_variant_map",endpoint:"POST /api/bigcommerce/item-map/upsert",auth:"None",
+      payload:{itemType:"BIKE",sourcePage:"sales.bike_allocation",items:{"BBLV6-GL-M-BLK":{bcProductId:1778151766,bcVariantId:1778151799,bcStatus:"OK"}}},
+      validation:["itemType must be one of BIKE, QPART, PNA or UNKNOWN.","items must be an object keyed by product code, not an array."],
+      warn:"This is the most security-relevant unprotected write in the application. Writing bcStatus 'OK' with both ids is precisely the condition that allows an allocation to be pushed to the external database — and no permission check stands in front of it.",
+      evidence:["app/api/bigcommerce/item-map/upsert/route.ts:21-55"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"a readiness summary",plain:"The BC Status column fills in, with a count of how many products are ready.",
+     title:"Show the summary",
+     tech:{response:"BC checked 12:04 · 48 SKUs · 41 OK / 5 NOK / 2 ERR",
+      evidence:["components/sales/sales-bike-allocation-table.client.tsx:980-985"]}}
+  ]
+},
+{
+  id:"bike-bulk", category:"Allocating stock to countries", categoryNote:"Deciding which bikes and parts are sold where, and telling the other systems about it.",
+  name:"Bulk activate a page of bikes", subtitle:"Changing many allocations at once, with a confirmation that names exactly what will be touched.",
+  page:"/sales/bike-allocation", good:"Scope is enforced server-side",
+  transaction:"The bulk update itself is one statement, so it is atomic. The audit write and the external push that follow are not covered by it.",
+  ifItFails:"The allocation change either happens for all matching rows or none. The pushes that follow can partly succeed, and are reported as counts.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"activate this page",plain:"The operator presses Bulk activate.",
+     title:"Press Bulk activate",
+     tech:{what:"The button sits in a toolbar popover alongside bulk deactivate and the push action.",evidence:["components/sales/sales-bike-allocation-table.client.tsx:949-956"]}},
+    {from:"browser",to:"you",verb:"ASK",data:"confirm the exact scope",plain:"A confirmation appears naming the exact number of bikes and countries, and promising other pages are untouched.",
+     title:"Confirm the scope",
+     callout:"The dialog states the exact counts before anything happens",calloutKind:"ok",
+     tech:{what:"The dialog text is built from the live selection.",
+      response:"Bulk activate on the current page?\n\nThis will activate 24 bike(s) x 2 countr(ies) (GB, DE) on the current\npage only. Bikes on other pages of this filtered result are not touched.\n\n[ Cancel ]  [ Confirm ]",
+      good:"The wording is specific about scope rather than vague, and the server independently hard-codes the same page-only scope — so the promise in the dialog is actually enforced, not just described.",
+      evidence:["components/sales/sales-bike-allocation-table.client.tsx:1045-1052"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the list of bikes and countries",plain:"The browser sends the full list to the server.",
+     title:"POST the bulk change",
+     tech:{endpoint:"POST /api/sales/bike-allocation/bulk-update",auth:"Requires Edit on sales.bike_allocation",
+      payload:{ruleset:"BBLV6_G-LineMY26",ipnCodes:["BBLV6-GL-M-BLK","BBLV6-GL-M-RED"],countryCodes:["GB","DE"],targetStatus:"active"},
+      good:"The scope is hard-coded to 'current_page' on the server. A modified browser request cannot widen it.",
+      evidence:["app/api/sales/bike-allocation/bulk-update/route.ts:8-38"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"all matching allocations",plain:"Every matching allocation is changed in a single statement.",
+     title:"One set-based update",
+     tech:{store:"CPQ_sampler_result",
+      sql:"update CPQ_sampler_result sr set active = $target, updated_at = now()\nwhere ruleset = $ruleset\n  and ipn_code in (select value from jsonb_array_elements_text($ipns))\n  and country_code in (select value from jsonb_array_elements_text($countries))\n  and coalesce(sr.active,false) <> $target\nreturning ipn_code, country_code, active as status_before",
+      good:"A single statement rather than a loop, so this part is atomic and fast, and it returns exactly which rows really changed.",
+      evidence:["lib/sales/bike-allocation/service.ts:377-489"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"one audit row per change",plain:"An audit entry is written for every cell that actually changed.",
+     title:"Batch the audit records",
+     tech:{store:"app_allocation_audit_log",
+      what:"Only genuinely changed rows are audited, and the entry records that this was a bulk action and how wide it was.",
+      payload:{source_process:"bike_allocation_bulk_toggle",action_type:"bulk_activated",metadata:{bulk:true,affectedCount:37,scope:"current_page"}},
+      good:"Recording the scope in the audit metadata is what lets someone later tell a page-scoped change from a catalogue-wide one.",
+      evidence:["lib/sales/bike-allocation/service.ts:435"]}},
+    {from:"app",to:"extpg",verb:"PUSH",data:"the ready subset",plain:"Every product that BigCommerce says is ready is pushed to the external database.",
+     title:"Push the ready ones",
+     tech:{store:"variant_eligibilities (external)",
+      what:"Products are pushed a few at a time rather than all at once, and failures are collected instead of stopping the batch.",
+      note:"Concurrency is capped by a setting that defaults to 5 parallel writes.",
+      warn:"Still no transaction. A batch can be half-applied, and that is reported as a normal success with counts.",
+      evidence:["lib/external-pg/variant-tables.ts:790-930"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"counts",plain:"The operator sees how many changed, how many were pushed, and how many were skipped.",
+     title:"Report the counts",
+     tech:{response:{result:{updatedCount:37,externalSync:{pushed:31,skipped:6,errors:0}}},
+      evidence:["components/sales/sales-bike-allocation-table.client.tsx:555-600"]}}
+  ]
+},
+{
+  id:"qpart-updateall", category:"Allocating stock to countries", categoryNote:"Deciding which bikes and parts are sold where, and telling the other systems about it.",
+  name:"Unlock “Update all” for parts", subtitle:"A second password that widens bulk actions from one page to the entire filtered catalogue.",
+  page:"/sales/qpart-allocation", risk:"Hardcoded fallback password",
+  transaction:"None. The unlock is a credential check; the bulk action that follows is a separate request.",
+  ifItFails:"A wrong password returns 401 and the switch stays off. Bulk actions then stay limited to the current page.",
+  contract:{kind:"warn",title:"A real second factor, weakened by its fallback.",body:"Edit permission is required before the password is even considered, which makes this a genuine second factor. But the password falls back to a value compiled into the server when the environment variable is unset, and the cookie it issues is the same for every user and every session."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"tick Update all",plain:"The operator ticks Update all, intending to act on every filtered page rather than just this one.",
+     title:"Tick the Update all switch",
+     tech:{what:"While off, every bulk action is limited to the visible page. While on, the same buttons act on the whole filtered result.",
+      evidence:["components/sales/sales-qpart-allocation-table.client.tsx:335-360"]}},
+    {from:"browser",to:"you",verb:"ASK",data:"the update-all password",plain:"The browser asks for a separate password.",
+     title:"Prompt for the password",
+     tech:{response:"Enter the Update all password to apply bulk changes across every filtered page.",
+      evidence:["components/sales/sales-qpart-allocation-table.client.tsx:338"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the password",plain:"The password is sent to the server to be checked.",
+     title:"POST the password",
+     tech:{endpoint:"POST /api/sales/qpart-allocation/update-all-auth",
+      auth:"Requires Edit on sales.qpart_allocation FIRST — the password is a second factor, not a substitute",
+      payload:{password:"[secret - omitted]"},statuses:["200","401","403"],
+      good:"Checking permission before even considering the password is the right order. Without Edit access the password is irrelevant.",
+      evidence:["app/api/sales/qpart-allocation/update-all-auth/route.ts:10-29"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"is the password right?",plain:"The server compares the password against its configured value.",
+     title:"Verify the password",
+     callout:"Falls back to a password compiled into the server",calloutKind:"warn",
+     tech:{what:"The comparison is constant-time, but only after a length check — so the length is revealed by construction.",
+      warn:"If the environment variable is not set, verification falls back to a constant in the source. The project's own example environment file calls this 'the unsafe in-code legacy fallback'. The value is deliberately omitted here.",
+      errors:{status:401,body:{ok:false,error:"Invalid update-all password"}},
+      evidence:["lib/sales/qpart-allocation/update-all-auth.ts:6-11"]}},
+    {from:"app",to:"storage",verb:"SAVE",data:"an unlock cookie (1 hour)",plain:"A one-hour unlock is stored in the browser as a secure cookie.",
+     title:"Issue the unlock cookie",
+     tech:{what:"The cookie cannot be read by page scripts and expires after an hour.",
+      note:"Flags: httpOnly, sameSite=strict, one-hour lifetime.",
+      warn:"The cookie value is derived only from the password and a fixed phrase, so it is identical for every user and every session, and stays valid until the password itself is changed.",
+      evidence:["lib/sales/qpart-allocation/update-all-auth.ts:13-35"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"bulk change, all pages",plain:"Now a bulk action applies to every filtered page, not just the visible one.",
+     title:"Bulk action with the wider scope",
+     callout:"Scope silently widens from one page to the whole filtered result",calloutKind:"warn",
+     tech:{endpoint:"POST /api/sales/qpart-allocation/bulk-update",
+      what:"With the unlock present, the server resolves the list of parts itself from the filter criteria rather than trusting a list from the browser.",
+      payload:{targetStatus:"inactive",countryCodes:["GB","DE"],updateAll:true,filterCriteria:{search:"brake"}},
+      good:"Resolving the part list server-side means a modified browser request cannot hand in an arbitrary list for the wider scope.",
+      warn:"The confirmation dialog does not distinguish the two scopes in its wording, so an armed Update all can look exactly like an ordinary page-scoped confirmation.",
+      evidence:["app/api/sales/qpart-allocation/bulk-update/route.ts:14-59"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"every matching allocation",plain:"Every matching part and country is changed, and each change is audited with its scope.",
+     title:"Apply and audit",
+     tech:{store:"qpart_country_allocation",
+      sql:"update qpart_country_allocation set active = $1, updated_at = now()\nwhere part_id in (…) and country_code in (…)\n  and coalesce(active,false) <> $1\nreturning part_id, country_code, active as status_before",
+      note:"The audit entries record scope 'all_filtered_pages', which is the only way to tell afterwards how wide the change really was.",
+      evidence:["lib/sales/qpart-allocation/service.ts"]}}
+  ]
+},
+{
+  id:"qpart-save", category:"Product data", categoryNote:"Maintaining the parts catalogue, its pictures and its translations.",
+  name:"Save a part", subtitle:"Editing a part rewrites all five of its related lists — by deleting them first.",
+  page:"/qpart/parts/[id]", risk:"Can destroy child data",
+  transaction:"None. Ten or more separate statements: five deletes, then the re-inserts.",
+  ifItFails:"Anything deleted before the failure point stays deleted. An invalid channel value is enough to trigger it.",
+  contract:{kind:"warn",title:"The deletes happen before the validation that can reject the save.",body:"Saving a part clears its translations, metadata, channels, bike types and compatibility rules, then writes them back. The channel allow-list is checked during the write-back phase — after the deletes have already committed. A part saved with an invalid channel value loses all five lists and gets none of them back."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"the edited part",plain:"The operator edits a part and presses Save part.",
+     title:"Press Save part",
+     tech:{what:"The form covers the part itself plus five related lists: translations, metadata values, sales channels, compatible bike types and compatibility rules.",
+      note:"The request method switches between create and update depending on whether the part already exists.",
+      evidence:["components/qpart/qpart-part-form-page.tsx:445-475"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"part + five related lists",plain:"Everything is sent to the server in one request.",
+     title:"POST or PUT the part",
+     tech:{endpoint:"PUT /api/qpart/parts/[id]  (POST when creating)",auth:"None — no permission check on any QPart endpoint",
+      payload:{part_number:"QP-10045",default_name:"Brake lever",status:"active",hierarchy_node_id:88,translations:[{locale:"de-DE",name:"Bremsgriff"}],metadata_values:[{metadata_definition_id:7,locale:"en-GB",value:"120"}],channels:["retail"],bike_types:["G Line"],compatibility_rules:[{bike_type:"G Line",feature_label:"Handlebar",option_value:"M"}]},
+      validation:["part_number is required.","default_name is required.","The part must exist when updating, else 404."],
+      warn:"Every one of the 19 QPart endpoints — including delete, CSV import and paid AI translation — has no permission check. The menu entry advertises a permission key that nothing enforces.",
+      evidence:["app/api/qpart/parts/[id]/route.ts:16-28"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"the part itself",plain:"The part record is updated.",
+     title:"Update the part row",
+     tech:{store:"qpart_parts",
+      sql:"update qpart_parts set part_number=$1, status=$2, default_name=$3,\n  default_description=$4, hierarchy_node_id=$5, updated_at=now()\nwhere id=$6 returning id",
+      note:"The default name and description hold the base-language text. Other languages live in a separate table.",
+      evidence:["lib/qpart/parts/service.ts:281-304"]}},
+    {from:"app",to:"neon",verb:"DELETE",data:"all five related lists",plain:"Every related list for this part is deleted — before anything is written back.",
+     title:"Clear the five child tables",
+     callout:"All five lists are now gone, and nothing can undo it",calloutKind:"warn",
+     tech:{store:"5 child tables",
+      what:"Five separate delete statements, each committing immediately.",
+      sql:"delete from qpart_part_translations            where part_id = $1;\ndelete from qpart_part_metadata_values         where part_id = $1;\ndelete from qpart_part_channel_assignment      where part_id = $1;\ndelete from qpart_part_bike_type_compatibility where part_id = $1;\ndelete from qpart_part_compatibility_rules     where part_id = $1;",
+      warn:"These run outside any transaction. From this moment until the re-inserts finish, the part has no translations, no metadata, no channels, no bike types and no compatibility rules — and if the next step throws, that is where it stays.",
+      evidence:["lib/qpart/parts/service.ts:169-260 — saveChildCollections, deletes at 172-176"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"are the channels valid?",plain:"Only now does the server check whether the sales channels are valid values.",
+     title:"Validate the channels — too late",
+     callout:"This check runs after the deletes, not before",calloutKind:"warn",
+     tech:{what:"Channel values are compared against a fixed allow-list. An unrecognised value throws.",
+      errors:{status:400,body:{error:"Invalid channel(s): wholesaleX"}},
+      warn:"This is the failure that makes the ordering dangerous. The operator sees a validation error that reads like nothing happened — but all five lists have already been deleted. Moving this check before the deletes, or wrapping the whole thing in a transaction, would remove the hazard entirely.",
+      evidence:["lib/qpart/parts/service.ts:221","lib/qpart/channels.ts"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"the five lists, rewritten",plain:"If validation passed, all five lists are written back.",
+     title:"Re-insert the child rows",
+     tech:{store:"5 child tables",
+      what:"Rows are inserted one at a time. Base-language translations are deliberately skipped, since that text lives on the part itself.",
+      note:"Because everything is deleted and recreated on every save, the identifiers of these rows change each time.",
+      evidence:["lib/qpart/parts/service.ts:178-260"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"the saved part",plain:"The full part comes back and the form re-renders from it.",
+     title:"Return the saved part",
+     tech:{what:"The response is assembled from six parallel reads: the part plus its five lists, and its country allocations.",
+      evidence:["lib/qpart/parts/service.ts:115-168 — getPartDetail"]}}
+  ]
+},
+{
+  id:"qpart-picture", category:"Product data", categoryNote:"Maintaining the parts catalogue, its pictures and its translations.",
+  name:"Add and remove a part picture", subtitle:"Uploading is safe to retry. Deleting removes the file before the record — and the code admits it.",
+  page:"/qpart/parts/[id]", risk:"Delete order is unrecoverable",
+  transaction:"None, and the two writes are in different systems — a file store and a database.",
+  ifItFails:"On upload, a failed record write leaves an unreferenced file, which the app can recover. On delete, a failed record write leaves a record pointing at a file that no longer exists, which it cannot.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"an image file",plain:"The operator chooses a photo and presses Take picture.",
+     title:"Choose the image",
+     tech:{validation:["The file must be an image, judged only by the type the browser declares.","No size limit is enforced anywhere."],
+      warn:"The declared type is trusted without inspecting the file contents, and there is no maximum size.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:35-36"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the image",plain:"The image is uploaded to the server.",
+     title:"POST the image",
+     tech:{endpoint:"POST /api/qpart/parts/[id]/image?mode=primary",auth:"None",
+      payload:"multipart/form-data\n  image = <binary>\n  ?mode = primary | additional",
+      validation:["The part must exist and have a part number — the storage path is built from it."],
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:25-76"]}},
+    {from:"app",to:"blob",verb:"UPLOAD",data:"the file",plain:"The file is stored in the file service under a predictable name.",
+     title:"Upload to the file store",
+     callout:"Re-uploading silently replaces the previous photo",calloutKind:"note",
+     tech:{store:"Vercel Blob",
+      what:"The path is derived from the part number, so the primary image of a part always lives at the same address.",
+      sql:"PUT https://blob.vercel-storage.com/qparts/QP-10045.jpg\n  ?addRandomSuffix=false&allowOverwrite=true\nAuthorization: Bearer [secret - omitted]\nContent-Type: image/jpeg",
+      note:"Overwrite is enabled, so uploading a new primary picture destroys the old one with no version history. Everything is stored as JPEG regardless of what was actually uploaded.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:46-54"]}},
+    {from:"blob",to:"neon",verb:"UPSERT",data:"the picture record",plain:"A record of the picture is then written to the database.",
+     title:"Save the picture record",
+     tech:{store:"qpart_part_images",
+      what:"Stores the address, the path, the file size and whether this is the primary image.",
+      good:"If this write fails the file is left unreferenced, but because the path is predictable the app can rebuild the record later — there is a reconcile step that does exactly that.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:61-70"]}},
+    {from:"you",to:"app",verb:"ASK",data:"delete this picture",plain:"Later, the operator deletes a picture and confirms.",
+     title:"Delete a picture",
+     tech:{endpoint:"DELETE /api/qpart/parts/[id]/image?imageId=77",auth:"None",
+      what:"A browser confirmation appears; the endpoint itself has no confirmation and no permission check.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:78-105"]}},
+    {from:"app",to:"blob",verb:"DELETE",data:"the file",plain:"The file is deleted from the file service first.",
+     title:"Remove the file — first",
+     callout:"The file goes before the record. This order is the problem.",calloutKind:"warn",
+     tech:{store:"Vercel Blob",
+      what:"If this step fails, nothing else has happened yet and both sides are still intact — that direction is safe.",
+      warn:"But if it succeeds and the next step fails, the file is gone for good while the database still points at it.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:94"]}},
+    {from:"blob",to:"neon",verb:"DELETE",data:"the picture record",plain:"Then the database record is removed.",
+     title:"Remove the record — second",
+     tech:{store:"qpart_part_images",
+      sql:"delete from qpart_part_images where part_id = $1 and id = $2",
+      errors:{status:500,body:{error:"Metadata delete failed after blob delete; manual metadata cleanup may be required."}},
+      warn:"That error message is the code's own admission: the file has already gone and a person has to clean up by hand. Doing these two steps in the opposite order would have made the failure recoverable. Separately, deleting a whole part never deletes its pictures at all, so those files are orphaned.",
+      evidence:["app/api/qpart/parts/[id]/image/route.ts:99-102","lib/qpart/parts/service.ts:305-307"]}}
+  ]
+},
+{
+  id:"qpart-csv", category:"Product data", categoryNote:"Maintaining the parts catalogue, its pictures and its translations.",
+  name:"Import parts from a spreadsheet", subtitle:"A two-stage import: check everything first, then commit. The safest write in this area.",
+  page:"/qpart/parts", good:"Preview before commit",
+  transaction:"None — rows are applied one after another.",
+  ifItFails:"During preview, nothing at all is written. During apply, earlier rows stay committed and the summary reports where it stopped.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"a CSV file",plain:"The operator chooses a spreadsheet and presses Preview import.",
+     title:"Choose the file and preview",
+     tech:{what:"The export on the same screen produces exactly this format, so an export can be edited and re-imported.",
+      evidence:["components/qpart/qpart-parts-list-page.tsx:90-120"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the file, in check-only mode",plain:"The file is sent with a flag saying: check it, do not save anything.",
+     title:"Upload in dry-run mode",
+     callout:"Checking is the default — saving has to be asked for",calloutKind:"ok",
+     tech:{endpoint:"POST /api/qpart/parts/import",auth:"None",
+      payload:"multipart/form-data\n  file   = parts.csv\n  dryRun = \"true\"      ← Preview; \"false\" is Apply",
+      good:"The underlying function defaults to check-only. Someone calling it without thinking gets the safe behaviour.",
+      evidence:["lib/qpart/parts/csv-service.ts:589-653"]}},
+    {from:"app",to:"neon",verb:"READ",data:"field rules and categories",plain:"The server loads the rules it needs to check each row.",
+     title:"Load the validation rules",
+     tech:{store:"qpart_metadata_definitions, qpart_hierarchy_nodes",
+      what:"Each custom field has a declared type that decides how its column is interpreted, and the category path has to be resolved to a real node.",
+      evidence:["lib/qpart/parts/csv-service.ts:415-588"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"every row, every cell",plain:"Every row is checked and problems are collected with their row numbers.",
+     title:"Validate all rows",
+     tech:{what:"Checking continues past a bad row rather than stopping, so the operator sees every problem at once.",
+      validation:["Number fields must parse as numbers.","True/false fields must be true or false.","Date fields must be YYYY-MM-DD.","Multi-select fields must be a JSON array.","Compatibility rules must be a JSON array of objects, each with a bike type, a feature and an option value.","Category levels must be continuous from the top, with no gaps.","The resolved category must not be inactive."],
+      good:"Collecting all the errors instead of failing on the first one is what makes a messy spreadsheet fixable in one pass.",
+      evidence:["lib/qpart/parts/csv-service.ts:160-280"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"a report, nothing saved",plain:"The operator sees what would happen, and exactly which rows are wrong.",
+     title:"Show the preview report",
+     tech:{response:{summary:{dryRun:true,totalRows:120,created:4,updated:110,skipped:0,failed:6,errors:[{row:17,message:"metadata weight_grams expects a number"},{row:42,message:"Hierarchy levels must be contiguous from 1..n"}]}},
+      good:"This preview is the confirmation step. Nothing has touched the database.",
+      evidence:["app/api/qpart/parts/import/route.ts:4-24"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"the same file, for real",plain:"Happy with the report, the operator presses Apply import.",
+     title:"Apply the import",
+     tech:{endpoint:"POST /api/qpart/parts/import  (dryRun = false)",
+      what:"The same file is re-sent with saving enabled.",
+      evidence:["components/qpart/qpart-parts-list-page.tsx:98"]}},
+    {from:"app",to:"neon",verb:"UPSERT",data:"one part per row",plain:"Each row creates or updates a part, together with all its related lists.",
+     title:"Write the rows",
+     tech:{store:"qpart_parts + 5 child tables",
+      what:"Rows are matched on part number, so re-importing the same file converges rather than duplicating.",
+      warn:"Each row's related lists are rewritten with the same delete-then-insert pattern as a manual save, and rows are applied one after another with no transaction. A failure part-way leaves earlier rows committed.",
+      evidence:["lib/qpart/parts/csv-service.ts:589-653"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"final counts",plain:"The operator sees how many parts were created, updated and rejected.",
+     title:"Report the result",
+     tech:{response:{summary:{dryRun:false,totalRows:120,created:4,updated:110,skipped:0,failed:6}},
+      evidence:["lib/qpart/parts/csv-service.ts:589-653"]}}
+  ]
+},
+{
+  id:"qpart-translate", category:"Product data", categoryNote:"Maintaining the parts catalogue, its pictures and its translations.",
+  name:"Translate a field with AI", subtitle:"Sending one field to OpenAI and writing the returned text straight into the catalogue.",
+  page:"/qpart/parts/[id]", risk:"Unprotected and billable",
+  transaction:"None — one write per language.",
+  ifItFails:"Nothing is written if the check fails. A failure part-way through the languages leaves some translated and some not.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"translate this field",plain:"The operator presses Translate with AI next to a field.",
+     title:"Request a translation",
+     tech:{evidence:["components/qpart/qpart-part-form-page.tsx:225-260"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"which part, which field",plain:"The browser tells the server which field to translate.",
+     title:"POST the request",
+     tech:{endpoint:"POST /api/qpart/translations/field",auth:"None",
+      payload:{part_id:3312,core_field:"name"},
+      warn:"No permission check stands in front of this, and every call costs money on the configured OpenAI account.",
+      evidence:["app/api/qpart/translations/field/route.ts:4-50"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"is this allowed and possible?",plain:"The server checks the field can be translated and that there is source text to work from.",
+     title:"Check the preconditions",
+     callout:"Refuses to run on an empty source field",calloutKind:"ok",
+     tech:{validation:["The part must exist.","For a custom field, it must be marked translatable, else it throws.","The field type must be one that can be translated.","The base-language value must not be empty.","At least one target language must be configured.","An OpenAI key must be present."],
+      good:"Refusing to translate an empty field avoids spending money to produce nothing.",
+      errors:{status:400,body:{error:"Base (en-GB) value is required before translation"}},
+      evidence:["lib/qpart/translations/field-translation-service.ts:332-420"]}},
+    {from:"app",to:"openai",verb:"PUSH",data:"the source text",plain:"The source text and the list of target languages are sent to OpenAI.",
+     title:"Call OpenAI",
+     tech:{store:"OpenAI",
+      what:"The reply is constrained to a fixed structure so it can be parsed reliably.",
+      sql:"POST https://api.openai.com/v1/chat/completions\nAuthorization: Bearer [secret - omitted]\n{\n  model: '<OPENAI_TRANSLATION_MODEL>',\n  messages: [ system…, user: '<base text + target locales>' ],\n  response_format: { type: 'json_schema', … }\n}",
+      note:"A malformed or empty reply is rejected rather than stored.",
+      evidence:["lib/qpart/translations/field-translation-service.ts:128-230"]}},
+    {from:"openai",to:"neon",verb:"UPSERT",data:"one row per language",plain:"The returned translations are written straight into the catalogue, one language at a time.",
+     title:"Store the translations",
+     callout:"Machine output is saved directly, with no review step",calloutKind:"warn",
+     tech:{store:"qpart_part_translations",
+      sql:"insert into qpart_part_translations (part_id, locale, name, description)\nvalues ($1,$2,$3,$4)\non conflict (part_id, locale) do update set …",
+      warn:"The translations are persisted immediately rather than offered as suggestions, and each language is a separate write with no transaction — so a failure part-way leaves a partial set.",
+      evidence:["lib/qpart/translations/field-translation-service.ts:420-477"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"the translations",plain:"The translated fields appear on the form, already saved.",
+     title:"Show the result",
+     tech:{response:{translations:[{locale:"de-DE",value:"Bremsgriff"},{locale:"fr-FR",value:"Levier de frein"}]},
+      evidence:["components/qpart/qpart-part-form-page.tsx:231-260"]}}
+  ]
+},
+{
+  id:"create-user", category:"Admin and maintenance", categoryNote:"Managing people, correcting data, and checking the plumbing.",
+  name:"Create a user and set permissions", subtitle:"Adding someone to the system — and the check that lets a stranger do the same thing.",
+  page:"/setup/users", risk:"Authorization fails open",
+  transaction:"None. The account and each permission are separate writes.",
+  ifItFails:"A failure between the account creation and the permissions leaves a user who exists but cannot do anything.",
+  contract:{kind:"warn",title:"The permission check treats “nobody is signed in” as permission granted.",body:"The guard reads: get the current user; if there is no user, return true. A signed-in operator without permission is correctly refused, but a caller with no session at all passes straight through. Being signed in is therefore more restrictive than not being signed in. The same pattern appears on all four endpoints in this area."},
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"name, email, password, permissions",plain:"An administrator fills in the new user's details and ticks their permissions.",
+     title:"Fill in the form",
+     tech:{what:"The permission grid lists every page in the app, each set to none, read, edit or admin. There is also a system-admin switch that bypasses every check.",
+      evidence:["components/setup/user-management-page.tsx:27-39"]}},
+    {from:"browser",to:"app",verb:"PUSH",data:"the new user",plain:"The details are sent to the server.",
+     title:"POST the new user",
+     tech:{endpoint:"POST /api/setup/users",auth:"canManage() — see the warning below",statuses:["201","400","403"],
+      payload:{displayName:"Ops User",email:"ops.user@example.com",password:"[secret - omitted]",isActive:true,isSystemAdmin:false,permissions:{"sales.bike_allocation":"edit","cpq.setup":"read"}},
+      evidence:["app/api/setup/users/route.ts:19-28"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"may you do this?",plain:"The server checks whether the caller is allowed to create users.",
+     title:"The permission check — and its gap",
+     callout:"No session at all passes this check",calloutKind:"warn",
+     tech:{what:"The check asks who is signed in, then decides.",
+      sql:"async function canManage() {\n  const user = await getCurrentUser();\n  if (!user) return true;          // ← no session ⇒ allowed\n  return canEditPage(user, 'setup.users') || user.isSystemAdmin;\n}",
+      warn:"Because a missing session returns true, an unauthenticated caller can create a user with the system-admin flag set and then sign in as a full administrator. The same shape appears on the read, update and status endpoints, so a stranger can also list every account, reset any password, and deactivate every administrator. This is the single most serious finding in the audit.",
+      evidence:["app/api/setup/users/route.ts:8-12","app/api/setup/users/[id]/route.ts:7","app/api/setup/users/[id]/status/route.ts:5"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"are the details valid?",plain:"The details themselves are checked.",
+     title:"Validate the fields",
+     tech:{validation:["A display name is required.","The email must look like an email.","The password must be at least 10 characters.","Permission levels outside the allowed four are silently skipped, not rejected."],
+      note:"Nothing restricts who may set the system-admin flag.",
+      evidence:["lib/auth/user-service.ts:11-19"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"the account",plain:"The account is created, with the password stored as a one-way hash.",
+     title:"Create the account",
+     tech:{store:"app_users",
+      what:"The password is hashed with scrypt and stored as salt and hash together. The original is never kept.",
+      sql:"insert into app_users (email, display_name, password_hash, is_active, is_system_admin)\nvalues ($1, $2, $3, $4, $5) returning id",
+      good:"Password hashing itself is done properly — scrypt, a per-user salt, and a constant-time comparison when signing in.",
+      evidence:["lib/auth/user-service.ts:16"]}},
+    {from:"app",to:"neon",verb:"UPSERT",data:"one row per permission",plain:"Each permission is written as its own record.",
+     title:"Write the permissions",
+     tech:{store:"app_user_page_permissions",
+      what:"A loop, one statement per page.",
+      sql:"insert into app_user_page_permissions (user_id, page_key, permission_level)\nvalues ($1, $2, $3)\non conflict (user_id, page_key) do update set permission_level = excluded.permission_level",
+      warn:"No transaction covers the account and its permissions, so a failure part-way creates a user with an incomplete permission set and no sign that anything went wrong.",
+      evidence:["lib/auth/user-service.ts:20"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"the new user id",plain:"The list refreshes and the new person can sign in.",
+     title:"Confirm creation",
+     tech:{response:{id:"9b2e…"},evidence:["components/setup/user-management-page.tsx:27-36"]}}
+  ]
+},
+{
+  id:"replay-overwrite", category:"Admin and maintenance", categoryNote:"Managing people, correcting data, and checking the plumbing.",
+  name:"Correct stored configurations", subtitle:"Re-running saved configurations against CPQ to check they still produce the same result — and safely correcting the ones that do not.",
+  page:"/admin/cpq-replay-validation", good:"The one properly fenced write",
+  transaction:"The archive and both updates run in a single transaction — the only one in the entire application.",
+  ifItFails:"Inside the internal database it is all-or-nothing. The single external update afterwards is deliberately outside it, and a failure there is reported rather than hidden.",
+  contract:{kind:"ok",title:"This is how the rest of the application should look.",body:"Admin-only, capped at 25 rows, the client's view of each row validated against the live row, the replay re-run on the server so a tampered browser cannot inject a result, the previous content archived before the update inside one transaction, and the archive guarded so a row physically cannot be updated unless its backup landed first."},
+  steps:[
+    {from:"you",to:"app",verb:"ASK",data:"bike type + country",plain:"An administrator picks a bike type and country and loads the matching saved configurations.",
+     title:"Load the references",
+     tech:{endpoint:"GET /api/admin/cpq-replay-validation/references",auth:"Requires Read on admin.cpq_replay_validation",
+      evidence:["app/api/admin/cpq-replay-validation/references/route.ts:18-40"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"run these ones",plain:"They select rows and press Run. Nothing is written — this is purely a check.",
+     title:"Run the replay (read-only)",
+     callout:"Read permission is enough, because nothing is written",calloutKind:"ok",
+     tech:{endpoint:"POST /api/admin/cpq-replay-validation/run",auth:"Requires Read only",runtime:"nodejs, up to 5 minutes",
+      payload:{rows:[{configurationReferenceId:8812,configurationReference:"CFG-20260930-A17C4B9E"}]},
+      good:"The page says so in its own banner, and the code backs it up: this path performs no writes at all, which is what makes it safe to run against live data.",
+      evidence:["app/api/admin/cpq-replay-validation/run/route.ts:33-111"]}},
+    {from:"app",to:"cpq",verb:"PUSH",data:"replay each configuration",plain:"Each saved configuration is rebuilt at CPQ, step by step, exactly as it was originally.",
+     title:"Rebuild each one at CPQ",
+     tech:{what:"For every row: open a session, replay each stored option choice in order, then finalise — and compare the product code that comes out with the one that was stored.",
+      note:"Features that are marked as not configurable are skipped during the replay.",
+      evidence:["lib/admin/cpq-replay-validation/replay.ts:1-500"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"stored vs replayed",plain:"A comparison table shows which configurations still produce the same product code, and which drifted.",
+     title:"Show the comparison",
+     tech:{response:{results:[{configurationReference:"CFG-20260930-A17C4B9E",storedIpn:"BBLV6-GL-M-BLK",replayedIpn:"BBLV6-GL-M-BLK",match:true}],summary:{total:1,matched:1,mismatched:0}},
+      evidence:["components/admin/cpq-replay-validation-page.tsx:300-350"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"apply these corrections",plain:"The administrator selects the drifted rows and presses Apply selected replay results.",
+     title:"Apply the corrections",
+     tech:{endpoint:"POST /api/admin/cpq-replay-validation/overwrite",
+      auth:"Requires ADMIN on admin.cpq_replay_validation — the only admin-level check in the app",
+      payload:{rows:[{configurationReferenceId:8812,configurationReference:"CFG-20260930-A17C4B9E",existingItemCode:"BBLV6-GL-M-BLK",countryCode:"GB"}],overwriteBatchId:"ui-batch-7"},
+      validation:["At most 25 rows per batch.","Each row needs a valid id and reference; invalid entries are counted, not fatal.","Duplicate ids are removed.","The client's view of each row is checked against the live row before anything is touched."],
+      good:"The batch identifier is always generated on the server. A client-supplied one is kept only as a label, so a caller cannot reuse an earlier batch's backup as cover.",
+      evidence:["app/api/admin/cpq-replay-validation/overwrite/route.ts:64-116"]}},
+    {from:"app",to:"cpq",verb:"PUSH",data:"replay again, server-side",plain:"The server re-runs the replay itself rather than trusting what the browser calculated.",
+     title:"Re-run the replay on the server",
+     callout:"The browser's result is never written",calloutKind:"ok",
+     tech:{good:"The browser only chooses which rows to apply. The values that get written are computed fresh on the server, so a modified browser cannot persist a made-up result.",
+      evidence:["lib/admin/cpq-replay-validation/overwrite.ts:479"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"a backup of the current row",plain:"Before changing anything, the current content is copied to an archive.",
+     title:"Archive first — inside the transaction",
+     tech:{store:"app_cpq_replay_overwrite_archive",
+      sql:"-- statement 1 of 3, all inside one transaction\ninsert into app_cpq_replay_overwrite_archive\n  (overwrite_batch_id, configuration_reference_id, previous_row_json, actor_user_id)\nvalues (…)",
+      good:"Archive-before-update, with the person who did it recorded on the archive row.",
+      evidence:["lib/admin/cpq-replay-validation/overwrite.ts:233-290"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"the corrected rows",plain:"Both records are corrected — but only if the backup is definitely there.",
+     title:"Update, guarded by the archive",
+     callout:"A row cannot be updated unless its backup landed first",calloutKind:"ok",
+     tech:{store:"cpq_configuration_references + CPQ_sampler_result",
+      what:"Each update carries a condition requiring the archive row for this batch to exist.",
+      sql:"-- statements 2 and 3, same transaction\nupdate cpq_configuration_references set … where id = $1\n  and exists (select 1 from app_cpq_replay_overwrite_archive\n              where overwrite_batch_id = $batch\n                and configuration_reference_id = $1);\n\nupdate CPQ_sampler_result set … where … and exists ( …same guard… );",
+      good:"This is a genuine safety interlock, not just an ordering convention. Combined with the single transaction, a correction cannot be applied without a recoverable backup. A missing sampler row is skipped rather than invented.",
+      evidence:["lib/admin/cpq-replay-validation/overwrite.ts:233-360"]}},
+    {from:"app",to:"extpg",verb:"PUSH",data:"one identifier, one row",plain:"After the transaction commits, one narrow update is sent to the external database.",
+     title:"The single external update",
+     callout:"Outside the transaction, deliberately, and the code says so",calloutKind:"note",
+     tech:{store:"variant_eligibilities (external)",
+      what:"Exactly one column on one row, matched using the values as they were before the update.",
+      sql:"update \"variant_eligibilities\" set \"DetailId\" = $newDetailId\nwhere \"Sku\" = $previousSku\n  and \"CountryCode\" = $previousCountry\n  and \"DetailId\" = $previousDetailId\n-- no insert, no product-table write, no BigCommerce call, no audit row",
+      note:"The external database is a separate system, so no transaction can span both. The code documents this explicitly rather than leaving it implicit, and a failure here is surfaced rather than swallowed.",
+      good:"An update that matches no row is reported as a warning — never counted as success, and never retried silently.",
+      evidence:["lib/admin/cpq-replay-validation/overwrite.ts:362-440","lib/external-pg/variant-tables.ts:627-680"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"per-row outcome",plain:"Each row reports what happened, including what deliberately did not happen.",
+     title:"Report the outcome",
+     tech:{response:{overwriteBatchId:"srv_9f21c8…",summary:{total:1,applied:1,warnings:0,failed:0},archivedBeforeUpdate:true,externalVariantsUpdated:false,externalRowsInserted:false,bigcommerceUpdated:false},
+      good:"The response asserts the things that did not happen as well as those that did — a useful habit for an operation this sensitive.",
+      evidence:["app/api/admin/cpq-replay-validation/overwrite/route.ts:97-109"]}}
+  ]
+},
+{
+  id:"picture-sync", category:"Admin and maintenance", categoryNote:"Managing people, correcting data, and checking the plumbing.",
+  name:"Collect new picture combinations", subtitle:"Harvesting every option combination seen so far, so pictures can be assigned to them.",
+  page:"/cpq/setup?tab=pictures", risk:"Marks work done before doing it",
+  transaction:"None, and the ordering makes that matter.",
+  ifItFails:"Rows are already marked as processed, so the next run skips them and the harvested combinations are lost rather than retried.",
+  steps:[
+    {from:"you",to:"app",verb:"PUSH",data:"sync now",plain:"An operator presses Sync from sampler results.",
+     title:"Start the sync",
+     tech:{endpoint:"POST /api/cpq/setup/picture-management/sync",auth:"None — the file imports a permission check and never calls it",
+      warn:"This endpoint, and five others in the same area, import an authorization guard and then never invoke it. Their sibling endpoints in the same folders do call it, which makes this look like something that was removed by accident.",
+      evidence:["app/api/cpq/setup/picture-management/sync/route.ts:1-21"]}},
+    {from:"app",to:"neon",verb:"READ",data:"unprocessed configurations",plain:"The server collects every saved configuration it has not looked at yet.",
+     title:"Find the backlog",
+     tech:{store:"CPQ_sampler_result",
+      sql:"select id, json_result from CPQ_sampler_result\nwhere processed_for_image_sync = false\norder by id",
+      evidence:["lib/cpq/setup/service.ts:437-442"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"marked as processed",plain:"Each one is marked as processed — before the things found in it have been saved.",
+     title:"Move the marker — too early",
+     callout:"Marked done before the results are written",calloutKind:"warn",
+     tech:{store:"CPQ_sampler_result",
+      what:"The marker is moved inside the same loop that reads each row, and it commits immediately.",
+      sql:"update CPQ_sampler_result\nset processed_for_image_sync = true,\n    processed_for_image_sync_at = now(), updated_at = now()\nwhere id = $1 and processed_for_image_sync = false\nreturning id",
+      warn:"The combinations harvested from these rows are not written until after the whole loop finishes. If that later step fails, these rows are already flagged as done — and because the next run only looks at unflagged rows, it will skip them. The work is lost rather than retried. Moving this after the inserts, or wrapping both in a transaction, would fix it.",
+      evidence:["lib/cpq/setup/service.ts:474-481"]}},
+    {from:"app",to:"neon",verb:"INSERT",data:"new option combinations",plain:"Only now are the newly discovered combinations saved.",
+     title:"Insert the combinations",
+     tech:{store:"cpq_image_management",
+      what:"Combinations already known are left alone, and new ones inherit the layer order already used for that feature.",
+      sql:"insert into cpq_image_management\n  (feature_label, option_label, option_value, feature_layer_order)\nvalues ($1, $2, $3,\n  coalesce((select min(feature_layer_order) from cpq_image_management\n            where feature_label = $1), <default>))\non conflict (feature_label, option_label, option_value) do nothing",
+      good:"This insert is safe to repeat — existing combinations are skipped rather than duplicated. It is only the marker ordering above that makes the operation as a whole non-repeatable.",
+      evidence:["lib/cpq/setup/service.ts:491-509"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"a summary",plain:"The operator sees how many were scanned, added and already known.",
+     title:"Report the summary",
+     tech:{response:{ok:true,summary:{sourceRowsScanned:120,distinctCombinationsFound:87,inserted:12,skippedExisting:75,unprocessedRowsRemaining:0}},
+      warn:"A failure returns the internal stack trace to the caller, which discloses server file paths.",
+      evidence:["app/api/cpq/setup/picture-management/sync/route.ts:10-19"]}}
+  ]
+},
+{
+  id:"seq-resync", category:"Admin and maintenance", categoryNote:"Managing people, correcting data, and checking the plumbing.",
+  name:"Repair a database counter", subtitle:"A maintenance action guarded by nothing more than a request header anyone can set.",
+  page:"/qpart/admin/sequences", risk:"Guarded by a header only",
+  transaction:"A single database function call.",
+  ifItFails:"Repairing all counters processes them one at a time, so a failure part-way leaves the earlier ones repaired.",
+  steps:[
+    {from:"you",to:"browser",verb:"ASK",data:"open as admin",plain:"The operator switches the app into admin mode using a password.",
+     title:"Turn on admin mode",
+     callout:"The password is compared inside the browser",calloutKind:"warn",
+     tech:{what:"The password is checked in the page's own JavaScript and the result stored in the browser.",
+      warn:"Because the comparison happens in the browser, the password is part of the downloaded code and is not a secret. This mode reveals extra menu entries; it grants nothing on the server by itself. The value is deliberately omitted here.",
+      evidence:["components/shared/app-navigation.tsx:133-143","components/shared/admin-mode-context.tsx:12-42"]}},
+    {from:"browser",to:"app",verb:"READ",data:"counter health",plain:"The page automatically loads the health of every database counter.",
+     title:"Load counter health",
+     tech:{endpoint:"GET /api/admin/db-sequences",auth:"Only requires the header x-admin-mode: true",
+      what:"Runs on page load, with no button pressed.",
+      sql:"select * from app_list_pk_sequence_health()",
+      evidence:["app/api/admin/db-sequences/route.ts:5-15"]}},
+    {from:"app",to:"app",verb:"CHECK",data:"the admin-mode header",plain:"The server checks for a header saying the caller is in admin mode.",
+     title:"The header check",
+     callout:"Any caller can set this header",calloutKind:"warn",
+     tech:{what:"The whole check is a single comparison.",
+      sql:"export function assertAdminMode(req: NextRequest) {\n  const isAdminMode = req.headers.get('x-admin-mode') === 'true';\n  if (!isAdminMode) throw new Error('Admin mode required. …');\n}",
+      warn:"This is not an authorization check. It does not identify anyone; it only checks that a header is present, and any caller can send one. It is the sole protection on the write in the next step.",
+      evidence:["lib/server/admin-mode.ts:3-8"]}},
+    {from:"you",to:"app",verb:"PUSH",data:"repair this counter",plain:"The operator presses Resync on a counter that has drifted.",
+     title:"Request the repair",
+     tech:{endpoint:"POST /api/admin/db-sequences/resync",
+      payload:{table:"public.qpart_parts"},
+      validation:["Either a table name or an all flag must be supplied.","The table name is split and each part re-validated before it reaches the database function."],
+      good:"Re-validating the identifier before passing it to the database function is what stops an arbitrary name being injected there.",
+      evidence:["lib/db/sequence-service.ts:27-76"]}},
+    {from:"app",to:"neon",verb:"UPDATE",data:"the counter value",plain:"The counter is reset so the next inserted record gets a free number.",
+     title:"Reset the counter",
+     tech:{store:"app_resync_pk_sequence() [database function]",
+      sql:"select * from app_resync_pk_sequence($schema, $table)   -- runs setval internally",
+      note:"Resetting is safe to repeat: it converges on the correct value rather than drifting further.",
+      evidence:["lib/db/sequence-service.ts:55-66"]}},
+    {from:"app",to:"you",verb:"RETURN",data:"before and after",plain:"The operator sees the old and new counter values.",
+     title:"Report the result",
+     tech:{response:{row:{table_name:"qpart_parts",previous_value:41100,new_value:41207},scope:"single"},
+      evidence:["components/qpart/qpart-sequence-admin-page.tsx:55-95"]}}
+  ]
+}];
+
+/* =========================== rendering ================================== */
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a,x)=>{const e=document.createElementNS(NS,t);if(a)for(const k in a){if(a[k]!=null)e.setAttribute(k,a[k]);}if(x!=null)e.textContent=x;return e;};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const LANE_W=176, HEAD_H=70, STEP_H=76, TOP=40, LEFT=54, SELF_W=74;
+let J=null, STEP=-1, playing=false, timer=null, rows=[], laneX={}, svgH=0;
+
+const svg=document.getElementById('seq');
+const svgHead=document.getElementById('seqHead');
+const scroller=document.getElementById('scroller');
+const mainEl=document.getElementById('main');
+
+function laneOrder(j){
+  const order=['you','browser','storage','app','neon','extpg','cpq','bc','blob','openai'];
+  const used=new Set();
+  j.steps.forEach(s=>{used.add(s.from);used.add(s.to);});
+  return order.filter(a=>used.has(a));
+}
+
+function buildSeq(j){
+  svg.innerHTML='';svgHead.innerHTML='';
+  rows=[];laneX={};
+  const lanes=laneOrder(j);
+  const W=LEFT*2+lanes.length*LANE_W;
+  const H=TOP+j.steps.length*STEP_H+56;
+  svgH=H;
+  svg.setAttribute('width',W);svg.setAttribute('height',H);
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svgHead.setAttribute('width',W);svgHead.setAttribute('height',HEAD_H);
+  svgHead.setAttribute('viewBox',`0 0 ${W} ${HEAD_H}`);
+
+  const defs=el('defs');
+  const mk=el('marker',{id:'ah',viewBox:'0 0 10 10',refX:9.2,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse',markerUnits:'strokeWidth'});
+  mk.appendChild(el('path',{d:'M0,1 L10,5 L0,9 z',fill:'context-stroke'}));
+  defs.appendChild(mk);
+  svg.appendChild(defs);
+
+  lanes.forEach((a,i)=>{laneX[a]=LEFT+i*LANE_W+LANE_W/2;});
+
+  // sticky header: the actor columns
+  lanes.forEach(a=>{
+    const x=laneX[a],A=ACTORS[a],bw=LANE_W-22;
+    const g=el('g',{transform:`translate(${x-bw/2},10)`});
+    g.appendChild(el('rect',{x:0,y:0,width:bw,height:46,rx:10,class:'actorBox',stroke:A.color}));
+    g.appendChild(el('text',{x:bw/2,y:20,class:'actorName'},A.name));
+    g.appendChild(el('text',{x:bw/2,y:34,class:'actorKind',fill:A.color},A.kind));
+    svgHead.appendChild(g);
+    svgHead.appendChild(el('line',{x1:x,y1:56,x2:x,y2:HEAD_H,class:'lifeline'}));
+  });
+
+  // scrolling body: the lifelines the steps hang from
+  const gL=el('g');
+  lanes.forEach(a=>{
+    const x=laneX[a];
+    gL.appendChild(el('line',{x1:x,y1:0,x2:x,y2:H-30,class:'lifeline'}));
+  });
+  svg.appendChild(gL);
+
+  // steps
+  j.steps.forEach((s,i)=>{
+    const y=TOP+i*STEP_H;
+    const g=el('g',{class:'stepRow','data-i':i});
+    const x1=laneX[s.from],x2=laneX[s.to];
+    const v=VERBS[s.verb]||VERBS.RETURN;
+
+    g.appendChild(el('text',{x:LEFT-14,y:y+4,class:'stepNo'},String(i+1)));
+
+    let midX,labelY=y-11;
+    if(s.from===s.to){
+      const d=`M${x1},${y-14} C${x1+SELF_W},${y-20} ${x1+SELF_W},${y+18} ${x1+6},${y+12}`;
+      g.appendChild(el('path',{d,class:'arrowSelf',stroke:v.c}));
+      midX=x1+SELF_W*0.78;labelY=y-24;
+    }else{
+      g.appendChild(el('line',{x1:x1+(x2>x1?9:-9),y1:y,x2:x2+(x2>x1?-9:9),y2:y,class:'arrow',stroke:v.c}));
+      midX=(x1+x2)/2;
+    }
+    // verb chip
+    const tw=Math.max(46,s.verb.length*7.6+16);
+    const chip=el('g',{class:'verbChip',transform:`translate(${midX-tw/2},${labelY-10})`});
+    chip.appendChild(el('rect',{x:0,y:0,width:tw,height:19,rx:9.5,fill:v.bg,stroke:v.bd}));
+    chip.appendChild(el('text',{x:tw/2,y:10.5,class:'verbTxt',fill:v.c},s.verb));
+    g.appendChild(chip);
+    if(s.data) g.appendChild(el('text',{x:midX,y:y+17,class:'dataTxt'},s.data));
+
+    // callout
+    if(s.callout){
+      const cls=s.calloutKind==='warn'?'warnBox':s.calloutKind==='ok'?'okBox':'noteBox';
+      const tcls=s.calloutKind==='warn'?'warnTxt':s.calloutKind==='ok'?'okTxt':'noteTxt';
+      const cw=Math.min(330,Math.max(150,s.callout.length*5.7+20));
+      const cx=Math.min(LEFT+lanes.length*LANE_W-cw, Math.max(LEFT, midX-cw/2));
+      const cg=el('g',{class:cls,transform:`translate(${cx},${y+26})`});
+      cg.appendChild(el('rect',{x:0,y:0,width:cw,height:22,rx:7}));
+      cg.appendChild(el('text',{x:9,y:15,class:tcls},s.callout));
+      g.appendChild(cg);
+    }
+
+    const hit=el('rect',{x:LEFT-20,y:y-STEP_H/2+8,width:lanes.length*LANE_W+30,height:STEP_H-4,class:'stepHit'});
+    hit.addEventListener('click',()=>goTo(i));
+    g.appendChild(hit);
+
+    svg.appendChild(g);
+    rows.push({g,y,x1,x2,verb:s.verb,color:v.c,self:s.from===s.to});
+  });
+
+  // travelling packet
+  const p=el('g',{class:'packet',id:'packet'});
+  p.appendChild(el('circle',{r:7,fill:'#fff',stroke:'#002FA7','stroke-width':2.4}));
+  p.appendChild(el('circle',{r:2.6,fill:'#002FA7'}));
+  svg.appendChild(p);
+}
+
+/* =========================== playback =================================== */
+function paint(){
+  rows.forEach((r,i)=>{
+    r.g.classList.toggle('shown', i<=STEP);
+    r.g.classList.toggle('past', i<STEP);
+    r.g.classList.toggle('current', i===STEP);
+  });
+  const n=J?J.steps.length:0;
+  document.getElementById('progBar').style.width=(n?((STEP+1)/n*100):0)+'%';
+  document.getElementById('stepCount').textContent=`Step ${Math.max(0,STEP+1)} of ${n}`;
+  document.getElementById('btnPrev').disabled=STEP<0;
+  document.getElementById('btnNext').disabled=STEP>=n-1;
+  const s=STEP>=0?J.steps[STEP]:null;
+  document.getElementById('capNum').textContent=STEP>=0?STEP+1:'0';
+  document.getElementById('capText').innerHTML = s
+    ? esc(s.plain)+(s.data?'<span class="what"><strong>'+esc(s.verb)+'</strong> · '+esc(s.data)+'</span>':'')
+    : 'Press <strong>Play</strong> to walk through this journey.';
+  document.getElementById('summary').hidden = !(STEP>=n-1 && n>0);
+  syncTech();
+  scrollToStep();
+}
+function scrollToStep(){
+  if(STEP<0) {scroller.scrollTop=0;return;}
+  // On narrow screens the SVG is scaled down to fit, so step positions are in scaled
+  // pixels, not user units. Derive the factor from what was actually laid out.
+  const vb=svg.viewBox.baseVal.width||1;
+  const scale=(svg.getBoundingClientRect().width||vb)/vb;
+  const head=document.querySelector('.seqHeadWrap');
+  const headOffset=head?head.getBoundingClientRect().height:HEAD_H+8;
+  const y=headOffset+(TOP+STEP*STEP_H)*scale;
+  const target=y-scroller.clientHeight*0.55;
+  scroller.scrollTo({top:Math.max(0,target),behavior:reduced()?'auto':'smooth'});
+}
+function reduced(){return window.matchMedia('(prefers-reduced-motion: reduce)').matches;}
+
+function animatePacket(i,done){
+  const r=rows[i];const p=document.getElementById('packet');
+  if(!r||reduced()){if(done)done();return;}
+  p.querySelector('circle').setAttribute('stroke',r.color);
+  p.querySelectorAll('circle')[1].setAttribute('fill',r.color);
+  const dur=Math.max(260,speedMs()*0.42);
+  const t0=performance.now();
+  const from=r.self?{x:r.x1,y:r.y-14}:{x:r.x1,y:r.y};
+  const to  =r.self?{x:r.x1+6,y:r.y+12}:{x:r.x2,y:r.y};
+  p.style.opacity='1';
+  function frame(t){
+    const k=Math.min(1,(t-t0)/dur);
+    const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    let x=from.x+(to.x-from.x)*e, y=from.y+(to.y-from.y)*e;
+    if(r.self){const b=Math.sin(Math.PI*e)*SELF_W*0.9;x=r.x1+b;}
+    p.setAttribute('transform',`translate(${x},${y})`);
+    if(k<1) requestAnimationFrame(frame);
+    else{p.style.opacity='0';if(done)done();}
+  }
+  requestAnimationFrame(frame);
+}
+function speedMs(){return Number(document.getElementById('speed').value);}
+
+function goTo(i,animate){
+  stop();
+  STEP=Math.max(-1,Math.min(i,J.steps.length-1));
+  paint();
+  if(animate!==false&&STEP>=0) animatePacket(STEP);
+}
+function next(){
+  if(!J||STEP>=J.steps.length-1) return false;
+  STEP++;paint();animatePacket(STEP);return true;
+}
+function play(){
+  if(!J) return;
+  if(STEP>=J.steps.length-1) STEP=-1;
+  playing=true;setPlayBtn();
+  const tick=()=>{
+    if(!playing) return;
+    if(!next()){stop();return;}
+    timer=setTimeout(tick,speedMs());
+  };
+  tick();
+}
+function stop(){playing=false;clearTimeout(timer);setPlayBtn();}
+function setPlayBtn(){
+  const b=document.getElementById('btnPlay');
+  b.textContent=playing?'❚❚ Pause':'▶ Play';
+  b.setAttribute('aria-label',playing?'Pause':'Play the journey');
+}
+
+/* =========================== technical drawer =========================== */
+function verbPill(v){
+  const x=VERBS[v]||VERBS.RETURN;
+  return `<span class="verbPill" style="background:${x.bg};border-color:${x.bd};color:${x.c}">${esc(v)}</span>`;
+}
+function renderTech(){
+  const t=document.getElementById('tech');
+  if(!J){t.innerHTML='';return;}
+  let h=`<div class="techHead"><button class="techClose" id="techClose" aria-label="Close technical detail">×</button>
+    <h2>Technical detail</h2><p>The sequence of events for <strong>${esc(J.name)}</strong>, in the order they happen.</p></div><div class="techBody">`;
+  if(J.contract){
+    h+=`<div class="note ${J.contract.kind||'plain'}"><strong>${esc(J.contract.title)}</strong><br>${esc(J.contract.body)}</div>`;
+  }
+  J.steps.forEach((s,i)=>{
+    const d=s.tech||{};
+    h+=`<details class="tStep" data-i="${i}"${i===STEP?' open':''}>
+      <summary><span class="tNum">${i+1}</span><span><span class="tTitle">${verbPill(s.verb)} ${esc(s.title||s.plain)}</span>
+      <span class="tSub">${esc(ACTORS[s.from].name)} → ${esc(ACTORS[s.to].name)}${s.data?' · '+esc(s.data):''}</span></span></summary>
+      <div class="tBody">`;
+    if(d.what) h+=`<p style="margin:9px 0 0;font-size:12.5px">${esc(d.what)}</p>`;
+    if(d.endpoint||d.runtime||d.auth){
+      h+=`<h4>Contract</h4><dl class="kv">`;
+      if(d.endpoint) h+=`<dt>Endpoint</dt><dd><code>${esc(d.endpoint)}</code></dd>`;
+      if(d.auth)     h+=`<dt>Authorization</dt><dd>${esc(d.auth)}</dd>`;
+      if(d.runtime)  h+=`<dt>Runtime</dt><dd>${esc(d.runtime)}</dd>`;
+      if(d.statuses) h+=`<dt>Statuses</dt><dd>${d.statuses.map(x=>'<code>'+esc(x)+'</code>').join(' ')}</dd>`;
+      h+=`</dl>`;
+    }
+    if(d.validation&&d.validation.length) h+=`<h4>Validation, in code order</h4><ul class="tight">${d.validation.map(v=>'<li>'+esc(v)+'</li>').join('')}</ul>`;
+    if(d.payload!=null) h+=`<h4>Payload</h4><pre class="code">${esc(typeof d.payload==='string'?d.payload:JSON.stringify(d.payload,null,2))}</pre>`;
+    if(d.sql!=null)     h+=`<h4>SQL / downstream request</h4><pre class="code">${esc(d.sql)}</pre>`;
+    if(d.response!=null)h+=`<h4>Response</h4><pre class="code">${esc(typeof d.response==='string'?d.response:JSON.stringify(d.response,null,2))}</pre>`;
+    if(d.errors!=null)  h+=`<h4>Errors</h4><pre class="code">${esc(typeof d.errors==='string'?d.errors:JSON.stringify(d.errors,null,2))}</pre>`;
+    if(d.note)  h+=`<div class="note plain">${esc(d.note)}</div>`;
+    if(d.warn)  h+=`<div class="note warn"><strong>Watch out.</strong> ${esc(d.warn)}</div>`;
+    if(d.good)  h+=`<div class="note ok"><strong>Done well.</strong> ${esc(d.good)}</div>`;
+    if(d.evidence&&d.evidence.length) h+=`<h4>Source evidence</h4>${d.evidence.map(e=>'<code class="ev">'+esc(e)+'</code>').join('')}`;
+    h+=`</div></details>`;
+  });
+  h+=`</div>`;
+  t.innerHTML=h;
+  t.querySelector('#techClose').addEventListener('click',()=>toggleTech(false));
+  t.querySelectorAll('.tStep').forEach(d=>d.addEventListener('toggle',()=>{
+    // syncTech() opens the entry for the current step, and <details> fires `toggle`
+    // asynchronously when it does. Jumping on that echo would call stop() and kill
+    // playback after one step, so only react when the opened entry is a DIFFERENT step.
+    const i=Number(d.dataset.i);
+    if(d.open && i!==STEP) goTo(i,false);
+  }));
+}
+function syncTech(){
+  const t=document.getElementById('tech');
+  const items=t.querySelectorAll('.tStep');
+  items.forEach((d,i)=>{
+    const cur=i===STEP;
+    d.classList.toggle('isCurrent',cur);
+    if(cur){
+      d.open=true;
+      if(mainEl.classList.contains('techOpen')){
+        const top=d.offsetTop-t.clientHeight*0.3;
+        t.scrollTo({top:Math.max(0,top),behavior:reduced()?'auto':'smooth'});
+      }
+    }
+  });
+}
+function toggleTech(on){
+  const want = on==null ? !mainEl.classList.contains('techOpen') : on;
+  mainEl.classList.toggle('techOpen',want);
+  document.getElementById('btnTech').setAttribute('aria-pressed',String(want));
+  if(want) syncTech();
+}
+
+/* =========================== summary ==================================== */
+function renderSummary(){
+  const box=document.getElementById('summary');
+  // Classify by the DESTINATION actor, not just the verb: a browser→server POST is a
+  // "push" in HTTP terms but is not data leaving for another system, and counting it as
+  // one would overstate what a journey actually sends outside.
+  const EXTERNAL=new Set(['extpg','cpq','bc','blob','openai']);
+  const reads=new Set(),writes=new Set(),pushes=new Set(),local=new Set();
+  J.steps.forEach(s=>{
+    const name=(s.tech&&s.tech.store)||s.data;
+    if(!name) return;
+    if(s.to==='neon'){
+      if(s.verb==='READ') reads.add(name);
+      else if(['INSERT','UPDATE','UPSERT','DELETE'].includes(s.verb)) writes.add(name);
+    } else if(EXTERNAL.has(s.to)){
+      if(['PUSH','UPLOAD','DELETE','UPDATE','UPSERT','INSERT'].includes(s.verb)) pushes.add(name);
+      else if(s.verb==='READ') reads.add(name+' (external)');
+    } else if(s.to==='storage'){
+      local.add(name);
+    }
+  });
+  const cell=(cls,label,val)=>`<div class="sumCell ${cls}"><b>${label}</b><span>${val||'nothing'}</span></div>`;
+  const atomic=J.transaction&&/one transaction|single transaction|single statement|read-only/i.test(J.transaction);
+  box.innerHTML=`<h3>Journey complete — what actually changed</h3><div class="sumGrid">
+    ${cell('','Read',[...reads].join(' · '))}
+    ${cell(writes.size?'warn':'','Written in our database',[...writes].join(' · '))}
+    ${cell(pushes.size?'warn':'','Sent to another system',[...pushes].join(' · '))}
+    ${local.size?cell('','Stored on this device',[...local].join(' · ')):''}
+    ${cell(atomic?'ok':'warn','All-or-nothing?',esc(J.transaction||'—'))}
+    ${J.ifItFails?cell('warn','If a step fails',esc(J.ifItFails)):''}
+  </div>`;
+}
+
+/* =========================== journey selection ========================== */
+function openJourney(id,push){
+  const j=JOURNEYS.find(x=>x.id===id); if(!j) return;
+  J=j;STEP=-1;stop();
+  document.getElementById('landing').hidden=true;
+  document.getElementById('stageWrap').hidden=false;
+  document.getElementById('picker').hidden=false;
+  document.getElementById('btnPicker').hidden=false;
+  mainEl.classList.remove('picking');
+  document.getElementById('jTitle').textContent=j.name;
+  document.getElementById('jSub').textContent=j.subtitle;
+  document.getElementById('jTags').innerHTML=
+    `<span class="tag">${j.steps.length} steps</span>`+
+    `<span class="tag">${esc(j.page||'')}</span>`+
+    (j.risk?`<span class="tag risk">${esc(j.risk)}</span>`:'')+
+    (j.good?`<span class="tag good">${esc(j.good)}</span>`:'');
+  buildSeq(j);renderTech();renderSummary();paint();
+  document.querySelectorAll('#picker .jBtn').forEach(b=>b.setAttribute('aria-current',String(b.dataset.id===id)));
+  document.getElementById('picker').classList.remove('open');
+  if(push!==false) location.hash=id;
+  document.getElementById('jTitle').focus?.();
+}
+function showLanding(){
+  stop();J=null;
+  document.getElementById('landing').hidden=false;
+  document.getElementById('stageWrap').hidden=true;
+  document.getElementById('picker').hidden=true;
+  document.getElementById('btnPicker').hidden=true;
+  mainEl.classList.add('picking');
+  toggleTech(false);
+  if(location.hash) history.replaceState(null,'',location.pathname+location.search);
+}
+function buildPicker(){
+  const cats=[...new Set(JOURNEYS.map(j=>j.category))];
+  const p=document.getElementById('picker');
+  p.innerHTML=cats.map(c=>`<h2>${esc(c)}</h2>`+JOURNEYS.filter(j=>j.category===c).map(j=>
+    `<button class="jBtn" data-id="${j.id}"><span class="jName">${j.risk?'<span class="riskDot"></span>':''}${esc(j.name)}</span><span class="jMeta">${j.steps.length} steps · ${esc(j.page||'')}</span></button>`
+  ).join('')).join('');
+  p.querySelectorAll('.jBtn').forEach(b=>b.addEventListener('click',()=>openJourney(b.dataset.id)));
+
+  const wrap=document.getElementById('cats');
+  wrap.innerHTML=cats.map(c=>{
+    const list=JOURNEYS.filter(j=>j.category===c);
+    return `<section class="cat"><h2>${esc(c)}</h2><p class="catSub">${esc(list[0].categoryNote||'')}</p><div class="cards">`+
+      list.map(j=>`<button class="card" data-id="${j.id}">
+        <h3>${esc(j.name)}</h3>
+        <p class="sub">${esc(j.subtitle)}</p>
+        <div class="foot">
+          <span class="tag steps">${j.steps.length} steps</span>
+          ${j.risk?`<span class="tag risk">${esc(j.risk)}</span>`:''}
+          ${j.good?`<span class="tag good">${esc(j.good)}</span>`:''}
+          <span class="playHint" style="margin-left:auto">▶ Play</span>
+        </div></button>`).join('')+`</div></section>`;
+  }).join('');
+  wrap.querySelectorAll('.card').forEach(b=>b.addEventListener('click',()=>openJourney(b.dataset.id)));
+}
+
+/* =========================== wiring ===================================== */
+document.getElementById('btnPlay').addEventListener('click',()=>playing?stop():play());
+document.getElementById('btnNext').addEventListener('click',()=>{stop();next();});
+document.getElementById('btnPrev').addEventListener('click',()=>goTo(STEP-1));
+document.getElementById('btnRestart').addEventListener('click',()=>{goTo(-1,false);});
+document.getElementById('btnTech').addEventListener('click',()=>toggleTech());
+document.getElementById('btnAll').addEventListener('click',showLanding);
+document.getElementById('btnPicker').addEventListener('click',e=>{
+  const p=document.getElementById('picker');
+  const open=p.classList.toggle('open');
+  e.currentTarget.setAttribute('aria-expanded',String(open));
+});
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input,select,textarea')) return;
+  if(!J) return;
+  if(e.code==='Space'){e.preventDefault();playing?stop():play();}
+  else if(e.key==='ArrowRight'){e.preventDefault();stop();next();}
+  else if(e.key==='ArrowLeft'){e.preventDefault();goTo(STEP-1);}
+  else if(e.key==='r'||e.key==='R'){goTo(-1,false);}
+  else if(e.key==='t'||e.key==='T'){toggleTech();}
+  else if(e.key==='Escape'){showLanding();}
+});
+window.addEventListener('hashchange',()=>{
+  const id=location.hash.slice(1);
+  if(id&&JOURNEYS.some(j=>j.id===id)) openJourney(id,false); else if(!id) showLanding();
+});
+
+buildPicker();
+(function init(){
+  const id=location.hash.slice(1);
+  if(id&&JOURNEYS.some(j=>j.id===id)) openJourney(id,false);
+})();
+console.info('[journeys]',JOURNEYS.length,'journeys,',JOURNEYS.reduce((a,j)=>a+j.steps.length,0),'steps');
+</script>
+</body>
+</html>
