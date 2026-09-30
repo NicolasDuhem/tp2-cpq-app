@@ -4,8 +4,9 @@ Companion document to two artefacts built from the same audit:
 
 | File | What it is | Who it is for |
 |---|---|---|
-| [`docs/data-journeys.html`](./data-journeys.html) | **Start here.** 15 journeys through the app. Pick one, press **Play**, and watch each exchange animate step by step with plain-English narration. Technical detail — endpoint, payload, SQL, validation, source line — sits in a side panel, in the order the events happen. | Anyone: product, operations, a new engineer, a stakeholder who needs to understand a flow |
+| [`docs/data-journeys.html`](./data-journeys.html) | **Start here.** 19 journeys through the app. Pick one, press **Play**, and watch each exchange animate step by step with plain-English narration. Technical detail — endpoint, payload, SQL, validation, source line — sits in a side panel, in the order the events happen. | Anyone: product, operations, a new engineer, a stakeholder who needs to understand a flow |
 | [`docs/data-metro-map.html`](./data-metro-map.html) | The exhaustive reference: 307 stations and 386 edges covering **every** page, control, endpoint, table and external system in one zoomable map. | Engineers auditing coverage, tracing a specific control, or checking nothing was missed |
+| [`docs/JOURNEY_VALIDATION_GUIDE.md`](./JOURNEY_VALIDATION_GUIDE.md) | The brief for validating the journeys against the **running** UAT application in a browser: per-journey scripts, environment caveats, scope rules, and a gap-recording template. | An independent reviewer driving the real app |
 
 The journeys file is a readable path through the same evidence, not a simplification of it: every step carries the same `file:line` citations. It covers the flows that matter; the metro map is what guarantees nothing is missing.
 
@@ -282,7 +283,7 @@ No credential value is embedded. Three in-repo literals were deliberately **not*
 
 ## 7b. The journey player
 
-`docs/data-journeys.html` presents the same audited truth as **15 journeys, 108 steps**, grouped into five categories: Everyday, Building and saving a bike, Allocating stock to countries, Product data, and Admin and maintenance. Each journey is a sequence diagram whose lanes are the real participants — the operator, the browser page, the app server, the internal database, and whichever external systems are involved.
+`docs/data-journeys.html` presents the same audited truth as **19 journeys, 141 steps**, grouped into five categories: Everyday, Building and saving a bike, Allocating stock to countries, Product data, and Admin and maintenance. Each journey is a sequence diagram whose lanes are the real participants — the operator, the browser page, the app server, the internal database, and whichever external systems are involved.
 
 Pressing **Play** reveals one exchange at a time: an arrow with a verb (READ, INSERT, UPSERT, PUSH, CHECK, RETURN…), a label naming the data that moves, and a plain-English sentence in the caption bar. Past steps stay visible but dimmed. Transport controls allow pause, single-step in both directions, restart, three speeds, and clicking any step on the diagram. When the journey ends, a summary states what was read, what was written in our database, what was sent to another system, whether the whole thing is all-or-nothing, and what happens if a step fails.
 
