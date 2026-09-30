@@ -152,6 +152,22 @@ Re-pushes current-page bike/country rows to external `variants` then
 ```
 Single-cell external push, BC-gated. Requires Edit.
 
+## `GET /api/sales/bike-allocation/export`
+
+Query parameters: the same contract as the page (`ruleset`, `bike_type`, `countries`,
+`country_code`, `ipn`, `status`, `features`). `page` / `page_size` are ignored — the export
+always covers every page of the filtered dataset.
+
+Response: `text/csv; charset=utf-8` with a UTF-8 BOM and a
+`Content-Disposition: attachment` filename of `bike-allocation_<YYYY-MM-DD_HHMM>.csv`.
+
+Columns: `ipn_code`, `ruleset`, `bike_type`, `country_code`, `region`, `sub_region`,
+`allocation_status` (`Active` | `Inactive`), `bc_ready` (`yes` | `no`), then one column per
+available feature label.
+
+One row per bike x country. `not_configured` pairs are excluded: they have no allocation
+row. Read-only, so Read on `sales.bike_allocation` is sufficient.
+
 ## `POST /api/sales/bike-allocation/external-status`
 ```json
 {

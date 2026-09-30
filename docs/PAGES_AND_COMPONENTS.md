@@ -354,18 +354,45 @@ No status selected means no status filtering.
 - Purpose: filter/pagination/matrix UX, URL synchronization, transient busy/toast/external-status state, and exact current-page mutation targets.
 - Inputs / props: `rows`, `availableFeatures`, `selectedFeatureColumns`, `countryColumns`, `filterOptions`, `filters`, `pagination`, `canEdit`
 - Layout hierarchy:
-  1. page header + status/sync legend
-  2. collapsible filter panel header with matched-row count, country scope, bulk scope and the action toolbar
-  3. active-filter chips with per-chip removal and Clear all
-  4. Territory hierarchy (Region -> Sub-region -> Country) and Bike filters
-  5. matrix with sticky header and sticky BC Status + `ipn_code` columns
-  6. pagination bar directly below the table
-- Territory selector: country-code search, All/None, region and sub-region toggles with
+  1. page header
+  2. one-row toolbar: Territory popover · Ruleset · Bike type · allocation-status pills ·
+     matched-row count · Active filters popover · Export CSV · Actions popover · Legend popover
+  3. matrix with sticky header, sticky BC + `ipn_code` columns, in-header IPN search,
+     in-header feature-column picker and in-header feature filters
+  4. pagination bar directly below the table
+- There is deliberately **no** full-width filter drawer: it consumed most of the viewport.
+  Every filter is either in the toolbar row, in a popover, or in the column header it
+  belongs to.
+- Territory popover: country-code search, All/None, region and sub-region toggles with
   `selected/total` counts, flag + code per country, `aria-pressed` group buttons, labelled
   checkboxes and visible focus rings. Search only hides options and never alters the
   selection.
 - Rows are rendered exactly as the server returned them; there is no second client-side
   row filter that could disagree with `totalRows`.
+- A trailing filler column absorbs leftover table width so the identity columns keep their
+  natural size when only a few country columns are selected.
+
+### Component: ToolbarPopover
+- File: `components/sales/toolbar-popover.tsx`
+- Purpose: the compact dropdown used for Territory, Active filters, Actions, Legend and the
+  feature-column picker.
+- Behaviour: closes on outside pointer-down and on Escape, returning focus to its trigger.
+  `anchorFixed` positions the panel with `position: fixed` computed from the trigger's
+  bounding rect, which is what lets the column picker escape the matrix's `overflow: auto`
+  container instead of being clipped; it repositions on scroll and resize.
+
+### Component: AllocationMatrixCell
+- File: `components/sales/allocation-matrix-cell.tsx`
+- Purpose: one allocation cell, sized for a matrix that can be 30+ countries wide. Replaces
+  the former shared `StatusCell`, which had no other consumer and was removed.
+- Density rules:
+  - `not_configured` is a small dashed dot, not the words "Not configured". It remains a
+    real button with the same CPQ-launch behaviour and the accessible name
+    `"<ipn> <country>: Not configured"`.
+  - the external-sync state is an icon, never the word "Unknown": `✓` pushed, `≠` out of
+    sync, `BC` pending BigCommerce, `!` push failed, faint `⤴` when not checked (still the
+    manual-push button).
+  - Active/Inactive keep their words, so status is never carried by colour alone.
 
 ### Component: CountryFlagLabel (shared)
 - File: `components/shared/CountryFlagLabel.tsx`
@@ -380,6 +407,11 @@ No status selected means no status filtering.
 - Writes:
   - `CPQ_sampler_result.active`
   - `app_allocation_audit_log` for single and bulk status changes (bulk rows carry `scope: current_page`)
+- CSV export:
+  - `GET /api/sales/bike-allocation/export` with the page's current filter query
+  - covers every page of the filtered dataset, one row per bike x country
+  - `not_configured` pairs are excluded (no allocation row exists behind them)
+  - read-only; Read access is sufficient
 - Notes / constraints:
   - only existing sampler rows are updated by toggle/bulk actions
   - Push all BC OK never changes Active/Inactive

@@ -8,112 +8,24 @@
   min-width: 0;
 }
 
-.header h1 {
-  margin: 0;
-  font-size: 18px;
-}
 
-.header p {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #555;
-}
 
-.filters {
-  background: #fff;
-  border: 1px solid #e2e8f4;
-  border-radius: 10px;
-  padding: 8px 10px;
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
 
-.filterItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #444;
-}
 
-.filterItem select {
-  border: 1px solid #c3c3c3;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 11px;
-}
 
-.multiSelect {
-  min-height: 56px;
-}
 
-.bulkActions {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 6px;
-  display: grid;
-  gap: 6px;
-}
 
-.bulkSummary {
-  font-size: 12px;
-  color: #4d4d4d;
-  font-weight: 700;
-}
 
-.bulkCountryList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  max-height: 84px;
-  overflow: auto;
-  border: 1px solid #ececec;
-  border-radius: 8px;
-  padding: 6px;
-}
 
-.bulkCountryItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #444;
-}
 
-.bulkButtons {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
 
-.bcCheckActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 
-.bulkButtons button {
-  border: 1px solid #b8c8eb;
-  border-radius: 8px;
-  background: #fff;
-  color: #183b7b;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 9px;
-}
 
 .bcCheckMeta {
   font-size: 11px;
   color: #53617b;
 }
 
-.helperText {
-  font-size: 12px;
-  color: #445;
-}
 
 .message {
   border-radius: 8px;
@@ -140,8 +52,8 @@
   background: #fff;
   max-width: 100%;
   width: 100%;
-  max-height: calc(100vh - 360px);
-  min-height: 340px;
+  max-height: calc(100vh - 210px);
+  min-height: 300px;
 }
 
 .matrixTable {
@@ -179,26 +91,11 @@
   z-index: 3;
 }
 
-.filterRow th {
-  top: 30px;
-  z-index: 4;
-  background: #f2f6ff;
-  padding: 3px 4px;
-}
 
-.filterRow input,
-.filterRow select {
-  width: 100%;
-  min-width: 80px;
-  font-size: 11px;
-  border: 1px solid #c6cfea;
-  border-radius: 6px;
-  padding: 4px 6px;
-}
 
 .stickyFirstColumn {
   position: sticky;
-  left: 84px;
+  left: 56px;
   z-index: 5;
   background: #fff;
   min-width: 140px;
@@ -210,18 +107,13 @@
   z-index: 7;
 }
 
-.stickyFirstColumnFilter {
-  position: sticky;
-  left: 84px;
-  z-index: 8;
-  background: #f2f6ff !important;
-}
 
 .stickyBCStatus {
   position: sticky;
   left: 0;
   z-index: 6;
-  min-width: 84px;
+  min-width: 56px;
+  width: 56px;
   background: #fff;
   text-align: center !important;
 }
@@ -231,36 +123,9 @@
   z-index: 9;
 }
 
-.stickyBCStatusFilter {
-  position: sticky;
-  left: 0;
-  z-index: 9;
-  background: #f2f6ff !important;
-}
 
-.statusButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 1.2;
-  font-weight: 700;
-  border: 1px solid transparent;
-  padding: 3px 8px;
-  background: transparent;
-  cursor: pointer;
-}
 
-.statusButton:hover:not(:disabled) {
-  filter: brightness(0.96);
-  box-shadow: 0 0 0 1px rgba(0, 47, 167, 0.2) inset;
-}
 
-.statusButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
 
 .statusActive {
   background: #d7f4df;
@@ -274,11 +139,6 @@
   border-color: #e3b1b1;
 }
 
-.statusNotConfigured {
-  background: #ececec;
-  color: #666;
-  border-color: #d3d3d3;
-}
 
 .bcBadge {
   display: inline-flex;
@@ -325,28 +185,8 @@
 }
 
 
-.cellActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
 
-.pushButton {
-  border: 1px solid #c8d0e8;
-  background: #fff;
-  color: #2b3f72;
-  border-radius: 999px;
-  font-size: 10px;
-  line-height: 1.2;
-  font-weight: 700;
-  padding: 2px 7px;
-  cursor: pointer;
-}
 
-.pushButton:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
 
 
 .paginationBar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:8px; }
@@ -356,11 +196,6 @@
 .paginationCurrent { background:#1f3f7e !important; color:#fff; border-color:#1f3f7e !important; }
 .paginationEllipsis { color:#738; padding:0 2px; }
 
-.filters {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: end;
-}
 .stickyHeader {
   position: sticky;
   top: 0;
@@ -375,18 +210,12 @@
   background: #f9fafb;
 }
 .stickyBCStatus,
-.stickyFirstColumn,
-.stickyBCStatusFilter,
-.stickyFirstColumnFilter {
+.stickyFirstColumn {
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
-}
-@media (max-width: 980px) {
-  .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ==========================================================================
-   Operational redesign: legend, collapsible filter panel, territory selector,
-   status pills, country flags, pagination bar.
+   Territory selector, status pills, country flags, pagination bar
    ========================================================================== */
 
 .srOnly {
@@ -401,45 +230,10 @@
   border: 0;
 }
 
-.legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: #44506b;
-  padding: 2px 2px 0;
-}
 
-.legendTitle {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 700;
-  color: #475569;
-  font-size: 10px;
-}
 
-.legendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-}
 
-.legendMuted {
-  color: #64748b;
-}
 
-.legendDivider {
-  width: 1px;
-  align-self: stretch;
-  min-height: 14px;
-  background: #dde5f6;
-}
 
 .panel {
   background: #fff;
@@ -448,57 +242,12 @@
   box-shadow: 0 4px 14px rgba(17, 35, 77, 0.05);
 }
 
-.filterPanel {
-  padding: 8px 10px;
-  display: grid;
-  gap: 8px;
-}
 
-.filterHeaderRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 
-.filterHeaderLeft,
-.filterHeaderActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
-.collapseToggle {
-  border: 1px solid #c6d1ea;
-  background: #f4f7ff;
-  color: #1f3f7e;
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  min-height: 30px;
-}
 
 .matchChip,
-.scopeChip {
-  font-size: 11px;
-  color: #475569;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f4;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-weight: 600;
-  white-space: nowrap;
-}
 
-.metaRow {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
 
 .guardNote {
   margin: 0;
@@ -577,64 +326,17 @@
   color: #96231f;
 }
 
-.filterSections {
-  display: grid;
-  grid-template-columns: minmax(280px, 420px) 1fr;
-  gap: 10px;
-  align-items: start;
-}
 
-.filterSection {
-  border: 1px solid #e4ebf8;
-  border-radius: 10px;
-  background: #fbfcff;
-  padding: 8px;
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
 
-.sectionTitleRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
 
-.sectionTitleRow h3 {
-  margin: 0;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #1e3a6e;
-}
 
-.sectionTitleActions {
-  display: inline-flex;
-  gap: 6px;
-}
 
-.filterItem input {
-  border: 1px solid #ccd5ea;
-  border-radius: 8px;
-  padding: 6px 9px;
-  font-size: 12px;
-  color: #1e2a45;
-  background: #fff;
-  min-height: 30px;
-}
 
-.helpText {
-  margin: 0;
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.45;
-}
 
 .territoryRegionGrid {
   display: grid;
   gap: 6px;
-  max-height: 340px;
+  max-height: 300px;
   overflow-y: auto;
   align-items: start;
 }
@@ -706,7 +408,7 @@
 
 .countryOptionGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 2px 8px;
   padding: 2px 0 4px 4px;
 }
@@ -734,38 +436,9 @@
   font-size: 11px;
 }
 
-.bikeFilterGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 8px;
-}
 
-.featureFilterGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 8px;
-  border-top: 1px dashed #e4ebf8;
-  padding-top: 8px;
-}
 
-.statusFieldset {
-  border: 1px solid #e4ebf8;
-  border-radius: 8px;
-  background: #fff;
-  margin: 0;
-  padding: 6px 8px 8px;
-  display: grid;
-  gap: 6px;
-}
 
-.statusLegend {
-  font-size: 11px;
-  font-weight: 700;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0 4px;
-}
 
 .segmentedFilter {
   display: inline-flex;
@@ -797,8 +470,10 @@
 
 .countryCell,
 .countryHeader {
-  min-width: 96px;
+  min-width: 74px;
+  width: 74px;
   text-align: center !important;
+  padding: 1px 2px !important;
 }
 
 .countryHeaderLabel,
@@ -853,28 +528,400 @@
 }
 
 /* Visible keyboard focus everywhere in the filter/pagination surfaces. */
-.filterPanel button:focus-visible,
-.filterPanel input:focus-visible,
-.filterPanel select:focus-visible,
+.toolbar button:focus-visible,
+.toolbar input:focus-visible,
+.toolbar select:focus-visible,
+.toolbar a:focus-visible,
+.popoverPanel button:focus-visible,
+.popoverPanel input:focus-visible,
+.headerSearch:focus-visible,
 .paginationControls button:focus-visible,
 .filterChip:focus-visible,
+.cellPill:focus-visible,
+.cellDot:focus-visible,
+.cellSync:focus-visible,
 .territoryGroupButton:focus-visible {
   outline: 2px solid #002fa7;
   outline-offset: 1px;
 }
 
-@media (max-width: 1180px) {
-  .filterSections {
-    grid-template-columns: 1fr;
-  }
-  .territoryRegionGrid {
-    max-height: 260px;
-  }
+
+
+/* ==========================================================================
+   Compact toolbar (replaces the full-width expanding filter drawer)
+   ========================================================================== */
+
+.toolbar {
+  padding: 6px 8px;
+  display: grid;
+  gap: 6px;
 }
 
-@media (max-width: 980px) {
-  .filterHeaderRow {
-    align-items: flex-start;
+.toolbarRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbarSpacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.inlineField select {
+  border: 1px solid #ccd5ea;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #1e2a45;
+  background: #fff;
+  min-height: 30px;
+  max-width: 220px;
+}
+
+/* --- popovers ------------------------------------------------------------ */
+
+.popoverRoot {
+  position: relative;
+  display: inline-flex;
+}
+
+.popoverTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #c6d1ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f3f7e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 9px;
+  min-height: 30px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.popoverTrigger:hover {
+  background: #f4f7ff;
+}
+
+.popoverTriggerActive {
+  border-color: #002fa7;
+  background: #eef3ff;
+}
+
+.popoverBadge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #36538e;
+  background: #eef3ff;
+  border: 1px solid #d2dcf3;
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+
+.popoverCaret {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.popoverPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  min-width: 260px;
+  max-width: min(92vw, 560px);
+  background: #fff;
+  border: 1px solid #d2dcf3;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(17, 35, 77, 0.16);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.popoverPanelRight {
+  left: auto;
+  right: 0;
+}
+
+/* Escapes the matrix scroll container, positioned from JS. */
+.popoverPanelFixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+}
+
+.popoverHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.popoverTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1e3a6e;
+  margin-right: auto;
+}
+
+.popoverSearch {
+  flex: 1 1 120px;
+  min-width: 100px;
+  border: 1px solid #ccd5ea;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  min-height: 28px;
+}
+
+.popoverHint {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.territoryPanel {
+  width: min(92vw, 460px);
+}
+
+.chipPanel {
+  width: min(92vw, 420px);
+}
+
+.actionsPanel {
+  width: min(92vw, 360px);
+}
+
+.legendPanel {
+  width: min(92vw, 400px);
+}
+
+.actionsGrid {
+  display: grid;
+  gap: 5px;
+}
+
+.actionsGrid .bulkActionButton {
+  width: 100%;
+  text-align: center;
+}
+
+.legendList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: #44506b;
+}
+
+.legendList li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* --- in-header controls -------------------------------------------------- */
+
+.headerStack {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.headerSearch {
+  width: 100%;
+  min-width: 90px;
+  font-size: 11px;
+  font-weight: 400;
+  border: 1px solid #c6cfea;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: #fff;
+  color: #1e2a45;
+}
+
+.headerFeatureTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: space-between;
+}
+
+.headerRemoveColumn {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.headerRemoveColumn:hover {
+  color: #96231f;
+  background: #fff1f1;
+}
+
+
+.columnPickerTrigger {
+  padding: 1px 6px;
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.columnPickerTrigger .popoverCaret {
+  display: none;
+}
+
+.columnPickerPanel {
+  width: min(92vw, 280px);
+}
+
+.columnPickerList {
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* --- compact matrix cells ------------------------------------------------ */
+
+.cellWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.cellPill {
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 700;
+  border: 1px solid transparent;
+  padding: 2px 7px;
+  cursor: pointer;
+  min-width: 46px;
+}
+
+.cellPillActive {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #9ad4ad;
+}
+
+.cellPillInactive {
+  background: #f1f3f8;
+  color: #475569;
+  border-color: #d1d5db;
+}
+
+.cellPill:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.cellPill:disabled,
+.cellDot:disabled,
+.cellSync:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* "Not configured": a dot instead of two words, in a 30-column matrix. */
+.cellDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px dashed #cbd5e1;
+  background: #fff;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.cellDot:hover:not(:disabled) {
+  border-style: solid;
+  border-color: #002fa7;
+  color: #002fa7;
+  background: #eef3ff;
+}
+
+.cellSync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+}
+
+.cellSync_pushed {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.cellSync_pending {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.cellSync_error {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.cellSync_outOfSync {
+  background: #fef9c3;
+  border-color: #fde047;
+  color: #854d0e;
+}
+
+/* Neutral "not checked" state: a faint push affordance, not the word "Unknown". */
+.cellSync_unknown {
+  background: transparent;
+  border-color: transparent;
+  color: #cbd5e1;
+}
+
+.cellSync_unknown:hover:not(:disabled) {
+  background: #eef3ff;
+  border-color: #c6d1ea;
+  color: #002fa7;
+}
+
+@media (max-width: 1024px) {
+  .toolbarSpacer {
+    display: none;
   }
   .paginationBar {
     justify-content: center;
@@ -883,4 +930,19 @@
     width: 100%;
     text-align: center;
   }
+}
+
+
+/*
+ * The table is `width: max-content; min-width: 100%`, so with only a couple of
+ * country columns selected the leftover width used to inflate the identity
+ * columns and shove the countries to the far right. This filler column absorbs
+ * it instead, keeping every real column at its natural size.
+ */
+.fillerColumn {
+  width: 100%;
+  min-width: 0;
+  padding: 0 !important;
+  border-right: 0 !important;
+  background: #fff;
 }

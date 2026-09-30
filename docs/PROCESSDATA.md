@@ -79,6 +79,17 @@ Canonical `json_snapshot` and sampler payload source are:
 - A page-number pagination bar (Prev / numbers / ellipses / Next, with a `Page X of Y` and
   matched-row summary) is rendered directly below the table.
 
+### CSV export for sales ops
+
+- **Export CSV** in the toolbar links to `GET /api/sales/bike-allocation/export` with the
+  page's current filter query, so the file matches the on-screen view and covers **every
+  page** of the filtered result, not just the displayed one.
+- One row per bike x country, with `region` / `sub_region` included for pivoting.
+- `Not configured` pairs are excluded: there is no allocation row behind them, so there is
+  nothing to report.
+- Read-only: Read access on `sales.bike_allocation` is enough; no write or external call
+  is made.
+
 ### User actions
 
 - Click Active/Inactive cell → toggle `CPQ_sampler_result.active` via `/api/sales/bike-allocation/toggle`.

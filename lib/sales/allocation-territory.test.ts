@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  buildAllocationExportRecords,
+  buildCountryTerritoryIndex,
   buildPaginationItems,
   buildTerritoryRegions,
   decodeFeatureFilters,
@@ -230,5 +232,101 @@ describe('URL list parsing', () => {
 
   it('ignores an entirely invalid status list', () => {
     assert.deepEqual(parseAllocationStatuses('deleted,;'), []);
+  });
+});
+
+describe('buildAllocationExportRecords', () => {
+  const territoryIndex = buildCountryTerritoryIndex(buildTerritoryRegions(MAPPINGS, ['GB', 'IE', 'EL', 'IT', 'AU']));
+  const countryColumns = ['AU', 'EL', 'GB', 'IE', 'IT'];
+  const rows = [
+    {
+      ipnCode: 'C001',
+      rowRuleset: 'RS-1',
+      bikeType: 'C Line',
+      hasBcIds: true,
+      featureValues: { Colour: 'Racing Green' },
+      countryStatuses: {
+        GB: 'active',
+        IE: 'not_active',
+        IT: 'not_configured',
+        EL: 'active',
+        AU: 'not_configured',
+      } as Record<string, AllocationStatusValue>,
+    },
+    {
+      ipnCode: 'C002',
+      rowRuleset: 'RS-2',
+      bikeType: 'P Line',
+      hasBcIds: false,
+      featureValues: { Colour: 'Cloud Blue' },
+      countryStatuses: { GB: 'not_configured', IE: 'active' } as Record<string, AllocationStatusValue>,
+    },
+  ];
+
+  const run = (selectedCountries: string[] = [], selectedStatuses: AllocationStatusValue[] = []) =>
+    buildAllocationExportRecords({ rows, countryColumns, selectedCountries, selectedStatuses, territoryIndex });
+
+  it('never emits a not_configured pair', () => {
+    const records = run();
+    assert.equal(
+      records.some((record) => (record.allocationStatus as string) === 'not_configured'),
+      false,
+    );
+    assert.deepEqual(
+      records.map((record) => `${record.ipnCode}:${record.countryCode}`),
+      ['C001:EL', 'C001:GB', 'C001:IE', 'C002:IE'],
+    );
+  });
+
+  it('treats a country absent from countryStatuses as not configured', () => {
+    // C002 has no IT/EL/AU keys at all.
+    assert.equal(run().filter((record) => record.ipnCode === 'C002').length, 1);
+  });
+
+  it('narrows to the territory selection', () => {
+    assert.deepEqual(
+      run(['GB']).map((record) => `${record.ipnCode}:${record.countryCode}`),
+      ['C001:GB'],
+    );
+  });
+
+  it('ignores selected countries that are not columns', () => {
+    assert.deepEqual(
+      run(['ZZ']).map((record) => `${record.ipnCode}:${record.countryCode}`),
+      ['C001:EL', 'C001:GB', 'C001:IE', 'C002:IE'],
+    );
+  });
+
+  it('applies the status filter on top of the territory scope', () => {
+    assert.deepEqual(
+      run([], ['not_active']).map((record) => `${record.ipnCode}:${record.countryCode}`),
+      ['C001:IE'],
+    );
+  });
+
+  it('cannot be made to emit not_configured via the status filter', () => {
+    assert.deepEqual(run([], ['not_configured'] as AllocationStatusValue[]), []);
+  });
+
+  it('carries region, sub-region, bc readiness and feature values', () => {
+    const gb = run(['GB'])[0];
+    assert.equal(gb.region, 'EMEA');
+    assert.equal(gb.subRegion, 'UK & Ireland');
+    assert.equal(gb.bcReady, true);
+    assert.equal(gb.ruleset, 'RS-1');
+    assert.equal(gb.bikeType, 'C Line');
+    assert.deepEqual(gb.featureValues, { Colour: 'Racing Green' });
+  });
+
+  it('leaves region blank for a country with no hierarchy entry', () => {
+    const records = buildAllocationExportRecords({
+      rows: [{ ...rows[0], countryStatuses: { ZZ: 'active' } as Record<string, AllocationStatusValue> }],
+      countryColumns: ['ZZ'],
+      selectedCountries: [],
+      selectedStatuses: [],
+      territoryIndex,
+    });
+    assert.equal(records[0].region, '');
+    assert.equal(records[0].subRegion, '');
   });
 });

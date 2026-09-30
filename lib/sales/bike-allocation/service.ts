@@ -1,11 +1,14 @@
 import { sql } from '@/lib/db/client';
 import { listAccountContexts, listCountryMappings } from '@/lib/cpq/setup/service';
 import {
+  buildAllocationExportRecords,
+  buildCountryTerritoryIndex,
   buildPaginationItems,
   buildTerritoryRegions,
   decodeFeatureFilters,
   encodeFeatureFilters,
   rowMatchesAllocationStatuses,
+  type AllocationExportRecord,
   type AllocationStatusValue,
   type TerritoryRegion,
 } from '@/lib/sales/allocation-territory';
@@ -802,6 +805,33 @@ export async function getSalesBikeAllocationPageData(
     countryColumns,
     rows: pagedRows,
     pagination: { page, pageSize, totalRows, totalPages },
+  };
+}
+
+/**
+ * Flatten the current filtered dataset (every page, not just the displayed one)
+ * into one record per bike + country, for CSV export.
+ *
+ * `not_configured` pairs are excluded by design: they have no allocation row, so
+ * there is nothing for sales ops to report on.
+ */
+export async function listSalesBikeAllocationExportRows(filters: SalesBikeAllocationFilters): Promise<{
+  availableFeatures: string[];
+  rows: AllocationExportRecord[];
+}> {
+  const normalizedFilters = normalizeSalesBikeAllocationFilters(filters);
+  const { availableFeatures, countryColumns, rows, filterOptions } = await buildSalesBikeAllocationRows(normalizedFilters);
+  const filteredRows = filterSalesBikeAllocationRows(rows, countryColumns, normalizedFilters);
+
+  return {
+    availableFeatures,
+    rows: buildAllocationExportRecords({
+      rows: filteredRows,
+      countryColumns,
+      selectedCountries: normalizedFilters.countryCodes,
+      selectedStatuses: normalizedFilters.allocationStatuses,
+      territoryIndex: buildCountryTerritoryIndex(filterOptions.territoryRegions),
+    }),
   };
 }
 

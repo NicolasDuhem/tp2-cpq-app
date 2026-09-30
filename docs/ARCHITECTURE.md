@@ -332,3 +332,77 @@ See `docs/PAGES_AND_COMPONENTS.md` for the parameter table. `country_code=XX` de
 
 QPart Allocation was intentionally left untouched by this pass: it keeps its own local
 helpers, so there is no regression risk from the extraction.
+
+
+## Sales Bike Allocation density pass (2026-09-30, follow-up)
+
+Operator feedback after the redesign: the filter panel consumed most of the viewport
+and the matrix was hard to read because every cell carried long words.
+
+### Filter panel replaced by a single-row toolbar
+
+The full-width collapsible filter drawer is gone. Filters now live in one ~30px toolbar
+row, so roughly 34 matrix rows are visible at 1680x1050 instead of about 7.
+
+- **Territory** is a dropdown popover (`components/sales/toolbar-popover.tsx`), so the
+  Region → Sub-region → Country tree costs no vertical space when closed. It keeps the
+  search, All/None, group toggles and selected/total counts.
+- **Ruleset** and **Bike type** are inline selects in the toolbar.
+- **Allocation status** pills are always visible in the toolbar — they are the most-used
+  filter and no longer need a drawer to be opened.
+- **Active filters** collapse into a badge-counted popover with removable chips.
+- **Actions** (bulk activate/deactivate, Push all BC OK, Check BC Status, Refresh
+  external status) move into one popover that states the current-page scope and the
+  blocking reason when bulk is unavailable.
+- **Legend** moves into a popover, so the always-visible legend strip is gone.
+
+`ToolbarPopover` closes on outside pointer-down and Escape, restores focus to its
+trigger, and supports an `anchorFixed` mode that positions the panel with
+`position: fixed` from the trigger's bounding rect — required for the column picker,
+whose trigger sits inside the matrix's `overflow: auto` container and would otherwise be
+clipped.
+
+### Filters moved into the table
+
+- **IPN search** lives in the `ipn_code` column header, which is a sticky column, so it
+  stays reachable while scrolling horizontally.
+- **Feature columns** are chosen from a `+` popover in the same sticky header, with a
+  per-column `×` to hide a column directly from its own header.
+- **Feature contains-filters** sit in the header of their own column.
+
+All three remain server-backed via the existing `ipn`, `cols` and `features` URL
+parameters, so `totalRows` still describes the filtered dataset.
+
+### Cell density
+
+`components/sales/allocation-matrix-cell.tsx` replaces the shared `StatusCell`, which had
+no other consumer and has been removed.
+
+- `not_configured` renders as a small dashed dot instead of the words "Not configured".
+  It is still a real button with the same CPQ-launch behaviour and a full accessible name
+  (`"<ipn> <country>: Not configured"`).
+- The external-sync pill is now an icon, and the neutral state no longer prints the word
+  "Unknown": `✓` pushed, `≠` out of sync, `BC` pending BigCommerce, `!` push failed, and a
+  faint `⤴` when not checked, which is still the manual-push button.
+- Active/Inactive keep their words — status is never conveyed by colour alone — but at a
+  smaller size, and country columns shrank from 96px to 74px.
+- A trailing filler column absorbs leftover table width. Without it, the table's
+  `min-width: 100%` inflated the identity columns and pushed the country columns to the
+  far right whenever only a few countries were selected.
+
+### CSV export
+
+`GET /api/sales/bike-allocation/export` streams the current filtered dataset across every
+page as CSV. It is read-only, so Read access is sufficient, and it accepts the same query
+parameters as the page, so the download always matches the operator's view.
+
+- One row per bike x country.
+- `not_configured` pairs are excluded by design: there is no allocation row behind them.
+- Columns: `ipn_code`, `ruleset`, `bike_type`, `country_code`, `region`, `sub_region`,
+  `allocation_status` (Active/Inactive as shown in the UI), `bc_ready`, then one column per
+  available feature.
+- A UTF-8 BOM is prepended so Excel opens the file in the right encoding.
+
+The flattening rules are a pure function, `buildAllocationExportRecords()` in
+`lib/sales/allocation-territory.ts`, and CSV serialization is `lib/sales/csv.ts`. Both are
+unit tested, including that no status filter can make a `not_configured` pair appear.

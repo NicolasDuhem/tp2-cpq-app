@@ -17,9 +17,9 @@ import {
 } from '@/lib/sales/allocation-territory';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import CountryFlagLabel from '@/components/shared/CountryFlagLabel';
-import MultiSelectDropdown from '@/components/shared/MultiSelectDropdown';
-import StatusCell from '@/components/shared/StatusCell';
 import Toast from '@/components/shared/Toast';
+import AllocationMatrixCell from './allocation-matrix-cell';
+import ToolbarPopover from './toolbar-popover';
 import styles from './sales-bike-allocation-page.module.css';
 
 type Props = {
@@ -104,7 +104,6 @@ export default function SalesBikeAllocationTableClient({
 
   // Filter state is seeded from the server-normalized filters, so refresh,
   // back/forward and shared links all restore the same view.
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [rulesetFilter, setRulesetFilter] = useState(filters.ruleset);
   const [bikeTypeFilter, setBikeTypeFilter] = useState(filters.bike_type);
   const [countrySelection, setCountrySelection] = useState<string[]>(filters.countryCodes);
@@ -747,301 +746,290 @@ export default function SalesBikeAllocationTableClient({
   // --- render -------------------------------------------------------------
 
   const busy = bulkActionRunning || externalStatusLoading;
+  const activeFilterCount = activeFilterChips.length;
+
+  /** CSV download link: same query as the page, so the file matches the view. */
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams(serializedFilters);
+    return `/api/sales/bike-allocation/export?${params.toString()}`;
+  }, [serializedFilters]);
+
+  const statusPills = (
+    <div className={styles.segmentedFilter} role='group' aria-label='Allocation status filter'>
+      {STATUS_OPTIONS.map((option) => {
+        const checked = statusSelection.includes(option.value);
+        return (
+          <label key={option.value} className={checked ? styles.segmentedOptionActive : styles.segmentedOption} title={option.hint}>
+            <input type='checkbox' checked={checked} onChange={(event) => toggleStatus(option.value, event.target.checked)} />
+            <span>{option.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
 
   return (
     <>
-      <div className={styles.legend} role='note'>
-        <span className={styles.legendTitle}>Allocation status</span>
-        <span className={`${styles.legendItem} ${styles.statusActive}`}>✓ Active</span>
-        <span className={`${styles.legendItem} ${styles.statusNotActive}`}>✕ Inactive</span>
-        <span className={`${styles.legendItem} ${styles.statusNotConfigured}`}>– Not configured → opens CPQ</span>
-        <span className={styles.legendDivider} aria-hidden='true' />
-        <span className={styles.legendTitle}>Sync</span>
-        <span className={styles.legendMuted}>BC Status column = BigCommerce readiness · cell pill = external PostgreSQL sync state</span>
-      </div>
+      <section className={`${styles.panel} ${styles.toolbar}`} aria-label='Bike allocation filters and actions'>
+        <div className={styles.toolbarRow}>
+          <ToolbarPopover
+            label='Territory'
+            badge={countryTargets.length ? String(countryTargets.length) : `all ${countryColumns.length}`}
+            triggerClassName={countryTargets.length ? styles.popoverTriggerActive : undefined}
+            panelClassName={styles.territoryPanel}
+            title='Choose the countries in scope'
+          >
+            <div className={styles.popoverHeader}>
+              <input
+                value={territorySearch}
+                onChange={(event) => setTerritorySearch(event.target.value.toUpperCase())}
+                placeholder='Search code…'
+                aria-label='Search country code'
+                className={styles.popoverSearch}
+              />
+              <button type='button' className={styles.textButton} onClick={() => setCountrySelection([...allTerritoryCountries])}>
+                All
+              </button>
+              <button
+                type='button'
+                className={styles.textButton}
+                onClick={() => {
+                  setCountrySelection([]);
+                  setTerritorySearch('');
+                }}
+              >
+                None
+              </button>
+            </div>
+            <p className={styles.popoverHint}>
+              Selected countries set the visible columns, the cells the status filter reads, and the countries bulk
+              actions write to. Nothing selected = all {countryColumns.length} columns shown, bulk actions disabled.
+            </p>
+            <div className={styles.territoryRegionGrid}>
+              {territoryGroups.length === 0 ? (
+                <p className={styles.emptyFilterValues}>No country matches “{territorySearch}”.</p>
+              ) : (
+                territoryGroups.map((region) => {
+                  const regionCodes = region.subRegions.flatMap((subRegion) => subRegion.countries);
+                  const regionSelected = regionCodes.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                  const regionAllSelected = regionCodes.length > 0 && regionSelected === regionCodes.length;
+                  return (
+                    <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
+                      <button
+                        type='button'
+                        className={styles.territoryGroupButton}
+                        aria-pressed={regionAllSelected}
+                        onClick={() => toggleCountryGroup(regionCodes, !regionAllSelected)}
+                      >
+                        <span className={styles.territoryRegionTitle}>{region.region}</span>
+                        <span className={styles.selectionCount}>
+                          {regionSelected}/{regionCodes.length}
+                        </span>
+                      </button>
 
-      <section className={`${styles.panel} ${styles.filterPanel}`} aria-label='Bike allocation filters'>
-        <div className={styles.filterHeaderRow}>
-          <div className={styles.filterHeaderLeft}>
-            <button
-              type='button'
-              className={styles.collapseToggle}
-              onClick={() => setFiltersOpen((prev) => !prev)}
-              aria-expanded={filtersOpen}
-              aria-controls='bike-allocation-filters'
-            >
-              {filtersOpen ? 'Hide filters' : 'Show filters'}
-            </button>
-            <span className={styles.matchChip}>
-              {pagination.totalRows} bike{pagination.totalRows === 1 ? '' : 's'} matched
-            </span>
-            <span className={styles.scopeChip}>
-              Countries in scope: <strong>{countryTargets.length || `all ${countryColumns.length}`}</strong>
-            </span>
-          </div>
+                      {region.subRegions.map((subRegion) => {
+                        const subSelected = subRegion.countries.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                        const subAllSelected = subRegion.countries.length > 0 && subSelected === subRegion.countries.length;
+                        return (
+                          <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
+                            <button
+                              type='button'
+                              className={styles.territoryGroupButton}
+                              aria-pressed={subAllSelected}
+                              onClick={() => toggleCountryGroup(subRegion.countries, !subAllSelected)}
+                            >
+                              <span className={styles.subRegionTitle}>{subRegion.subRegion}</span>
+                              <span className={styles.selectionCount}>
+                                {subSelected}/{subRegion.countries.length}
+                              </span>
+                            </button>
+                            <div className={styles.countryOptionGrid}>
+                              {subRegion.countries.map((countryCode) => (
+                                <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
+                                  <input
+                                    type='checkbox'
+                                    checked={countrySelection.includes(countryCode)}
+                                    onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
+                                  />
+                                  <CountryFlagLabel countryCode={countryCode} className={styles.countryOptionLabel} flagClassName={styles.countryFlag} />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </ToolbarPopover>
 
-          <div className={styles.filterHeaderActions}>
-            <span className={styles.scopeChip} title='Bulk actions never reach beyond the rows listed on this page.'>
-              Bulk scope: <strong>current page</strong> ({rows.length} bike{rows.length === 1 ? '' : 's'})
-            </span>
-            <button type='button' className={styles.bulkActionButton} onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading || busy}>
-              {bcStatusLoading ? 'Checking BC Status…' : 'Check BC Status'}
-            </button>
-            <button type='button' className={styles.bulkActionButton} onClick={() => void refreshExternalStatus()} disabled={busy}>
-              {externalStatusLoading ? 'Refreshing external status…' : 'Refresh external status'}
-            </button>
-            <button
-              type='button'
-              className={`${styles.bulkActionButton} ${styles.bulkActionPrimary}`}
-              onClick={() => setPendingBulkStatus('active')}
-              disabled={busy || Boolean(bulkBlockedReason)}
-              title={bulkBlockedReason ?? 'Activate the bikes on this page for the selected countries'}
+          <label className={styles.inlineField}>
+            <span className={styles.srOnly}>Ruleset</span>
+            <select
+              value={rulesetFilter}
+              onChange={(event) => setRulesetFilter(event.target.value)}
+              title='Ruleset'
+              aria-label='Ruleset'
             >
-              {bulkActionRunning ? 'Working…' : 'Bulk activate'}
-            </button>
-            <button
-              type='button'
-              className={`${styles.bulkActionButton} ${styles.bulkActionDestructive}`}
-              onClick={() => setPendingBulkStatus('not_active')}
-              disabled={busy || Boolean(bulkBlockedReason)}
-              title={bulkBlockedReason ?? 'Deactivate the bikes on this page for the selected countries'}
-            >
-              {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
-            </button>
-            <button
-              type='button'
-              className={styles.bulkActionButton}
-              onClick={() => void runBulkPushBcOk()}
-              disabled={busy || Boolean(bulkBlockedReason)}
-              title={bulkBlockedReason ?? 'Re-push this page to external PostgreSQL without changing Active/Inactive'}
-            >
-              {bulkActionRunning ? 'Working…' : 'Push all BC OK'}
-            </button>
-          </div>
-        </div>
+              <option value=''>All rulesets</option>
+              {filterOptions.rulesets.map((ruleset) => (
+                <option key={ruleset} value={ruleset}>
+                  {ruleset}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        {(bcCheckSummary || externalStatusSummary) && (
-          <div className={styles.metaRow}>
+          <label className={styles.inlineField}>
+            <span className={styles.srOnly}>Bike type</span>
+            <select
+              value={bikeTypeFilter}
+              onChange={(event) => setBikeTypeFilter(event.target.value)}
+              title='Bike type'
+              aria-label='Bike type'
+            >
+              <option value=''>All bike types</option>
+              {filterOptions.bikeTypes.map((bikeType) => (
+                <option key={bikeType} value={bikeType}>
+                  {bikeType}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {statusPills}
+
+          <span className={styles.matchChip}>
+            {pagination.totalRows} bike{pagination.totalRows === 1 ? '' : 's'}
+          </span>
+
+          {activeFilterCount ? (
+            <ToolbarPopover label='Active filters' badge={String(activeFilterCount)} panelClassName={styles.chipPanel}>
+              <div className={styles.chipRow}>
+                {activeFilterChips.map((chip) => (
+                  <button key={chip.key} type='button' className={styles.filterChip} onClick={chip.onRemove}>
+                    {chip.label}
+                    <span aria-hidden='true'>×</span>
+                    <span className={styles.srOnly}>(remove filter)</span>
+                  </button>
+                ))}
+                <button type='button' className={styles.textButton} onClick={clearAllFilters}>
+                  Clear all
+                </button>
+              </div>
+            </ToolbarPopover>
+          ) : null}
+
+          <span className={styles.toolbarSpacer} />
+
+          <a
+            className={styles.bulkActionButton}
+            href={exportHref}
+            title='Download every Active/Inactive bike-country pair in the current filtered result (all pages). Not configured is excluded.'
+          >
+            Export CSV
+          </a>
+
+          <ToolbarPopover label='Actions' badge={`page ${rows.length}`} panelClassName={styles.actionsPanel} title='Bulk and sync actions' alignRight>
+            <p className={styles.popoverHint}>
+              Bulk actions apply to the <strong>{rows.length} bike{rows.length === 1 ? '' : 's'} on this page</strong> and the{' '}
+              <strong>
+                {countryTargets.length} selected countr{countryTargets.length === 1 ? 'y' : 'ies'}
+              </strong>
+              . Other pages of this filtered result are untouched.
+            </p>
+            {bulkBlockedReason ? (
+              <p className={styles.guardNote} role='status'>
+                Bulk actions unavailable: {bulkBlockedReason}
+              </p>
+            ) : null}
+            <div className={styles.actionsGrid}>
+              <button
+                type='button'
+                className={`${styles.bulkActionButton} ${styles.bulkActionPrimary}`}
+                onClick={() => setPendingBulkStatus('active')}
+                disabled={busy || Boolean(bulkBlockedReason)}
+              >
+                {bulkActionRunning ? 'Working…' : 'Bulk activate'}
+              </button>
+              <button
+                type='button'
+                className={`${styles.bulkActionButton} ${styles.bulkActionDestructive}`}
+                onClick={() => setPendingBulkStatus('not_active')}
+                disabled={busy || Boolean(bulkBlockedReason)}
+              >
+                {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
+              </button>
+              <button
+                type='button'
+                className={styles.bulkActionButton}
+                onClick={() => void runBulkPushBcOk()}
+                disabled={busy || Boolean(bulkBlockedReason)}
+                title='Re-push this page to external PostgreSQL without changing Active/Inactive'
+              >
+                {bulkActionRunning ? 'Working…' : 'Push all BC OK'}
+              </button>
+              <button type='button' className={styles.bulkActionButton} onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading || busy}>
+                {bcStatusLoading ? 'Checking BC…' : 'Check BC Status'}
+              </button>
+              <button type='button' className={styles.bulkActionButton} onClick={() => void refreshExternalStatus()} disabled={busy}>
+                {externalStatusLoading ? 'Refreshing…' : 'Refresh external status'}
+              </button>
+            </div>
             {bcCheckSummary ? (
-              <span className={styles.bcCheckMeta}>
-                BC checked {bcCheckSummary.checkedAt} · {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
-              </span>
+              <p className={styles.bcCheckMeta}>
+                BC checked {bcCheckSummary.checkedAt} · {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK /{' '}
+                {bcCheckSummary.err} ERR
+              </p>
             ) : null}
             {externalStatusSummary ? (
-              <span className={styles.bcCheckMeta}>
-                External refreshed {externalStatusSummary.checkedAt} · {externalStatusSummary.pairCount} pairs · {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
-              </span>
+              <p className={styles.bcCheckMeta}>
+                External refreshed {externalStatusSummary.checkedAt} · {externalStatusSummary.pairCount} pairs ·{' '}
+                {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
+              </p>
             ) : null}
-          </div>
-        )}
+          </ToolbarPopover>
 
-        {bulkBlockedReason && canEdit ? (
-          <p className={styles.guardNote} role='status'>
-            Bulk actions unavailable: {bulkBlockedReason}
-          </p>
-        ) : null}
+          <ToolbarPopover label='Legend' panelClassName={styles.legendPanel} title='What the cells mean' alignRight>
+            <ul className={styles.legendList}>
+              <li>
+                <span className={`${styles.cellPill} ${styles.cellPillActive}`}>Active</span> allocated — click to deactivate
+              </li>
+              <li>
+                <span className={`${styles.cellPill} ${styles.cellPillInactive}`}>Inactive</span> row exists, not allocated — click to activate
+              </li>
+              <li>
+                <span className={styles.cellDot}>•</span> not configured — click to open the CPQ configurator
+              </li>
+              <li>
+                <span className={`${styles.cellSync} ${styles.cellSync_pushed}`}>✓</span> pushed to external PostgreSQL
+              </li>
+              <li>
+                <span className={`${styles.cellSync} ${styles.cellSync_outOfSync}`}>≠</span> external row disagrees with Neon
+              </li>
+              <li>
+                <span className={`${styles.cellSync} ${styles.cellSync_pending}`}>BC</span> waiting on BigCommerce status
+              </li>
+              <li>
+                <span className={`${styles.cellSync} ${styles.cellSync_error}`}>!</span> last push failed
+              </li>
+              <li>
+                <span className={`${styles.cellSync} ${styles.cellSync_unknown}`}>⤴</span> not checked — click to push manually
+              </li>
+            </ul>
+            <p className={styles.popoverHint}>
+              The <strong>BC Status</strong> column is BigCommerce readiness. The icon inside each cell is the external
+              PostgreSQL sync state. Use <strong>Refresh external status</strong> to populate it.
+            </p>
+          </ToolbarPopover>
+        </div>
+
         {!canEdit ? (
           <p className={styles.guardNote} role='status'>
             Read-only access: allocation changes and pushes are disabled.
           </p>
-        ) : null}
-
-        {activeFilterChips.length ? (
-          <div className={styles.chipRow} aria-label='Active filters'>
-            {activeFilterChips.map((chip) => (
-              <button key={chip.key} type='button' className={styles.filterChip} onClick={chip.onRemove}>
-                {chip.label}
-                <span aria-hidden='true'>×</span>
-                <span className={styles.srOnly}>(remove filter)</span>
-              </button>
-            ))}
-            <button type='button' className={styles.textButton} onClick={clearAllFilters}>
-              Clear all
-            </button>
-          </div>
-        ) : null}
-
-        {filtersOpen ? (
-          <div className={styles.filterSections} id='bike-allocation-filters'>
-            <section className={styles.filterSection} aria-labelledby='territory-heading'>
-              <div className={styles.sectionTitleRow}>
-                <h3 id='territory-heading'>Territory</h3>
-                <div className={styles.sectionTitleActions}>
-                  <button type='button' className={styles.textButton} onClick={() => setCountrySelection([...allTerritoryCountries])}>
-                    All
-                  </button>
-                  <button
-                    type='button'
-                    className={styles.textButton}
-                    onClick={() => {
-                      setCountrySelection([]);
-                      setTerritorySearch('');
-                    }}
-                  >
-                    None
-                  </button>
-                </div>
-              </div>
-              <label className={styles.filterItem}>
-                <span>Search country code</span>
-                <input
-                  value={territorySearch}
-                  onChange={(event) => setTerritorySearch(event.target.value.toUpperCase())}
-                  placeholder='e.g. GB'
-                  aria-describedby='territory-help'
-                />
-              </label>
-              <p className={styles.helpText} id='territory-help'>
-                Selected countries decide which columns are shown, which cells the status filter looks at, and which
-                countries bulk actions write to. Search only hides options — it never changes the selection. With nothing
-                selected, all {countryColumns.length} columns are shown and bulk actions stay disabled.
-              </p>
-
-              <div className={styles.territoryRegionGrid}>
-                {territoryGroups.length === 0 ? (
-                  <p className={styles.emptyFilterValues}>No country matches “{territorySearch}”.</p>
-                ) : (
-                  territoryGroups.map((region) => {
-                    const regionCodes = region.subRegions.flatMap((subRegion) => subRegion.countries);
-                    const regionSelected = regionCodes.filter((countryCode) => countrySelection.includes(countryCode)).length;
-                    const regionAllSelected = regionCodes.length > 0 && regionSelected === regionCodes.length;
-                    return (
-                      <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
-                        <button
-                          type='button'
-                          className={styles.territoryGroupButton}
-                          aria-pressed={regionAllSelected}
-                          onClick={() => toggleCountryGroup(regionCodes, !regionAllSelected)}
-                        >
-                          <span className={styles.territoryRegionTitle}>{region.region}</span>
-                          <span className={styles.selectionCount}>
-                            {regionSelected}/{regionCodes.length}
-                          </span>
-                        </button>
-
-                        {region.subRegions.map((subRegion) => {
-                          const subSelected = subRegion.countries.filter((countryCode) => countrySelection.includes(countryCode)).length;
-                          const subAllSelected = subRegion.countries.length > 0 && subSelected === subRegion.countries.length;
-                          return (
-                            <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
-                              <button
-                                type='button'
-                                className={styles.territoryGroupButton}
-                                aria-pressed={subAllSelected}
-                                onClick={() => toggleCountryGroup(subRegion.countries, !subAllSelected)}
-                              >
-                                <span className={styles.subRegionTitle}>{subRegion.subRegion}</span>
-                                <span className={styles.selectionCount}>
-                                  {subSelected}/{subRegion.countries.length}
-                                </span>
-                              </button>
-                              <div className={styles.countryOptionGrid}>
-                                {subRegion.countries.map((countryCode) => (
-                                  <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
-                                    <input
-                                      type='checkbox'
-                                      checked={countrySelection.includes(countryCode)}
-                                      onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
-                                    />
-                                    <CountryFlagLabel countryCode={countryCode} className={styles.countryOptionLabel} flagClassName={styles.countryFlag} />
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-
-            <section className={styles.filterSection} aria-labelledby='bike-filters-heading'>
-              <div className={styles.sectionTitleRow}>
-                <h3 id='bike-filters-heading'>Bike filters</h3>
-              </div>
-
-              <div className={styles.bikeFilterGrid}>
-                <label className={styles.filterItem}>
-                  <span>Ruleset</span>
-                  <select value={rulesetFilter} onChange={(event) => setRulesetFilter(event.target.value)}>
-                    <option value=''>All</option>
-                    {filterOptions.rulesets.map((ruleset) => (
-                      <option key={ruleset} value={ruleset}>
-                        {ruleset}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={styles.filterItem}>
-                  <span>Bike type</span>
-                  <select value={bikeTypeFilter} onChange={(event) => setBikeTypeFilter(event.target.value)}>
-                    <option value=''>All</option>
-                    {filterOptions.bikeTypes.map((bikeType) => (
-                      <option key={bikeType} value={bikeType}>
-                        {bikeType}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={styles.filterItem}>
-                  <span>IPN code contains</span>
-                  <input value={ipnFilter} onChange={(event) => setIpnFilter(event.target.value)} placeholder='Search IPN code' />
-                </label>
-
-                <div className={styles.filterItem}>
-                  <span>Feature columns</span>
-                  <MultiSelectDropdown options={availableFeatures} selected={selectedFeatures} onChange={updateSelectedFeatures} placeholder='None' />
-                </div>
-              </div>
-
-              <fieldset className={styles.statusFieldset}>
-                <legend className={styles.statusLegend}>Allocation status</legend>
-                <div className={styles.segmentedFilter}>
-                  {STATUS_OPTIONS.map((option) => {
-                    const checked = statusSelection.includes(option.value);
-                    return (
-                      <label
-                        key={option.value}
-                        className={checked ? styles.segmentedOptionActive : styles.segmentedOption}
-                        title={option.hint}
-                      >
-                        <input
-                          type='checkbox'
-                          checked={checked}
-                          onChange={(event) => toggleStatus(option.value, event.target.checked)}
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <p className={styles.helpText}>
-                  A bike is kept when <strong>any</strong> country in scope has <strong>any</strong> selected status. Country
-                  scope is your Territory selection, or every country column when nothing is selected. Selecting nothing
-                  here disables status filtering.
-                </p>
-              </fieldset>
-
-              {visibleFeatureColumns.length ? (
-                <div className={styles.featureFilterGrid}>
-                  {visibleFeatureColumns.map((feature) => (
-                    <label key={`feature-filter-${feature}`} className={styles.filterItem}>
-                      <span>{feature} contains</span>
-                      <input
-                        value={featureFilters[feature] ?? ''}
-                        onChange={(event) => setFeatureFilterValue(feature, event.target.value)}
-                        placeholder='contains'
-                      />
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          </div>
         ) : null}
       </section>
 
@@ -1067,7 +1055,7 @@ export default function SalesBikeAllocationTableClient({
       {rows.length === 0 ? (
         <div className={styles.empty}>
           <strong>No bikes match these filters.</strong>
-          <div className={styles.emptyHint}>Try clearing a status, widening the territory selection, or resetting the ruleset.</div>
+          <div className={styles.emptyHint}>Try clearing a status, widening the Territory selection, or resetting the ruleset.</div>
         </div>
       ) : (
         <>
@@ -1076,15 +1064,86 @@ export default function SalesBikeAllocationTableClient({
               <thead className={styles.stickyHeader}>
                 <tr>
                   <th scope='col' className={styles.stickyBCStatus}>
-                    BC Status
+                    BC
                   </th>
                   <th scope='col' className={styles.stickyFirstColumn}>
-                    ipn_code
+                    <div className={styles.headerStack}>
+                      <span className={styles.headerFeatureTitle}>
+                        <span>ipn_code</span>
+                        <ToolbarPopover
+                              label='+'
+                              badge={selectedFeatures.length ? String(selectedFeatures.length) : undefined}
+                              panelClassName={styles.columnPickerPanel}
+                              triggerClassName={styles.columnPickerTrigger}
+                              title='Show or hide feature columns'
+                              anchorFixed
+                            >
+                              <div className={styles.popoverHeader}>
+                                <strong className={styles.popoverTitle}>Feature columns</strong>
+                                <button type='button' className={styles.textButton} onClick={() => updateSelectedFeatures([...availableFeatures])}>
+                                  All
+                                </button>
+                                <button type='button' className={styles.textButton} onClick={() => updateSelectedFeatures([])}>
+                                  None
+                                </button>
+                              </div>
+                              {availableFeatures.length === 0 ? (
+                                <p className={styles.emptyFilterValues}>No feature data on these rows.</p>
+                              ) : (
+                                <div className={styles.columnPickerList}>
+                                  {availableFeatures.map((feature) => (
+                                    <label key={`col-${feature}`} className={styles.checkboxOption}>
+                                      <input
+                                        type='checkbox'
+                                        checked={selectedFeatures.includes(feature)}
+                                        onChange={(event) =>
+                                          updateSelectedFeatures(
+                                            event.target.checked
+                                              ? [...selectedFeatures, feature]
+                                              : selectedFeatures.filter((value) => value !== feature),
+                                          )
+                                        }
+                                      />
+                                      <span>{feature}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </ToolbarPopover>
+                      </span>
+                      <input
+                        value={ipnFilter}
+                        onChange={(event) => setIpnFilter(event.target.value)}
+                        placeholder='Search…'
+                        aria-label='Search ipn_code'
+                        className={styles.headerSearch}
+                      />
+                    </div>
                   </th>
                   {!effectiveRuleset ? <th scope='col'>ruleset</th> : null}
                   {visibleFeatureColumns.map((feature) => (
                     <th scope='col' key={feature}>
-                      {feature}
+                      <div className={styles.headerStack}>
+                        <span className={styles.headerFeatureTitle}>
+                          {feature}
+                          <button
+                            type='button'
+                            className={styles.headerRemoveColumn}
+                            onClick={() => updateSelectedFeatures(selectedFeatures.filter((value) => value !== feature))}
+                            title={`Hide the ${feature} column`}
+                            aria-label={`Hide the ${feature} column`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                        <input
+                          value={featureFilters[feature] ?? ''}
+                          onChange={(event) => setFeatureFilterValue(feature, event.target.value)}
+                          placeholder='contains'
+                          aria-label={`Filter ${feature}`}
+                          className={styles.headerSearch}
+                        />
+                      </div>
                     </th>
                   ))}
                   {renderedCountries.map((country) => (
@@ -1092,6 +1151,7 @@ export default function SalesBikeAllocationTableClient({
                       <CountryFlagLabel countryCode={country} className={styles.countryHeaderLabel} flagClassName={styles.countryFlag} />
                     </th>
                   ))}
+                  <th className={styles.fillerColumn} aria-hidden='true' />
                 </tr>
               </thead>
               <tbody>
@@ -1099,7 +1159,7 @@ export default function SalesBikeAllocationTableClient({
                   <tr key={`${row.rowRuleset}::${row.ipnCode}`} className={styles.tableBodyRow}>
                     <td className={styles.stickyBCStatus}>
                       {bcStatusLoading && !bcStatusBySku[row.ipnCode] ? (
-                        <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking…</span>
+                        <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>…</span>
                       ) : bcStatusBySku[row.ipnCode]?.status ? (
                         bcStatusBySku[row.ipnCode].status === 'NOK' ? (
                           <span className='nokTooltipWrap' title='BC Status: Not OK — this configuration has not passed BigCommerce validation'>
@@ -1110,7 +1170,9 @@ export default function SalesBikeAllocationTableClient({
                           <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
                         )
                       ) : (
-                        <span className={styles.bcNotChecked}>Not checked</span>
+                        <span className={styles.bcNotChecked} title='BigCommerce status not checked yet'>
+                          –
+                        </span>
                       )}
                     </td>
                     <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
@@ -1122,32 +1184,34 @@ export default function SalesBikeAllocationTableClient({
                       const status = row.countryStatuses[country] ?? 'not_configured';
                       const actionKey = `${row.rowRuleset}:${row.ipnCode}:${country}`;
                       const isBusy = cellActionKey === actionKey;
+                      const isPushBusy = pushActionKey === actionKey;
                       const syncDisplay = getSyncDisplay(row.ipnCode, country, status);
-                      const toggleDisabled = isBusy || bulkActionRunning || pushActionKey === actionKey || (!canEdit && status !== 'not_configured');
+                      const toggleDisabled = isBusy || bulkActionRunning || isPushBusy || (!canEdit && status !== 'not_configured');
                       return (
                         <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`} className={styles.countryCell}>
-                          <StatusCell
-                            status={status === 'not_active' ? 'inactive' : status}
+                          <AllocationMatrixCell
+                            status={status}
                             onToggle={() => void onCountryCellClick(row, country, status)}
                             onPush={row.hasBcIds && canEdit ? () => void pushRowToExternal(row, country) : undefined}
-                            disabled={toggleDisabled}
-                            pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey || !canEdit}
-                            statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
-                            pushLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
-                            syncLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
+                            toggleDisabled={toggleDisabled}
+                            pushDisabled={bulkActionRunning || isBusy || isPushBusy || !canEdit}
+                            busy={isBusy}
+                            pushBusy={isPushBusy}
                             syncTone={syncDisplay.tone}
-                            title={
+                            syncTitle={`${row.ipnCode} ${country} — external sync: ${syncDisplay.label}${canEdit ? '. Click to push manually.' : ''}`}
+                            toggleTitle={
                               status === 'not_configured'
-                                ? `Open CPQ configurator for ${row.ipnCode} in ${country}`
+                                ? `Not configured — open the CPQ configurator for ${row.ipnCode} in ${country}`
                                 : canEdit
-                                  ? `Toggle ${row.ipnCode} ${country} (currently ${statusLabel(status)})`
-                                  : 'Read-only access'
+                                  ? `${statusLabel(status)} — click to ${status === 'active' ? 'deactivate' : 'activate'} ${row.ipnCode} in ${country}`
+                                  : `${statusLabel(status)} (read-only)`
                             }
-                            pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : `${syncDisplay.label}: click to manually retry external PostgreSQL sync for this bike + country`}
+                            ariaLabel={`${row.ipnCode} ${country}: ${statusLabel(status)}`}
                           />
                         </td>
                       );
                     })}
+                    <td className={styles.fillerColumn} />
                   </tr>
                 ))}
               </tbody>
@@ -1181,26 +1245,13 @@ export default function SalesBikeAllocationTableClient({
                   </button>
                 </span>
               ))}
-              <button
-                type='button'
-                onClick={() => goToPage(pagination.page + 1)}
-                disabled={pagination.page >= pagination.totalPages}
-              >
+              <button type='button' onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages}>
                 Next
               </button>
             </div>
           </nav>
         </>
       )}
-
-      <p className={styles.helperText}>
-        <strong>Cell actions:</strong> Active and Inactive are toggles. <strong>Not configured</strong> opens the CPQ
-        configurator with this bike and country pre-loaded — it does not create an allocation row. A toggle writes Neon
-        first, then pushes to external PostgreSQL when BC Status is OK; otherwise the cell shows{' '}
-        <strong>Pending BC</strong> and can be pushed later with <strong>Push all BC OK</strong>, which never changes
-        Active/Inactive. <strong>Refresh external status</strong> is read-only and covers every page of the current
-        filtered result.
-      </p>
     </>
   );
 }

@@ -206,3 +206,80 @@ export function parseAllocationStatuses(value: string | undefined | null): Alloc
     .map((entry) => entry.toLowerCase())
     .filter((entry): entry is AllocationStatusValue => (allowed as string[]).includes(entry));
 }
+
+/** One exported bike x country record. */
+export type AllocationExportRecord = {
+  ipnCode: string;
+  ruleset: string;
+  bikeType: string;
+  countryCode: string;
+  region: string;
+  subRegion: string;
+  allocationStatus: 'active' | 'not_active';
+  bcReady: boolean;
+  featureValues: Record<string, string>;
+};
+
+type ExportSourceRow = {
+  ipnCode: string;
+  rowRuleset: string;
+  bikeType: string;
+  hasBcIds: boolean;
+  featureValues: Record<string, string>;
+  countryStatuses: Record<string, AllocationStatusValue>;
+};
+
+/** Look up region/sub-region for a country from a territory hierarchy. */
+export function buildCountryTerritoryIndex(regions: TerritoryRegion[]): Map<string, { region: string; subRegion: string }> {
+  const index = new Map<string, { region: string; subRegion: string }>();
+  for (const region of regions) {
+    for (const subRegion of region.subRegions) {
+      for (const countryCode of subRegion.countries) {
+        index.set(countryCode, { region: region.region, subRegion: subRegion.subRegion });
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * Flatten allocation matrix rows into one record per bike + country, for CSV export.
+ *
+ * Contracts:
+ * - `not_configured` pairs are always excluded — there is no allocation row behind them.
+ * - country scope is the territory selection when one exists, otherwise every column.
+ * - an active status filter further narrows which pairs are emitted.
+ */
+export function buildAllocationExportRecords(input: {
+  rows: ExportSourceRow[];
+  countryColumns: string[];
+  selectedCountries: string[];
+  selectedStatuses: AllocationStatusValue[];
+  territoryIndex: Map<string, { region: string; subRegion: string }>;
+}): AllocationExportRecord[] {
+  const scoped = input.selectedCountries.filter((countryCode) => input.countryColumns.includes(countryCode));
+  const targetCountries = scoped.length ? scoped : input.countryColumns;
+  const records: AllocationExportRecord[] = [];
+
+  for (const row of input.rows) {
+    for (const countryCode of targetCountries) {
+      const status = row.countryStatuses[countryCode] ?? 'not_configured';
+      if (status === 'not_configured') continue;
+      if (input.selectedStatuses.length && !input.selectedStatuses.includes(status)) continue;
+      const territory = input.territoryIndex.get(countryCode);
+      records.push({
+        ipnCode: row.ipnCode,
+        ruleset: row.rowRuleset,
+        bikeType: row.bikeType,
+        countryCode,
+        region: territory?.region ?? '',
+        subRegion: territory?.subRegion ?? '',
+        allocationStatus: status,
+        bcReady: row.hasBcIds,
+        featureValues: row.featureValues,
+      });
+    }
+  }
+
+  return records;
+}

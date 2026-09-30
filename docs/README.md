@@ -49,4 +49,11 @@ Shared, unit-tested helpers live in `lib/sales/allocation-territory.ts` (territo
 pagination range, flag URL, status matching, URL encoding). Run them with `npm run test`
 (`node --test`); `npm run typecheck` runs `tsc --noEmit`.
 
+A follow-up density pass replaced the filter drawer with a single-row toolbar plus
+popovers, moved the IPN search / feature-column picker / feature filters into the table
+header, shrank the matrix cells (a dot for Not configured, icons for sync state), and added
+a **CSV export** of the filtered dataset for sales ops. See `ARCHITECTURE.md`.
+
+Shared, unit-tested helpers: `lib/sales/allocation-territory.ts` and `lib/sales/csv.ts`.
+
 Screenshots of the finished UX are in `docs/screenshots/`.
