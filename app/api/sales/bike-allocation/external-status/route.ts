@@ -5,7 +5,6 @@ import { lookupExternalVariantEligibilityStatuses } from '@/lib/external-pg/vari
 import { toExternalPgApiError } from '@/lib/external-pg/errors';
 import {
   listSalesBikeAllocationExternalStatusPairs,
-  type SalesBikeAllocationExternalStatusFilterCriteria,
   type SalesBikeAllocationFilters,
 } from '@/lib/sales/bike-allocation/service';
 
@@ -20,10 +19,10 @@ export async function POST(req: NextRequest) {
 
   try {
     currentStage = 'build_filtered_pairs';
-    const pairs = await listSalesBikeAllocationExternalStatusPairs(
-      (body.filters ?? {}) as SalesBikeAllocationFilters,
-      (body.filterCriteria ?? {}) as SalesBikeAllocationExternalStatusFilterCriteria,
-    );
+    // `filters` carries the full normalized filter set (ruleset, bike type,
+    // territory selection, IPN search, allocation statuses, feature filters), so
+    // the server rebuilds the same filtered dataset the operator is looking at.
+    const pairs = await listSalesBikeAllocationExternalStatusPairs((body.filters ?? {}) as SalesBikeAllocationFilters);
 
     currentStage = 'external_variant_eligibilities_lookup';
     const statuses = await lookupExternalVariantEligibilityStatuses(pairs, {

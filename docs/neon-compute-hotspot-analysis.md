@@ -28,6 +28,6 @@
 
 
 ## Pagination updates (2026-04-29)
-- Sales Bike Allocation uses server page size 100 and now renders page-number pagination below the table.
+- Sales Bike Allocation uses server page size 100 and renders page-number pagination below the table (the bar was actually rendered on 2026-09-30; before that the client computed pagination items but never displayed them).
 - Sales QPart Allocation now uses server-side pagination on part rows with default page size 200 and below-table page-number pagination.
 - QPart Parts list now uses server-side pagination with default page size 200 and below-table pagination controls.

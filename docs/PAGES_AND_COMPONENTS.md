@@ -265,75 +265,142 @@
 
 ## Page: Sales - bike allocation
 - Route: `/sales/bike-allocation`
-- File: `app/sales/bike-allocation/page.tsx` → `components/sales/sales-bike-allocation-page.tsx`
-- Purpose: allocation status control plane per IPN + country with toggle, bulk status updates, and launch-to-CPQ replay for not-configured cells.
-- Access control: visible to all users in nav; no server RBAC.
+- File: `app/sales/bike-allocation/page.tsx` -> `components/sales/sales-bike-allocation-page.tsx`
+- Purpose: allocation status control plane per IPN + country with toggle, current-page bulk status updates, external PostgreSQL sync awareness, and launch-to-CPQ replay for not-configured cells.
+- Access control: `sales.bike_allocation` page permission. Read is required for page data and for the read-only external-status refresh; Edit is required for every mutation and push. Server routes enforce this independently of whether a button is hidden or disabled.
 - Feature flags: none.
 - Main data sources:
   - server: `getSalesBikeAllocationPageData()`
-  - includes filter options + matrix rows derived from sampler JSON + active flag
+  - filter options (5-minute in-process cache) + territory hierarchy + matrix rows derived from sampler JSON and the `active` flag
 - Main write actions:
   - cell toggle active/inactive
-  - bulk activate/deactivate
-  - eligible per-cell Push to external PostgreSQL `variants`, then `variant_eligibilities`
+  - current-page bulk activate/deactivate
+  - per-cell Push and current-page Push all BC OK to external PostgreSQL (`variants`, then `variant_eligibilities`)
 - API endpoints used:
   - `/api/sales/bike-allocation/toggle`
   - `/api/sales/bike-allocation/bulk-update`
-  - `/api/sales/bike-allocation/launch-context`
+  - `/api/sales/bike-allocation/bulk-push`
   - `/api/sales/bike-allocation/push`
+  - `/api/sales/bike-allocation/external-status`
+  - `/api/sales/bike-allocation/launch-context`
+  - `/api/bigcommerce/item-map/lookup`, `/api/bigcommerce/variant-status`, `/api/bigcommerce/item-map/upsert`
 - Database tables involved:
-  - Reads: `CPQ_sampler_result`, `CPQ_setup_account_context`, `bc_item_variant_map`
-  - Writes: `CPQ_sampler_result.active`, `updated_at`; Push writes external `variants` and `variant_eligibilities` only when both BC IDs exist
-- Key components:
+  - Reads: `CPQ_sampler_result`, `CPQ_setup_ruleset`, `CPQ_setup_account_context`, `cpq_country_mappings` (territory hierarchy), `bc_item_variant_map`
+  - Writes: `CPQ_sampler_result.active`, `updated_at`; `app_allocation_audit_log`; Push writes external `variants` and `variant_eligibilities` only when the BC gate passes
+
+### URL / filter contract
+
+All server-relevant filter state lives in the URL, so refresh, back/forward and shared
+links restore the same view. Unknown values are ignored; unrelated query parameters are
+preserved.
+
+| Parameter | Meaning | Parsing |
+|---|---|---|
+| `page` | 1-based page number | non-numeric -> 1; clamped to `totalPages` |
+| `page_size` | rows per page | default 100, max 300 |
+| `ruleset` | exact `CPQ_sampler_result.ruleset` | trimmed |
+| `bike_type` | resolves to rulesets via `CPQ_setup_ruleset` | trimmed |
+| `countries` | territory selection, comma-separated ISO-2 | uppercased, de-duplicated, sorted |
+| `country_code` | **legacy** single-country deep link | normalized into `countries`; see below |
+| `ipn` | `ipn_code` contains-search | trimmed, pushed into SQL |
+| `status` | `active`, `not_active`, `not_configured` (comma-separated) | unknown values dropped |
+| `cols` | visible feature columns, comma-separated URI-encoded labels | unknown features dropped |
+| `features` | feature contains-filters as `label~value` pairs joined by `;` | each part URI-encoded (`~` escaped as `%7E`); malformed segments dropped |
+
+Rules:
+- Any change to a dataset filter resets `page=1`; `page_size` is preserved.
+- Navigating between pages preserves every filter.
+- The client only rewrites the URL when the serialized filter set actually differs from
+  the URL's, which prevents an update loop with `router.replace`.
+
+**Backward compatibility for `country_code`.** Dashboard drill-downs
+(`/sales/bike-allocation?country_code=GB`, optionally with `bike_type`) still work: the
+server folds `country_code` into the territory selection, so the page opens focused on
+that one country column. This is a deliberate migration — previously the parameter
+filtered rows while still rendering every country column, which showed an unrelated wide
+matrix. The parameter is rewritten to `countries=` on the operator's first filter
+interaction.
+
+### Allocation-status semantics
+
+`active`, `not_active` (labelled "Inactive") and `not_configured` stay distinct; they are
+never collapsed, because only the first two have an allocation row to toggle and only
+`not_configured` launches CPQ.
+
+> A bike matches when **any** country in scope has **any** selected status.
+
+Country scope is the Territory selection when one exists, otherwise every country column.
+No status selected means no status filtering.
+
+### Current-page mutation semantics
+
+- Single-cell toggle affects exactly one `ruleset` + `ipn_code` + `country_code` cell.
+- Bulk activate / Bulk deactivate / Push all BC OK affect **only** the bike rows the
+  server returned for the current page, and **only** the explicitly selected countries.
+- Moving from page 1 to page 2 changes the target IPN set.
+- The confirmation dialog states the exact bike count, country count, country codes and
+  "current page only".
+- Bulk buttons are disabled (with a stated reason) when the user lacks Edit access, no
+  ruleset is selected, the page has no rows, no country is selected, or local filter state
+  has not yet been applied by the server.
+- There is no "Update all" mode on this page. Current-page scope is the requirement.
 
 ### Component: SalesBikeAllocationPage
 - File: `components/sales/sales-bike-allocation-page.tsx`
-- Purpose: server-page loader for filters and matrix data.
+- Purpose: server page. Enforces read access, parses/normalizes search parameters defensively, requests page data, and resolves which feature columns are visible.
 
 ### Component: SalesBikeAllocationTableClient
 - File: `components/sales/sales-bike-allocation-table.client.tsx`
-- Purpose: interactive allocation matrix UI with filter rows, status actions, and bulk panel.
-- Inputs / props:
-  - `rows`, `availableFeatures`, `countryColumns`, `filterOptions`, `filters`
-- Data displayed:
-  - IPN rows with dynamic feature and country status columns
-- User-editable fields:
-  - ruleset/country query filters
-  - IPN and feature text filters
-  - country status filters
-  - bulk country target checkboxes
-- Validation / rules:
-  - bulk requires selected ruleset, visible rows, and at least one target country
-  - status target must be `active` or `not_active`
-- Write actions:
-  - toggle single cell status
-  - bulk status update
-  - Push visible only when the SKU has both `bc_product_id` and `bc_variant_id` in Neon
-- Side effects / dependencies:
-  - "Not configured" action resolves context, stores replay payload in `sessionStorage`, and routes to `/cpq` with `replay_token`
-  - Push syncs external `variants` before `variant_eligibilities` and skips server-side if BC IDs are missing
+- Purpose: filter/pagination/matrix UX, URL synchronization, transient busy/toast/external-status state, and exact current-page mutation targets.
+- Inputs / props: `rows`, `availableFeatures`, `selectedFeatureColumns`, `countryColumns`, `filterOptions`, `filters`, `pagination`, `canEdit`
+- Layout hierarchy:
+  1. page header + status/sync legend
+  2. collapsible filter panel header with matched-row count, country scope, bulk scope and the action toolbar
+  3. active-filter chips with per-chip removal and Clear all
+  4. Territory hierarchy (Region -> Sub-region -> Country) and Bike filters
+  5. matrix with sticky header and sticky BC Status + `ipn_code` columns
+  6. pagination bar directly below the table
+- Territory selector: country-code search, All/None, region and sub-region toggles with
+  `selected/total` counts, flag + code per country, `aria-pressed` group buttons, labelled
+  checkboxes and visible focus rings. Search only hides options and never alters the
+  selection.
+- Rows are rendered exactly as the server returned them; there is no second client-side
+  row filter that could disagree with `totalRows`.
+
+### Component: CountryFlagLabel (shared)
+- File: `components/shared/CountryFlagLabel.tsx`
+- Purpose: compact flag + uppercase country code used in territory options and matrix headers.
+- Behaviour: decorative `alt=""` plus `aria-hidden` so screen readers announce the code once; `loading="lazy"`; `EL` maps to the Greek flag via `getCountryFlagUrl`; the image is unstyled and zero-sized until it loads and is removed entirely on error, so a blocked or slow CDN never leaves a placeholder box.
 
 ### Data usage
 - Reads:
   - `json_result.selectedOptions` and fallback `dropdownOrderSnapshot` for replay payload
   - sampler row status via `active`
+  - `cpq_country_mappings` for the territory hierarchy (cached 5 minutes)
 - Writes:
   - `CPQ_sampler_result.active`
-- Important fields/columns:
-  - `ruleset`, `ipn_code`, `country_code`, `active`, `json_result`
+  - `app_allocation_audit_log` for single and bulk status changes (bulk rows carry `scope: current_page`)
 - Notes / constraints:
-  - only existing sampler rows are updated by toggle/bulk actions.
+  - only existing sampler rows are updated by toggle/bulk actions
+  - Push all BC OK never changes Active/Inactive
+  - Refresh external status is read-only, covers every page of the filtered dataset, and uses one batched `variant_eligibilities` lookup (no per-cell queries)
+  - Bike pushes keep sampler-derived ruleset resolution; QPart's fixed `Qpart` overrides are not applied here
 
 ### User flow
-- Step 1: Filter by ruleset/country.
-- Step 2: Inspect status by IPN-country cell.
-- Step 3a: Toggle Active/Inactive directly.
-- Step 3b: Run bulk action across visible IPNs and selected countries.
-- Step 3c: For Not configured, launch CPQ replay flow.
+- Step 1: Open filters, pick a Region / Sub-region / Country scope.
+- Step 2: Narrow with ruleset, bike type, IPN search, feature filters and allocation status.
+- Step 3: Inspect status by bike-country cell.
+- Step 4a: Toggle Active/Inactive directly.
+- Step 4b: Run a bulk action across the current page and the selected countries.
+- Step 4c: For Not configured, launch the CPQ replay flow.
+- Step 5: Page through the filtered dataset; filters persist.
 
 ### Risks / gaps
 - Not-configured launch depends on replay data quality in sampler JSON.
-- No hard auth boundaries; operational discipline required.
+- Flag images come from a public CDN; if it is unreachable the code still renders, but no flag is shown.
+- Matrix rows are still assembled in memory on the server before pagination, so a very
+  large sampler table remains a server-side memory consideration (unchanged by this pass,
+  but IPN search is now pushed into SQL to reduce it).
 
 ---
 

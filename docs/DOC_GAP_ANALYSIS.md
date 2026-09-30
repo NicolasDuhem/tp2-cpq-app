@@ -37,3 +37,24 @@
 
 ## Remaining ambiguities (intentionally left)
 - Runtime schema expectation for some canonical columns (`canonical_header_id`, `canonical_detail_id`, `source_working_detail_id`) can exceed minimal baseline in `sql/schema.sql` for brand-new environments; documented but not changed in code during this doc-only pass.
+
+
+## 2026-09-30 pass — Sales Bike Allocation redesign
+
+### Stale claims corrected
+
+| Markdown file | What it claimed | Reality in code before this pass | Code evidence | Severity | Status |
+|---|---|---|---|---|---|
+| `docs/ARCHITECTURE.md` | "Sales Bike Allocation ... now renders page-number pagination below the table." | False. `sales-bike-allocation-table.client.tsx` computed `paginationItems` and defined `setPage()`, and the CSS module defined `.paginationBar` / `.paginationCurrent` / `.paginationEllipsis`, but nothing was rendered and `setPage` had no caller. The page was pinned to page 1. | `components/sales/sales-bike-allocation-table.client.tsx`, `components/sales/sales-bike-allocation-page.module.css` | Critical | Fixed (bar now rendered; claim reworded with an explicit correction note) |
+| `docs/neon-compute-hotspot-analysis.md` | Same pagination claim. | Same. | as above | Important | Fixed (claim annotated with the real date) |
+| `docs/PAGES_AND_COMPONENTS.md` | Bike Allocation documented with a `country_code` route filter, per-column status dropdowns and a flat bulk country list; no permission, pagination, audit, external-sync or URL contract detail. | Page had grown well past that description. | `components/sales/*`, `app/api/sales/bike-allocation/*`, `lib/sales/bike-allocation/service.ts` | Important | Fixed (section rewritten) |
+| `docs/PROCESSDATA.md` | "Bulk activate/deactivate visible IPNs across selected countries" — scope unstated. | Scope was effectively the loaded first page, which was also the only reachable page. | `components/sales/sales-bike-allocation-table.client.tsx` | Important | Fixed (current-page scope now explicit) |
+| `docs/CPQ_API_PAYLOADS.md` | Documented only `toggle`, `bulk-update` and `launch-context` for Bike. | `push`, `bulk-push` and `external-status` were undocumented. | `app/api/sales/bike-allocation/*` | Important | Fixed (all routes documented; `external-status` contract change recorded) |
+| `docs/DATABASE.md` | `cpq_country_mappings` described as used by setup dropdowns only. | QPart allocation already read it for its Territory filter; Bike Allocation now does too. | `lib/sales/qpart-allocation/service.ts`, `lib/sales/bike-allocation/service.ts` | Minor | Fixed |
+
+### Remaining ambiguity
+
+- Bike matrix rows are still assembled in memory server-side before pagination. Ruleset,
+  bike type and IPN search are pushed into SQL; territory, status and feature filters are
+  not, because a row's status is an aggregate across country columns. Documented rather
+  than changed in this pass.

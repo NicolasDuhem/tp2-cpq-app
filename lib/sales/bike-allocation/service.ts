@@ -1,5 +1,14 @@
 import { sql } from '@/lib/db/client';
-import { listAccountContexts } from '@/lib/cpq/setup/service';
+import { listAccountContexts, listCountryMappings } from '@/lib/cpq/setup/service';
+import {
+  buildPaginationItems,
+  buildTerritoryRegions,
+  decodeFeatureFilters,
+  encodeFeatureFilters,
+  rowMatchesAllocationStatuses,
+  type AllocationStatusValue,
+  type TerritoryRegion,
+} from '@/lib/sales/allocation-territory';
 import {
   syncBikeAllocationToExternalIfBcOk,
   syncBikeAllocationsToExternalIfBcOkBatch,
@@ -9,8 +18,32 @@ import { normalizeBCStatus } from '@/lib/bigcommerce/item-map';
 
 export type SalesBikeAllocationFilters = {
   ruleset?: string;
+  /**
+   * Legacy single-country deep-link parameter (e.g. dashboard links to
+   * `/sales/bike-allocation?country_code=GB`). It is normalized into
+   * `countryCodes` so there is exactly one territory model at runtime.
+   */
   country_code?: string;
   bike_type?: string;
+  /** Territory selection: the single source of truth for country scope. */
+  countryCodes?: string[];
+  /** `ipn_code` contains-search, applied server-side before pagination. */
+  ipnSearch?: string;
+  /** Allocation-status selection, applied server-side before pagination. */
+  allocationStatuses?: AllocationStatusValue[];
+  /** `{ featureLabel: containsText }`, applied server-side before pagination. */
+  featureFilters?: Record<string, string>;
+};
+
+/** Filters after normalization; list fields are always present. */
+export type NormalizedSalesBikeAllocationFilters = {
+  ruleset: string;
+  country_code: string;
+  bike_type: string;
+  countryCodes: string[];
+  ipnSearch: string;
+  allocationStatuses: AllocationStatusValue[];
+  featureFilters: Record<string, string>;
 };
 
 type SamplerRow = {
@@ -46,6 +79,8 @@ export type SalesBikeAllocationFilterOptions = {
   rulesets: string[];
   countryCodes: string[];
   bikeTypes: string[];
+  /** Region -> Sub-region -> Country, derived from `cpq_country_mappings`. */
+  territoryRegions: TerritoryRegion[];
 };
 
 export type AllocationStatus = 'active' | 'not_active' | 'not_configured';
@@ -59,10 +94,16 @@ export type SalesBikeAllocationRow = {
   hasBcIds: boolean;
 };
 
+/**
+ * Retained for the external-status route payload. Territory/status/search
+ * filtering now lives on `SalesBikeAllocationFilters`, so this type only keeps
+ * the shape the client posts alongside it.
+ */
 export type SalesBikeAllocationExternalStatusFilterCriteria = {
   ipnFilter?: string;
   featureFilters?: Record<string, string>;
-  countryStatusFilters?: Record<string, 'all' | AllocationStatus>;
+  countryCodes?: string[];
+  allocationStatuses?: AllocationStatusValue[];
 };
 
 export type SalesBikeAllocationSkuCountryPair = {
@@ -71,7 +112,7 @@ export type SalesBikeAllocationSkuCountryPair = {
 };
 
 export type SalesBikeAllocationPageData = {
-  filters: SalesBikeAllocationFilters;
+  filters: NormalizedSalesBikeAllocationFilters;
   filterOptions: SalesBikeAllocationFilterOptions;
   availableFeatures: string[];
   countryColumns: string[];
@@ -83,10 +124,68 @@ export type SalesBikeAllocationPageData = {
     totalPages: number;
   };
 };
+type SalesBikeAllocationFilterOptionsBase = Omit<SalesBikeAllocationFilterOptions, 'territoryRegions'>;
+
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 300;
 const FILTER_OPTIONS_TTL_MS = 5 * 60 * 1000;
-let filterOptionsCache: { expiresAt: number; value: SalesBikeAllocationFilterOptions } | null = null;
+let filterOptionsCache: { expiresAt: number; value: SalesBikeAllocationFilterOptionsBase } | null = null;
+let countryMappingsCache: { expiresAt: number; value: Array<{ region: string | null; sub_region: string | null; country_code: string | null }> } | null = null;
+
+/**
+ * Normalize raw page/API filter input. `country_code` (legacy deep link) is
+ * folded into `countryCodes` so the rest of the service has exactly one
+ * territory model to reason about.
+ */
+export function normalizeSalesBikeAllocationFilters(
+  filters: SalesBikeAllocationFilters = {},
+): NormalizedSalesBikeAllocationFilters {
+  const legacyCountry = asTrimmed(filters.country_code).toUpperCase();
+  const explicitCountries = (filters.countryCodes ?? [])
+    .map((value) => asTrimmed(value).toUpperCase())
+    .filter(Boolean);
+  const countryCodes = [...new Set(explicitCountries.length ? explicitCountries : legacyCountry ? [legacyCountry] : [])].sort(
+    (a, b) => a.localeCompare(b),
+  );
+
+  const featureFilters: Record<string, string> = {};
+  for (const [label, value] of Object.entries(filters.featureFilters ?? {})) {
+    const normalizedLabel = asTrimmed(label);
+    const normalizedValue = asTrimmed(value);
+    if (normalizedLabel && normalizedValue) featureFilters[normalizedLabel] = normalizedValue;
+  }
+
+  const allowedStatuses: AllocationStatusValue[] = ['active', 'not_active', 'not_configured'];
+  const allocationStatuses = [
+    ...new Set(
+      (filters.allocationStatuses ?? [])
+        .map((value) => asTrimmed(value).toLowerCase())
+        .filter((value): value is AllocationStatusValue => (allowedStatuses as string[]).includes(value)),
+    ),
+  ];
+
+  return {
+    ruleset: asTrimmed(filters.ruleset),
+    country_code: legacyCountry,
+    bike_type: asTrimmed(filters.bike_type),
+    countryCodes,
+    ipnSearch: asTrimmed(filters.ipnSearch),
+    allocationStatuses,
+    featureFilters,
+  };
+}
+
+async function listCachedCountryMappings() {
+  if (countryMappingsCache && countryMappingsCache.expiresAt > Date.now()) return countryMappingsCache.value;
+  const rows = await listCountryMappings(true);
+  const value = rows.map((row) => ({
+    region: row.region ?? null,
+    sub_region: row.sub_region ?? null,
+    country_code: row.country_code ?? null,
+  }));
+  countryMappingsCache = { value, expiresAt: Date.now() + FILTER_OPTIONS_TTL_MS };
+  return value;
+}
 
 const asTrimmed = (value: unknown) => String(value ?? '').trim();
 const asBoolean = (value: unknown) => value === true || value === 'true' || value === 't' || value === 1 || value === '1';
@@ -151,7 +250,7 @@ function parseReplaySelectedOptions(jsonResult: unknown): ReplaySelectedOption[]
     .filter((entry): entry is ReplaySelectedOption => Boolean(entry));
 }
 
-async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
+async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptionsBase> {
   if (filterOptionsCache && filterOptionsCache.expiresAt > Date.now()) return filterOptionsCache.value;
   const [rulesetRows, countryRows, bikeTypeRows] = await Promise.all([
     sql`select distinct ruleset from CPQ_sampler_result where coalesce(trim(ruleset), '') <> '' order by ruleset`,
@@ -176,6 +275,7 @@ async function listFilterOptions(): Promise<SalesBikeAllocationFilterOptions> {
 async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<SamplerRow[]> {
   const ruleset = asTrimmed(filters.ruleset);
   const bikeType = asTrimmed(filters.bike_type);
+  const ipnSearch = asTrimmed(filters.ipnSearch);
 
   const mappedRulesetRows = bikeType
     ? ((await sql`
@@ -215,6 +315,7 @@ async function listSamplerRows(filters: SalesBikeAllocationFilters): Promise<Sam
     ) map on true
     where coalesce(trim(ipn_code), '') <> ''
       and (${ruleset} = '' or ruleset = ${ruleset})
+      and (${ipnSearch} = '' or position(lower(${ipnSearch}) in lower(coalesce(ipn_code, ''))) > 0)
       and (
         ${bikeType} = ''
         or ruleset in (
@@ -516,8 +617,13 @@ export async function resolveConfiguratorLaunchContext(input: { ruleset: string;
   };
 }
 
-async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocationFilters): Promise<{ filterOptions: SalesBikeAllocationFilterOptions; availableFeatures: string[]; countryColumns: string[]; rows: SalesBikeAllocationRow[] }> {
-  const [filterOptions, rawSourceRows, rulesetRows] = await Promise.all([
+async function buildSalesBikeAllocationRows(normalizedFilters: NormalizedSalesBikeAllocationFilters): Promise<{
+  filterOptions: SalesBikeAllocationFilterOptions;
+  availableFeatures: string[];
+  countryColumns: string[];
+  rows: SalesBikeAllocationRow[];
+}> {
+  const [filterOptionsBase, rawSourceRows, rulesetRows, countryMappings] = await Promise.all([
     listFilterOptions(),
     listSamplerRows(normalizedFilters),
     sql`
@@ -525,6 +631,7 @@ async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocati
       from CPQ_setup_ruleset
       where coalesce(trim(cpq_ruleset), '') <> ''
     `,
+    listCachedCountryMappings(),
   ]);
   const sourceRows = rawSourceRows as SamplerRow[];
   const bikeTypeByRuleset = new Map<string, string>();
@@ -534,8 +641,8 @@ async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocati
     bikeTypeByRuleset.set(ruleset, asTrimmed(row.bike_type) || 'Unmapped');
   }
 
-  const countryColumns = [...new Set(sourceRows.map((row) => asTrimmed(row.country_code)).filter((value): value is string => Boolean(value)))].sort((a, b) =>
-    a.localeCompare(b),
+  const countryColumns = [...new Set(sourceRows.map((row) => asTrimmed(row.country_code).toUpperCase()).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b),
   );
 
   const rowMap = new Map<string, SalesBikeAllocationRow>();
@@ -545,10 +652,6 @@ async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocati
     const ipn = asTrimmed(row.ipn_code);
     const rowRuleset = asTrimmed(row.ruleset);
     if (!ipn || !rowRuleset) continue;
-
-    if (asTrimmed(normalizedFilters.country_code) && asTrimmed(row.country_code) !== asTrimmed(normalizedFilters.country_code)) {
-      continue;
-    }
 
     const rowKey = `${rowRuleset}::${ipn}`;
     let matrixRow = rowMap.get(rowKey);
@@ -574,7 +677,7 @@ async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocati
       }
     }
 
-    const countryCode = asTrimmed(row.country_code);
+    const countryCode = asTrimmed(row.country_code).toUpperCase();
     if (!countryCode) continue;
 
     const existingStatus = matrixRow.countryStatuses[countryCode];
@@ -599,57 +702,71 @@ async function buildSalesBikeAllocationRows(normalizedFilters: SalesBikeAllocati
     }))
     .sort((a, b) => (a.ipnCode === b.ipnCode ? a.rowRuleset.localeCompare(b.rowRuleset) : a.ipnCode.localeCompare(b.ipnCode)));
 
+  const filterOptions: SalesBikeAllocationFilterOptions = {
+    ...filterOptionsBase,
+    territoryRegions: buildTerritoryRegions(countryMappings, countryColumns),
+  };
+
   return { filterOptions, availableFeatures: orderedFeatures, countryColumns, rows };
 }
 
-function filterBikeAllocationRowsForExternalStatus(
+/**
+ * Apply every dataset-shaping filter that is not already handled in SQL.
+ *
+ * This runs before pagination so `totalRows`/`totalPages` always describe the
+ * filtered dataset, and so page 2 means page 2 of the filtered dataset.
+ *
+ * Status semantics: a row is kept when ANY country in scope has ANY selected
+ * status. Country scope is the territory selection when one exists, otherwise
+ * every country column.
+ */
+export function filterSalesBikeAllocationRows(
   rows: SalesBikeAllocationRow[],
   countryColumns: string[],
-  criteria: SalesBikeAllocationExternalStatusFilterCriteria = {},
-) {
-  const normalizedIpnFilter = asTrimmed(criteria.ipnFilter).toLowerCase();
-  const featureFilters = criteria.featureFilters ?? {};
-  const countryStatusFilters = criteria.countryStatusFilters ?? {};
+  filters: Pick<NormalizedSalesBikeAllocationFilters, 'ipnSearch' | 'featureFilters' | 'countryCodes' | 'allocationStatuses'>,
+): SalesBikeAllocationRow[] {
+  const ipnSearch = asTrimmed(filters.ipnSearch).toLowerCase();
+  const featureEntries = Object.entries(filters.featureFilters ?? {})
+    .map(([label, value]) => [label, asTrimmed(value).toLowerCase()] as const)
+    .filter(([, value]) => Boolean(value));
+  const scopedCountries = (filters.countryCodes ?? []).filter((countryCode) => countryColumns.includes(countryCode));
 
   return rows.filter((row) => {
-    if (normalizedIpnFilter && !row.ipnCode.toLowerCase().includes(normalizedIpnFilter)) return false;
+    if (ipnSearch && !row.ipnCode.toLowerCase().includes(ipnSearch)) return false;
 
-    for (const [feature, rawFilter] of Object.entries(featureFilters)) {
-      const valueFilter = asTrimmed(rawFilter).toLowerCase();
-      if (!valueFilter) continue;
-      const value = String(row.featureValues[feature] ?? '').toLowerCase();
-      if (!value.includes(valueFilter)) return false;
+    for (const [feature, search] of featureEntries) {
+      if (!String(row.featureValues[feature] ?? '').toLowerCase().includes(search)) return false;
     }
 
-    for (const country of countryColumns) {
-      const statusFilter = countryStatusFilters[country] ?? 'all';
-      if (statusFilter === 'all') continue;
-      if (row.countryStatuses[country] !== statusFilter) return false;
-    }
-
-    return true;
+    return rowMatchesAllocationStatuses(
+      row.countryStatuses,
+      scopedCountries,
+      countryColumns,
+      filters.allocationStatuses ?? [],
+    );
   });
 }
 
 export async function listSalesBikeAllocationExternalStatusPairs(
   filters: SalesBikeAllocationFilters,
-  criteria: SalesBikeAllocationExternalStatusFilterCriteria = {},
 ): Promise<SalesBikeAllocationSkuCountryPair[]> {
-  const normalizedFilters = {
-    ruleset: asTrimmed(filters.ruleset),
-    country_code: asTrimmed(filters.country_code),
-    bike_type: asTrimmed(filters.bike_type),
-  };
+  const normalizedFilters = normalizeSalesBikeAllocationFilters(filters);
   const { rows, countryColumns } = await buildSalesBikeAllocationRows(normalizedFilters);
-  const filteredRows = filterBikeAllocationRowsForExternalStatus(rows, countryColumns, criteria);
+  const filteredRows = filterSalesBikeAllocationRows(rows, countryColumns, normalizedFilters);
+
+  // Territory selection is the country scope; with no selection, every column.
+  const scopedCountries = normalizedFilters.countryCodes.filter((countryCode) => countryColumns.includes(countryCode));
+  const targetCountries = scopedCountries.length ? scopedCountries : countryColumns;
+  const statuses = normalizedFilters.allocationStatuses;
   const pairs = new Map<string, SalesBikeAllocationSkuCountryPair>();
 
   for (const row of filteredRows) {
     if (!row.hasBcIds) continue;
-    for (const countryCode of countryColumns) {
-      const statusFilter = criteria.countryStatusFilters?.[countryCode] ?? 'all';
-      if (statusFilter !== 'all' && row.countryStatuses[countryCode] !== statusFilter) continue;
-      if (row.countryStatuses[countryCode] === 'not_configured') continue;
+    for (const countryCode of targetCountries) {
+      const status = row.countryStatuses[countryCode] ?? 'not_configured';
+      // No external eligibility row can exist without a sampler row.
+      if (status === 'not_configured') continue;
+      if (statuses.length && !statuses.includes(status)) continue;
       pairs.set(`${row.ipnCode}::${countryCode}`, { sku: row.ipnCode, countryCode });
     }
   }
@@ -660,18 +777,23 @@ export async function listSalesBikeAllocationExternalStatusPairs(
 export async function getSalesBikeAllocationPageData(
   filters: SalesBikeAllocationFilters & { page?: number; pageSize?: number },
 ): Promise<SalesBikeAllocationPageData> {
-  const normalizedFilters = {
-    ruleset: asTrimmed(filters.ruleset),
-    country_code: asTrimmed(filters.country_code),
-    bike_type: asTrimmed(filters.bike_type),
-  };
+  const normalizedFilters = normalizeSalesBikeAllocationFilters(filters);
 
   const { filterOptions, availableFeatures, countryColumns, rows } = await buildSalesBikeAllocationRows(normalizedFilters);
-  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize ?? DEFAULT_PAGE_SIZE)));
-  const totalRows = rows.length;
+  const filteredRows = filterSalesBikeAllocationRows(rows, countryColumns, normalizedFilters);
+
+  const requestedPageSize = Number(filters.pageSize);
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, Number.isFinite(requestedPageSize) && requestedPageSize > 0 ? Math.floor(requestedPageSize) : DEFAULT_PAGE_SIZE),
+  );
+  const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const page = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1)));
-  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const requestedPage = Number(filters.page);
+  // Clamp: a filter change that shrinks the dataset must not leave the operator
+  // stranded on a page that no longer exists.
+  const page = Math.min(totalPages, Math.max(1, Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1));
+  const pagedRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
 
   return {
     filters: normalizedFilters,
@@ -682,3 +804,5 @@ export async function getSalesBikeAllocationPageData(
     pagination: { page, pageSize, totalRows, totalPages },
   };
 }
+
+export { buildPaginationItems, decodeFeatureFilters, encodeFeatureFilters };

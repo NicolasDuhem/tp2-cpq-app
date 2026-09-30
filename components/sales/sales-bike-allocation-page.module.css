@@ -383,3 +383,504 @@
 @media (max-width: 980px) {
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ==========================================================================
+   Operational redesign: legend, collapsible filter panel, territory selector,
+   status pills, country flags, pagination bar.
+   ========================================================================== */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #44506b;
+  padding: 2px 2px 0;
+}
+
+.legendTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: #475569;
+  font-size: 10px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.legendMuted {
+  color: #64748b;
+}
+
+.legendDivider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 14px;
+  background: #dde5f6;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #dde5f6;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(17, 35, 77, 0.05);
+}
+
+.filterPanel {
+  padding: 8px 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.filterHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filterHeaderLeft,
+.filterHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collapseToggle {
+  border: 1px solid #c6d1ea;
+  background: #f4f7ff;
+  color: #1f3f7e;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 30px;
+}
+
+.matchChip,
+.scopeChip {
+  font-size: 11px;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f4;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.metaRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.guardNote {
+  margin: 0;
+  font-size: 11px;
+  color: #8a5a10;
+  background: #fff8ec;
+  border: 1px solid #f2dcb4;
+  border-radius: 8px;
+  padding: 5px 9px;
+}
+
+.chipRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #c9d7f5;
+  background: #eef3ff;
+  color: #1f3f7e;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 24px;
+}
+
+.filterChip:hover {
+  background: #e2eaff;
+}
+
+.textButton {
+  border: 1px solid #d2dcf3;
+  background: #fff;
+  color: #36538e;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 26px;
+}
+
+.bulkActionButton {
+  border: 1px solid #c6d1ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f3f7e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 11px;
+  cursor: pointer;
+  min-height: 30px;
+}
+
+.bulkActionButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bulkActionPrimary {
+  background: #002fa7;
+  border-color: #002fa7;
+  color: #fff;
+}
+
+.bulkActionDestructive {
+  background: #fff5f5;
+  border-color: #e2acac;
+  color: #96231f;
+}
+
+.filterSections {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.filterSection {
+  border: 1px solid #e4ebf8;
+  border-radius: 10px;
+  background: #fbfcff;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionTitleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionTitleRow h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1e3a6e;
+}
+
+.sectionTitleActions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.filterItem input {
+  border: 1px solid #ccd5ea;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: #1e2a45;
+  background: #fff;
+  min-height: 30px;
+}
+
+.helpText {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.territoryRegionGrid {
+  display: grid;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+  align-items: start;
+}
+
+.territoryRegionCard {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e8eef8;
+  background: #fff;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.territoryGroupButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 26px;
+}
+
+.territoryGroupButton:hover {
+  background: #f1f5ff;
+}
+
+.territoryGroupButton[aria-pressed='true'] {
+  background: #e8efff;
+  border-color: #c9d7f5;
+}
+
+.territoryRegionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a6e;
+}
+
+.subRegionBlock {
+  padding-top: 4px;
+  border-top: 1px dashed #ebf0fb;
+}
+
+.subRegionBlock:first-of-type {
+  border-top: 0;
+}
+
+.subRegionTitle {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.selectionCount {
+  font-size: 10px;
+  font-weight: 700;
+  color: #46526e;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f4;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.countryOptionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 2px 8px;
+  padding: 2px 0 4px 4px;
+}
+
+.checkboxOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #33415f;
+  font-weight: 500;
+  min-height: 24px;
+  cursor: pointer;
+}
+
+.checkboxOption input {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.emptyFilterValues {
+  margin: 0;
+  color: #7a88a6;
+  font-size: 11px;
+}
+
+.bikeFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.featureFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  border-top: 1px dashed #e4ebf8;
+  padding-top: 8px;
+}
+
+.statusFieldset {
+  border: 1px solid #e4ebf8;
+  border-radius: 8px;
+  background: #fff;
+  margin: 0;
+  padding: 6px 8px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.statusLegend {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+}
+
+.segmentedFilter {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.segmentedOption,
+.segmentedOptionActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d2dcf3;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #36538e;
+  background: #fff;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.segmentedOptionActive {
+  background: #002fa7;
+  border-color: #002fa7;
+  color: #fff;
+}
+
+.countryCell,
+.countryHeader {
+  min-width: 96px;
+  text-align: center !important;
+}
+
+.countryHeaderLabel,
+.countryOptionLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.countryHeaderLabel {
+  justify-content: center;
+}
+
+.countryFlag {
+  width: 14px;
+  height: 11px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid #d9e2f4;
+  flex: 0 0 auto;
+}
+
+.emptyHint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.paginationItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.paginationControls button {
+  min-width: 30px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.paginationControls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.paginationCurrent {
+  background: #002fa7 !important;
+  color: #fff;
+  border-color: #002fa7 !important;
+  font-weight: 700;
+}
+
+/* Visible keyboard focus everywhere in the filter/pagination surfaces. */
+.filterPanel button:focus-visible,
+.filterPanel input:focus-visible,
+.filterPanel select:focus-visible,
+.paginationControls button:focus-visible,
+.filterChip:focus-visible,
+.territoryGroupButton:focus-visible {
+  outline: 2px solid #002fa7;
+  outline-offset: 1px;
+}
+
+@media (max-width: 1180px) {
+  .filterSections {
+    grid-template-columns: 1fr;
+  }
+  .territoryRegionGrid {
+    max-height: 260px;
+  }
+}
+
+@media (max-width: 980px) {
+  .filterHeaderRow {
+    align-items: flex-start;
+  }
+  .paginationBar {
+    justify-content: center;
+  }
+  .paginationSummary {
+    width: 100%;
+    text-align: center;
+  }
+}

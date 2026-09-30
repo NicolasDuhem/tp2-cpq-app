@@ -169,7 +169,7 @@ QPart sales allocation behavior:
 
 ## Pagination updates (2026-04-29)
 
-- Sales Bike Allocation uses server page size 100 and now renders page-number pagination below the table.
+- Sales Bike Allocation uses server page size 100. **Correction (2026-09-30):** until the redesign below, the client computed pagination items but never rendered a pagination bar, so only the first page was reachable. Page-number pagination is now rendered below the table.
 - Sales QPart Allocation now uses server-side pagination on part rows with default page size 200 and below-table page-number pagination.
 - QPart Parts list now uses server-side pagination with default page size 200 and below-table pagination controls.
 
@@ -246,3 +246,89 @@ User management, local login/session foundation, and per-page permissions were a
 - Stores non-secret configurator working state (account/ruleset/session/detail/features/options/context metadata).
 - Excludes auth/session cookies and server credentials.
 - Restore and clear controls live in the CPQ page header area; this is additive and does not alter canonical finalize/save DB flow.
+
+
+## Sales Bike Allocation operational redesign (2026-09-30)
+
+`/sales/bike-allocation` was rebuilt around a single territory model, server-applied
+filters, and visible pagination, while keeping every existing Bike business behaviour.
+
+### Root cause of the pagination defect
+
+`components/sales/sales-bike-allocation-table.client.tsx` already computed
+`paginationItems` and defined `setPage()`, and the CSS module already carried
+`.paginationBar` / `.paginationCurrent` / `.paginationEllipsis`. Neither was ever
+rendered, and `setPage` had no caller, so the page was permanently pinned to page 1
+of the server result. The fix renders the bar and wires page navigation to the URL —
+no second pagination system was introduced.
+
+### Territory hierarchy source
+
+- Built by `buildTerritoryRegions()` in `lib/sales/allocation-territory.ts` (pure, unit tested).
+- Source rows: active `cpq_country_mappings` (`region`, `sub_region`, `country_code`),
+  read through a 5-minute in-process cache alongside the existing filter-option cache.
+- Scope: only country codes that actually appear as matrix columns are offered.
+- Countries with no mapping row are grouped under `Other -> Unmapped`, so no country
+  can disappear from the selector.
+- There is no hardcoded country or region list anywhere in the page.
+
+### Single territory model
+
+The old single-country `Country code` dropdown and the separate flat bulk-country
+checkbox list are both gone. The Territory selection is now the only country model, and
+it drives:
+
+- which country columns are rendered,
+- which cells allocation-status filtering evaluates,
+- which countries Bulk activate / Bulk deactivate / Push all BC OK write to,
+- the country scope of Refresh external status.
+
+**Empty-selection contract (deliberately different from QPart):** with no country
+selected, all country columns are shown for browsing, but every bulk/push button is
+disabled. "None selected" can never be read as "all countries" for a write. QPart's
+convention (empty selection falls back to all countries for bulk) was not adopted here.
+
+### Server-applied filtering before pagination
+
+`getSalesBikeAllocationPageData()` applies ruleset, bike type, IPN search, feature
+contains-filters, territory scope and allocation status **before** slicing the page, so
+`totalRows`/`totalPages` describe the filtered dataset and page 2 means page 2 of that
+dataset. IPN search is additionally pushed into the sampler SQL so fewer rows are loaded.
+The requested page is clamped to `totalPages`. The browser only ever receives one page.
+
+### Allocation-status filter semantics
+
+Three states remain distinct: `active`, `not_active` (shown as "Inactive") and
+`not_configured`. The filter is a multi-select of those three.
+
+> A bike matches when **any** country in scope has **any** selected status.
+
+Country scope is the Territory selection when one exists, otherwise every country
+column. Selecting no status disables status filtering. This is stated in helper text on
+the page and covered by `rowMatchesAllocationStatuses` unit tests.
+
+### Current-page-only mutation scope
+
+Bulk activate, Bulk deactivate and Push all BC OK send exactly the IPN codes the server
+returned for the current page, plus the explicitly selected countries. Navigating to
+another page changes the target set. The confirmation dialog names the exact bike and
+country counts and says "current page only". Mutations are additionally blocked while
+local filter state is ahead of the server-rendered rows, so stale targets cannot leak
+into a request. QPart's password-protected **Update all** mode was deliberately **not**
+added to Bike Allocation.
+
+### URL/filter contract
+
+See `docs/PAGES_AND_COMPONENTS.md` for the parameter table. `country_code=XX` deep links
+(dashboard drill-downs) remain supported and are normalized into the territory selection.
+
+### Shared extractions
+
+- `lib/sales/allocation-territory.ts` — territory hierarchy building/filtering, pagination
+  range, flag URL (including the `EL` -> Greek flag special case), status matching, and
+  URL list/feature-filter encoding. Pure and dependency-free so it runs under `node --test`.
+- `components/shared/CountryFlagLabel.tsx` — flag + uppercase country code, decorative
+  `alt`, lazy loading, and graceful degradation when the flag image fails or stalls.
+
+QPart Allocation was intentionally left untouched by this pass: it keeps its own local
+helpers, so there is no regression risk from the extraction.

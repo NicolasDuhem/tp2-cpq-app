@@ -9,3 +9,6 @@ CPQ/.env.*
 CPQ/dist/
 CPQ/build/
 CPQ/.next/
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo

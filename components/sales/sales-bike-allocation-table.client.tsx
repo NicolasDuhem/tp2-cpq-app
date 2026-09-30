@@ -4,11 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AllocationStatus,
+  NormalizedSalesBikeAllocationFilters,
   SalesBikeAllocationFilterOptions,
-  SalesBikeAllocationFilters,
   SalesBikeAllocationRow,
 } from '@/lib/sales/bike-allocation/service';
+import {
+  buildPaginationItems,
+  encodeFeatureFilters,
+  filterTerritoryRegions,
+  flattenTerritoryCountries,
+  type AllocationStatusValue,
+} from '@/lib/sales/allocation-territory';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import CountryFlagLabel from '@/components/shared/CountryFlagLabel';
 import MultiSelectDropdown from '@/components/shared/MultiSelectDropdown';
 import StatusCell from '@/components/shared/StatusCell';
 import Toast from '@/components/shared/Toast';
@@ -17,13 +25,14 @@ import styles from './sales-bike-allocation-page.module.css';
 type Props = {
   rows: SalesBikeAllocationRow[];
   availableFeatures: string[];
+  selectedFeatureColumns: string[];
   countryColumns: string[];
   filterOptions: SalesBikeAllocationFilterOptions;
-  filters: SalesBikeAllocationFilters;
+  filters: NormalizedSalesBikeAllocationFilters;
   pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
+  canEdit: boolean;
 };
 
-type CountryStatusFilter = 'all' | 'active' | 'not_active' | 'not_configured';
 type Message = { type: 'success' | 'error'; text: string } | null;
 type BCStatus = 'OK' | 'NOK' | 'ERR' | 'DISABLED';
 type BCStatusMap = Record<string, { status: BCStatus }>;
@@ -50,7 +59,17 @@ type ExternalStatusMap = Record<string, ExternalStatus>;
 type ExternalSyncState = 'pushed' | 'pending_bc' | 'error';
 type ExternalSyncResult = { state: ExternalSyncState; sku: string; countryCode: string; message: string; skipped: boolean; variantAction?: string; eligibilityAction?: string };
 type ExternalSyncSummary = { attempted: number; pushed: number; pendingBc: number; errors: number };
+
 const CPQ_LAUNCH_REPLAY_STORAGE_PREFIX = 'tp2-cpq-launch-replay:';
+
+/** URL keys owned by the filter panel. Anything else in the URL is preserved. */
+const FILTER_PARAM_KEYS = ['ruleset', 'bike_type', 'countries', 'ipn', 'status', 'cols', 'features'] as const;
+
+const STATUS_OPTIONS: Array<{ value: AllocationStatusValue; label: string; hint: string }> = [
+  { value: 'active', label: 'Active', hint: 'At least one sampler row is active' },
+  { value: 'not_active', label: 'Inactive', hint: 'Sampler rows exist but all are inactive' },
+  { value: 'not_configured', label: 'Not configured', hint: 'No sampler row exists yet' },
+];
 
 function statusLabel(status: AllocationStatus): string {
   if (status === 'active') return 'Active';
@@ -65,27 +84,40 @@ function getBCBadgeClass(status: BCStatus): string {
   return `${styles.bcBadge} ${styles.bcStatusDisabled}`;
 }
 
+function toUrlList(values: string[]): string {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b)).join(',');
+}
+
 export default function SalesBikeAllocationTableClient({
   rows,
   availableFeatures,
+  selectedFeatureColumns,
   countryColumns,
   filterOptions,
   filters,
   pagination,
+  canEdit,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
-  const [ipnFilter, setIpnFilter] = useState('');
-  const [featureFilters, setFeatureFilters] = useState<Record<string, string>>({});
-  const [countryFilters, setCountryFilters] = useState<Record<string, CountryStatusFilter>>({});
+  // Filter state is seeded from the server-normalized filters, so refresh,
+  // back/forward and shared links all restore the same view.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [rulesetFilter, setRulesetFilter] = useState(filters.ruleset);
+  const [bikeTypeFilter, setBikeTypeFilter] = useState(filters.bike_type);
+  const [countrySelection, setCountrySelection] = useState<string[]>(filters.countryCodes);
+  const [statusSelection, setStatusSelection] = useState<AllocationStatusValue[]>(filters.allocationStatuses);
+  const [ipnFilter, setIpnFilter] = useState(filters.ipnSearch);
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>(selectedFeatureColumns);
+  const [featureFilters, setFeatureFilters] = useState<Record<string, string>>(filters.featureFilters);
+  const [territorySearch, setTerritorySearch] = useState('');
+
   const [message, setMessage] = useState<Message>(null);
   const [cellActionKey, setCellActionKey] = useState<string | null>(null);
   const [pushActionKey, setPushActionKey] = useState<string | null>(null);
   const [bulkActionRunning, setBulkActionRunning] = useState(false);
-  const [bulkCountrySelection, setBulkCountrySelection] = useState<Record<string, boolean>>({});
   const [bcStatusBySku, setBcStatusBySku] = useState<BCStatusMap>({});
   const [bcStatusLoading, setBcStatusLoading] = useState(false);
   const [bcCheckSummary, setBcCheckSummary] = useState<BCCheckSummary>(null);
@@ -97,54 +129,132 @@ export default function SalesBikeAllocationTableClient({
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
-  const selectedFeatureSet = useMemo(() => new Set(selectedFeatures), [selectedFeatures]);
-  const selectedCountryTargets = useMemo(
-    () => countryColumns.filter((countryCode) => bulkCountrySelection[countryCode]),
-    [bulkCountrySelection, countryColumns],
+  // --- derived view state -------------------------------------------------
+
+  const visibleFeatureColumns = useMemo(
+    () => availableFeatures.filter((feature) => selectedFeatures.includes(feature)),
+    [availableFeatures, selectedFeatures],
   );
 
-  const visibleFeatureColumns = availableFeatures.filter((feature) => selectedFeatureSet.has(feature));
-  const effectiveRuleset = String(filters.ruleset ?? '').trim();
+  /** Territory selection drives the rendered country columns. */
+  const renderedCountries = useMemo(() => {
+    const selected = countrySelection.filter((countryCode) => countryColumns.includes(countryCode));
+    if (!selected.length) return countryColumns;
+    return countryColumns.filter((countryCode) => selected.includes(countryCode));
+  }, [countryColumns, countrySelection]);
 
-  const filteredRows = useMemo(() => {
-    const normalizedIpnFilter = ipnFilter.trim().toLowerCase();
+  /** Explicit country targets for mutations. Empty means "no target". */
+  const countryTargets = useMemo(
+    () => countrySelection.filter((countryCode) => countryColumns.includes(countryCode)),
+    [countryColumns, countrySelection],
+  );
 
-    return rows.filter((row) => {
-      if (normalizedIpnFilter && !row.ipnCode.toLowerCase().includes(normalizedIpnFilter)) {
-        return false;
-      }
+  const territoryGroups = useMemo(
+    () => filterTerritoryRegions(filterOptions.territoryRegions, territorySearch),
+    [filterOptions.territoryRegions, territorySearch],
+  );
+  const allTerritoryCountries = useMemo(
+    () => flattenTerritoryCountries(filterOptions.territoryRegions),
+    [filterOptions.territoryRegions],
+  );
 
-      for (const feature of visibleFeatureColumns) {
-        const valueFilter = String(featureFilters[feature] ?? '').trim().toLowerCase();
-        if (!valueFilter) continue;
-        const value = String(row.featureValues[feature] ?? '').toLowerCase();
-        if (!value.includes(valueFilter)) return false;
-      }
+  const effectiveRuleset = rulesetFilter.trim() || filters.ruleset;
+  // Bulk targets come from the rows the server returned for THIS page only.
+  const currentPageIpnCodes = useMemo(() => [...new Set(rows.map((row) => row.ipnCode))], [rows]);
 
-      for (const country of countryColumns) {
-        const statusFilter = countryFilters[country] ?? 'all';
-        if (statusFilter === 'all') continue;
-        if (row.countryStatuses[country] !== statusFilter) return false;
-      }
+  // --- URL synchronization ------------------------------------------------
 
-      return true;
-    });
-  }, [rows, ipnFilter, visibleFeatureColumns, featureFilters, countryColumns, countryFilters]);
+  const serializedFilters = useMemo(() => {
+    const params = new URLSearchParams();
+    if (rulesetFilter.trim()) params.set('ruleset', rulesetFilter.trim());
+    if (bikeTypeFilter.trim()) params.set('bike_type', bikeTypeFilter.trim());
+    const countries = toUrlList(countrySelection.map((value) => value.toUpperCase()));
+    if (countries) params.set('countries', countries);
+    if (ipnFilter.trim()) params.set('ipn', ipnFilter.trim());
+    const statuses = toUrlList(statusSelection);
+    if (statuses) params.set('status', statuses);
+    const cols = toUrlList(selectedFeatures.map((feature) => encodeURIComponent(feature)));
+    if (cols) params.set('cols', cols);
+    const features = encodeFeatureFilters(featureFilters);
+    if (features) params.set('features', features);
+    return params.toString();
+  }, [rulesetFilter, bikeTypeFilter, countrySelection, ipnFilter, statusSelection, selectedFeatures, featureFilters]);
 
-  const updateFilter = (key: 'ruleset' | 'country_code' | 'bike_type', value: string) => {
+  /**
+   * The filter signature the server actually used to build `rows`. While local
+   * filter state is ahead of it (the URL sync is debounced), the rows on screen
+   * belong to the previous filter set, so mutations are blocked until the
+   * server catches up. This is what stops stale targets leaking into a bulk call.
+   */
+  const appliedFilters = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filters.ruleset) params.set('ruleset', filters.ruleset);
+    if (filters.bike_type) params.set('bike_type', filters.bike_type);
+    const countries = toUrlList(filters.countryCodes);
+    if (countries) params.set('countries', countries);
+    if (filters.ipnSearch) params.set('ipn', filters.ipnSearch);
+    const statuses = toUrlList(filters.allocationStatuses);
+    if (statuses) params.set('status', statuses);
+    const cols = toUrlList(selectedFeatureColumns.map((feature) => encodeURIComponent(feature)));
+    if (cols) params.set('cols', cols);
+    const features = encodeFeatureFilters(filters.featureFilters);
+    if (features) params.set('features', features);
+    return params.toString();
+  }, [filters, selectedFeatureColumns]);
+
+  const filtersPending = appliedFilters !== serializedFilters;
+
+  const bulkBlockedReason = !canEdit
+    ? 'You need Edit access to change allocation.'
+    : filtersPending
+      ? 'Applying filters…'
+      : !effectiveRuleset
+        ? 'Select a specific ruleset first.'
+        : !rows.length
+          ? 'No rows on this page.'
+          : !countryTargets.length
+            ? 'Select at least one country in Territory.'
+            : null;
+
+  useEffect(() => {
+    // Build the URL's current filter view in the same key order the serializer
+    // uses, so an unchanged filter set never triggers a replace (no update loop).
+    const current = new URLSearchParams(searchParams.toString());
+    const currentFilters = new URLSearchParams();
+    for (const key of FILTER_PARAM_KEYS) {
+      const value = current.get(key);
+      if (value) currentFilters.set(key, value);
+    }
+    if (currentFilters.toString() === serializedFilters) return;
+
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(searchParams.toString());
+      FILTER_PARAM_KEYS.forEach((key) => next.delete(key));
+      // Legacy deep-link param is migrated into `countries` on first interaction.
+      next.delete('country_code');
+      new URLSearchParams(serializedFilters).forEach((value, key) => next.set(key, value));
+      // Any change to the dataset filters restarts at page 1.
+      next.set('page', '1');
+      next.set('page_size', String(pagination.pageSize));
+      router.replace(`${pathname}?${next.toString()}`);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [serializedFilters, searchParams, router, pathname, pagination.pageSize]);
+
+  const goToPage = (nextPage: number) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (value) params.set(key, value);
-    else params.delete(key);
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
-  };
-  const setPage = (page: number) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('page', String(page));
+    params.set('page', String(Math.min(Math.max(1, nextPage), pagination.totalPages)));
     params.set('page_size', String(pagination.pageSize));
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
+    router.replace(`${pathname}?${params.toString()}`);
   };
+
+  const paginationItems = useMemo(
+    () => buildPaginationItems(pagination.page, pagination.totalPages),
+    [pagination.page, pagination.totalPages],
+  );
+
+  // --- filter mutators ----------------------------------------------------
 
   const updateSelectedFeatures = (values: string[]) => {
     setSelectedFeatures(values);
@@ -155,15 +265,123 @@ export default function SalesBikeAllocationTableClient({
     setFeatureFilters((prev) => ({ ...prev, [feature]: value }));
   };
 
-  const setCountryFilterValue = (country: string, value: CountryStatusFilter) => {
-    setCountryFilters((prev) => ({ ...prev, [country]: value }));
+  const toggleTerritoryCountry = (countryCode: string, checked: boolean) => {
+    setCountrySelection((prev) => {
+      if (checked) return prev.includes(countryCode) ? prev : [...prev, countryCode];
+      return prev.filter((value) => value !== countryCode);
+    });
   };
 
-  const runRefresh = () => {
-    router.refresh();
+  const toggleCountryGroup = (codes: string[], select: boolean) => {
+    setCountrySelection((prev) =>
+      select ? [...new Set([...prev, ...codes])] : prev.filter((countryCode) => !codes.includes(countryCode)),
+    );
   };
+
+  const toggleStatus = (status: AllocationStatusValue, checked: boolean) => {
+    setStatusSelection((prev) => {
+      if (checked) return prev.includes(status) ? prev : [...prev, status];
+      return prev.filter((value) => value !== status);
+    });
+  };
+
+  const clearAllFilters = () => {
+    setRulesetFilter('');
+    setBikeTypeFilter('');
+    setCountrySelection([]);
+    setStatusSelection([]);
+    setIpnFilter('');
+    setSelectedFeatures([]);
+    setFeatureFilters({});
+    setTerritorySearch('');
+  };
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (rulesetFilter.trim()) chips.push({ key: 'ruleset', label: `Ruleset: ${rulesetFilter}`, onRemove: () => setRulesetFilter('') });
+    if (bikeTypeFilter.trim()) chips.push({ key: 'bike_type', label: `Bike type: ${bikeTypeFilter}`, onRemove: () => setBikeTypeFilter('') });
+    if (ipnFilter.trim()) chips.push({ key: 'ipn', label: `IPN contains "${ipnFilter}"`, onRemove: () => setIpnFilter('') });
+    if (countrySelection.length)
+      chips.push({
+        key: 'countries',
+        label: `${countrySelection.length} countr${countrySelection.length === 1 ? 'y' : 'ies'}`,
+        onRemove: () => setCountrySelection([]),
+      });
+    for (const status of statusSelection) {
+      chips.push({
+        key: `status-${status}`,
+        label: STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status,
+        onRemove: () => toggleStatus(status, false),
+      });
+    }
+    for (const [feature, value] of Object.entries(featureFilters)) {
+      if (!value.trim()) continue;
+      chips.push({ key: `feature-${feature}`, label: `${feature}: "${value}"`, onRemove: () => setFeatureFilterValue(feature, '') });
+    }
+    return chips;
+  }, [rulesetFilter, bikeTypeFilter, ipnFilter, countrySelection, statusSelection, featureFilters]);
+
+  // --- external status helpers -------------------------------------------
+
+  const getExternalStatusKey = (sku: string, countryCode: string) => `${sku}::${countryCode}`;
+
+  const getSyncDisplay = (sku: string, countryCode: string, status: AllocationStatus) => {
+    const key = getExternalStatusKey(sku, countryCode);
+    const transient = syncStateByKey[key];
+    if (transient === 'pending_bc') return { label: 'Pending BC', tone: 'pending' as const };
+    if (transient === 'error') return { label: 'Error', tone: 'error' as const };
+    if (transient === 'pushed') return { label: 'Pushed', tone: 'pushed' as const };
+    const bcStatus = bcStatusBySku[sku]?.status;
+    if (bcStatus && bcStatus !== 'OK') return { label: 'Pending BC', tone: 'pending' as const };
+    const external = externalStatusByKey[key];
+    if (!external?.exists) return { label: 'Unknown', tone: 'unknown' as const };
+    const internalActive = status === 'active';
+    return external.isActive === internalActive ? { label: 'Pushed', tone: 'pushed' as const } : { label: 'Out of sync', tone: 'outOfSync' as const };
+  };
+
+  const refreshExternalStatus = useCallback(async () => {
+    setExternalStatusLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/bike-allocation/external-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Read-only: the server rebuilds the same filtered dataset and performs
+        // one batched external lookup (never per cell).
+        body: JSON.stringify({ filters }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        result?: { pairCount: number; items: ExternalStatusMap };
+      };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Failed to refresh external status.');
+
+      const items = payload.result.items ?? {};
+      const statuses = Object.values(items);
+      const found = statuses.filter((item) => item.exists).length;
+      const active = statuses.filter((item) => item.exists && item.isActive === true).length;
+      const inactive = statuses.filter((item) => item.exists && item.isActive === false).length;
+      setExternalStatusByKey(items);
+      setExternalStatusSummary({
+        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        pairCount: payload.result.pairCount,
+        found,
+        active,
+        inactive,
+      });
+      setMessage({ type: 'success', text: `External status refreshed for ${payload.result.pairCount} SKU/country pair(s) across all filtered pages.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to refresh external status.' });
+    } finally {
+      setExternalStatusLoading(false);
+    }
+  }, [filters]);
+
+  // --- cell actions -------------------------------------------------------
 
   const onCountryCellClick = async (row: SalesBikeAllocationRow, countryCode: string, status: AllocationStatus) => {
+    // "Not configured" has no allocation row to toggle: it opens the CPQ
+    // configurator replay flow instead.
     if (status === 'not_configured') {
       setCellActionKey(`${row.rowRuleset}:${row.ipnCode}:${countryCode}`);
       setMessage(null);
@@ -261,15 +479,13 @@ export default function SalesBikeAllocationTableClient({
         type: 'success',
         text: `${row.ipnCode} ${countryCode} updated to ${payload.result.targetStatus === 'active' ? 'Active' : 'Inactive'} (${payload.result.updatedCount} sampler row(s)). ${payload.result.externalSync?.message ?? ''}`.trim(),
       });
-      runRefresh();
+      router.refresh();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to update cell.' });
     } finally {
       setCellActionKey(null);
     }
   };
-
-
 
   const pushRowToExternal = async (row: SalesBikeAllocationRow, countryCode: string) => {
     const actionKey = `${row.rowRuleset}:${row.ipnCode}:${countryCode}`;
@@ -336,22 +552,15 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
+  // --- bulk actions (current page only) -----------------------------------
+
   const runBulkAction = async (targetStatus: 'active' | 'not_active') => {
-    if (!effectiveRuleset) {
-      setMessage({ type: 'error', text: 'Select a specific ruleset before running bulk actions.' });
-      return;
-    }
-    if (!filteredRows.length) {
-      setMessage({ type: 'error', text: 'No visible rows to update.' });
-      return;
-    }
-    if (!selectedCountryTargets.length) {
-      setMessage({ type: 'error', text: 'Choose at least one target country column for bulk update.' });
+    if (bulkBlockedReason) {
+      setMessage({ type: 'error', text: bulkBlockedReason });
       return;
     }
 
     const label = targetStatus === 'active' ? 'Activate' : 'Deactivate';
-
     setBulkActionRunning(true);
     setMessage(null);
     try {
@@ -360,8 +569,9 @@ export default function SalesBikeAllocationTableClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ruleset: effectiveRuleset,
-          ipnCodes: filteredRows.map((row) => row.ipnCode),
-          countryCodes: selectedCountryTargets,
+          // Exactly the bikes the server returned for this page.
+          ipnCodes: currentPageIpnCodes,
+          countryCodes: countryTargets,
           targetStatus,
         }),
       });
@@ -377,11 +587,11 @@ export default function SalesBikeAllocationTableClient({
 
       setMessage({
         type: 'success',
-        text: `Bulk ${label.toLowerCase()} done. Updated ${payload.result.updatedCount} sampler row(s) for ${payload.result.ipnCount} IPN(s) x ${payload.result.countryCount} countr${payload.result.countryCount === 1 ? 'y' : 'ies'}. External sync: ${payload.result.externalSync?.pushed ?? 0} pushed, ${payload.result.externalSync?.pendingBc ?? 0} pending BC, ${payload.result.externalSync?.errors ?? 0} errors.`,
+        text: `Bulk ${label.toLowerCase()} done on the current page. Updated ${payload.result.updatedCount} sampler row(s) for ${payload.result.ipnCount} bike(s) x ${payload.result.countryCount} countr${payload.result.countryCount === 1 ? 'y' : 'ies'}. External sync: ${payload.result.externalSync?.pushed ?? 0} pushed, ${payload.result.externalSync?.pendingBc ?? 0} pending BC, ${payload.result.externalSync?.errors ?? 0} errors.`,
       });
-      setToastMessage(`Done — ${filteredRows.length} items updated`);
+      setToastMessage(`Done — ${currentPageIpnCodes.length} bike(s) updated on this page`);
       setToastVisible(true);
-      runRefresh();
+      router.refresh();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Bulk update failed.' });
     } finally {
@@ -389,8 +599,29 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
-  const requestBulkAction = (targetStatus: 'active' | 'not_active') => {
-    setPendingBulkStatus(targetStatus);
+  const runBulkPushBcOk = async () => {
+    if (bulkBlockedReason) {
+      setMessage({ type: 'error', text: bulkBlockedReason });
+      return;
+    }
+
+    setBulkActionRunning(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/sales/bike-allocation/bulk-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruleset: effectiveRuleset, ipnCodes: currentPageIpnCodes, countryCodes: countryTargets }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; result?: { targetCount: number; externalSync: ExternalSyncSummary } };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Push all BC OK failed');
+      setMessage({ type: 'success', text: `Push all BC OK complete for ${payload.result.targetCount} bike/country row(s) on the current page: ${payload.result.externalSync.pushed} pushed, ${payload.result.externalSync.pendingBc} pending BC, ${payload.result.externalSync.errors} errors.` });
+      await refreshExternalStatus();
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Push all BC OK failed.' });
+    } finally {
+      setBulkActionRunning(false);
+    }
   };
 
   const confirmBulkAction = () => {
@@ -402,101 +633,10 @@ export default function SalesBikeAllocationTableClient({
 
   const dismissToast = useCallback(() => setToastVisible(false), []);
 
-  const getExternalStatusKey = (sku: string, countryCode: string) => `${sku}::${countryCode}`;
-
-  const getSyncDisplay = (sku: string, countryCode: string, status: AllocationStatus) => {
-    const key = getExternalStatusKey(sku, countryCode);
-    const transient = syncStateByKey[key];
-    if (transient === 'pending_bc') return { label: 'Pending BC', tone: 'pending' as const };
-    if (transient === 'error') return { label: 'Error', tone: 'error' as const };
-    if (transient === 'pushed') return { label: 'Pushed', tone: 'pushed' as const };
-    const bcStatus = bcStatusBySku[sku]?.status;
-    if (bcStatus && bcStatus !== 'OK') return { label: 'Pending BC', tone: 'pending' as const };
-    const external = externalStatusByKey[key];
-    if (!external?.exists) return { label: 'Unknown', tone: 'unknown' as const };
-    const internalActive = status === 'active';
-    return external.isActive === internalActive ? { label: 'Pushed', tone: 'pushed' as const } : { label: 'Out of sync', tone: 'outOfSync' as const };
-  };
-
-  const runBulkPushBcOk = async () => {
-    if (!effectiveRuleset) {
-      setMessage({ type: 'error', text: 'Select a specific ruleset before pushing BC OK rows.' });
-      return;
-    }
-    if (!filteredRows.length) {
-      setMessage({ type: 'error', text: 'No visible rows to push.' });
-      return;
-    }
-    if (!selectedCountryTargets.length) {
-      setMessage({ type: 'error', text: 'Choose at least one target country column for Push all BC OK.' });
-      return;
-    }
-
-    setBulkActionRunning(true);
-    setMessage(null);
-    try {
-      const response = await fetch('/api/sales/bike-allocation/bulk-push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ruleset: effectiveRuleset, ipnCodes: filteredRows.map((row) => row.ipnCode), countryCodes: selectedCountryTargets }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; result?: { targetCount: number; externalSync: ExternalSyncSummary } };
-      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Push all BC OK failed');
-      setMessage({ type: 'success', text: `Push all BC OK complete for ${payload.result.targetCount} bike/country row(s): ${payload.result.externalSync.pushed} pushed, ${payload.result.externalSync.pendingBc} pending BC, ${payload.result.externalSync.errors} errors.` });
-      await refreshExternalStatus();
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Push all BC OK failed.' });
-    } finally {
-      setBulkActionRunning(false);
-    }
-  };
-
-  const refreshExternalStatus = async () => {
-    setExternalStatusLoading(true);
-    setMessage(null);
-    try {
-      const response = await fetch('/api/sales/bike-allocation/external-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filters,
-          filterCriteria: {
-            ipnFilter,
-            featureFilters,
-            countryStatusFilters: countryFilters,
-          },
-        }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        result?: { pairCount: number; items: ExternalStatusMap };
-      };
-      if (!response.ok || !payload.result) throw new Error(payload.error ?? 'Failed to refresh external status.');
-
-      const items = payload.result.items ?? {};
-      const statuses = Object.values(items);
-      const found = statuses.filter((item) => item.exists).length;
-      const active = statuses.filter((item) => item.exists && item.isActive === true).length;
-      const inactive = statuses.filter((item) => item.exists && item.isActive === false).length;
-      setExternalStatusByKey(items);
-      setExternalStatusSummary({
-        checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        pairCount: payload.result.pairCount,
-        found,
-        active,
-        inactive,
-      });
-      setMessage({ type: 'success', text: `External status refreshed for ${payload.result.pairCount} SKU/country pair(s) across all filtered pages.` });
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to refresh external status.' });
-    } finally {
-      setExternalStatusLoading(false);
-    }
-  };
-
+  // --- BigCommerce status -------------------------------------------------
 
   useEffect(() => {
-    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku))));
+    const skus = [...new Set(rows.map((row) => row.ipnCode.trim()).filter(Boolean))];
     if (!skus.length) return;
 
     let cancelled = false;
@@ -519,10 +659,7 @@ export default function SalesBikeAllocationTableClient({
             nextStatuses[sku] = { status };
           }
         }
-
-        if (Object.keys(nextStatuses).length > 0) {
-          setBcStatusBySku((prev) => ({ ...prev, ...nextStatuses }));
-        }
+        if (Object.keys(nextStatuses).length > 0) setBcStatusBySku((prev) => ({ ...prev, ...nextStatuses }));
       } catch (error) {
         console.warn('[BC status][bike-allocation] cached lookup failed', error);
       }
@@ -532,23 +669,10 @@ export default function SalesBikeAllocationTableClient({
     return () => {
       cancelled = true;
     };
-  }, [filteredRows]);
-
-
-  const paginationItems = useMemo(() => {
-    const p = pagination.page; const t = pagination.totalPages;
-    const around = [p-1,p,p+1,p+2].filter((n)=>n>=1&&n<=t);
-    return [1,...around,t].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>a-b);
-  }, [pagination.page, pagination.totalPages]);
+  }, [rows]);
 
   const runBCStatusCheck = async () => {
-    const skus: string[] = Array.from(new Set<string>(filteredRows.map((row) => row.ipnCode.trim()).filter((sku): sku is string => Boolean(sku))));
-    console.info('[BC status][bike-allocation]', {
-      loadedRowCount: rows.length,
-      visibleRowCount: filteredRows.length,
-      nonEmptySkuCount: skus.length,
-      firstSkus: skus.slice(0, 5),
-    });
+    const skus = [...new Set(rows.map((row) => row.ipnCode.trim()).filter(Boolean))];
     if (!skus.length) {
       setBcCheckSummary({
         checkedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -567,9 +691,7 @@ export default function SalesBikeAllocationTableClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skus }),
       });
-      const payload = (await response.json().catch(() => ({}))) as {
-        items?: Record<string, BCVariantStatusItem>;
-      };
+      const payload = (await response.json().catch(() => ({}))) as { items?: Record<string, BCVariantStatusItem> };
       if (!response.ok || !payload.items) throw new Error('Failed to load BigCommerce variant status.');
 
       const nextStatuses: BCStatusMap = {};
@@ -622,228 +744,463 @@ export default function SalesBikeAllocationTableClient({
     }
   };
 
+  // --- render -------------------------------------------------------------
+
+  const busy = bulkActionRunning || externalStatusLoading;
+
   return (
     <>
-      <section className={styles.filters}>
-        <label className={styles.filterItem}>
-          <span>Ruleset</span>
-          <select value={filters.ruleset ?? ''} onChange={(event) => updateFilter('ruleset', event.target.value)}>
-            <option value="">All</option>
-            {filterOptions.rulesets.map((ruleset) => (
-              <option key={ruleset} value={ruleset}>
-                {ruleset}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className={styles.filterItem}>
-          <span>Country code</span>
-          <select value={filters.country_code ?? ''} onChange={(event) => updateFilter('country_code', event.target.value)}>
-            <option value="">All</option>
-            {filterOptions.countryCodes.map((countryCode) => (
-              <option key={countryCode} value={countryCode}>
-                {countryCode}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className={styles.filterItem}>
-          <span>Bike type</span>
-          <select value={filters.bike_type ?? ''} onChange={(event) => updateFilter('bike_type', event.target.value)}>
-            <option value="">All</option>
-            {filterOptions.bikeTypes.map((bikeType) => (
-              <option key={bikeType} value={bikeType}>
-                {bikeType}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className={styles.filterItem}>
-          <span>Feature columns</span>
-          <MultiSelectDropdown options={availableFeatures} selected={selectedFeatures} onChange={updateSelectedFeatures} placeholder="All" />
-        </label>
-      </section>
-
-      <section className={styles.bulkActions}>
-        <div className={styles.bulkSummary}>Visible rows: {filteredRows.length}</div>
-        <div className={styles.bcCheckActions}>
-          <button type="button" onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading}>
-            {bcStatusLoading ? 'Checking BC Status...' : 'Check BC Status'}
-          </button>
-          {bcCheckSummary ? (
-            <span className={styles.bcCheckMeta}>
-              Last checked: {bcCheckSummary.checkedAt} · Checked {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
-            </span>
-          ) : null}
-        </div>
-        <div className={styles.bcCheckActions}>
-          <button type="button" onClick={() => void refreshExternalStatus()} disabled={externalStatusLoading || bulkActionRunning}>
-            {externalStatusLoading ? 'Refreshing external status…' : 'Refresh external status'}
-          </button>
-          {externalStatusSummary ? (
-            <span className={styles.bcCheckMeta}>
-              Last refreshed: {externalStatusSummary.checkedAt} · Checked {externalStatusSummary.pairCount} pairs · {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
-            </span>
-          ) : null}
-        </div>
-        <div className={styles.bulkCountryList}>
-          {countryColumns.map((countryCode) => (
-            <label key={`bulk-${countryCode}`} className={styles.bulkCountryItem}>
-              <input
-                type="checkbox"
-                checked={Boolean(bulkCountrySelection[countryCode])}
-                onChange={(event) =>
-                  setBulkCountrySelection((prev) => ({ ...prev, [countryCode]: event.target.checked }))
-                }
-                disabled={bulkActionRunning}
-              />
-              {countryCode}
-            </label>
-          ))}
-        </div>
-        <div className={styles.bulkButtons}>
-          <button type="button" onClick={() => requestBulkAction('active')} disabled={bulkActionRunning}>
-            {bulkActionRunning ? 'Working…' : 'Bulk activate'}
-          </button>
-          <button type="button" onClick={() => requestBulkAction('not_active')} disabled={bulkActionRunning}>
-            {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
-          </button>
-          <button type="button" onClick={() => void runBulkPushBcOk()} disabled={bulkActionRunning}>
-            {bulkActionRunning ? 'Working…' : 'Push all BC OK'}
-          </button>
-        </div>
-      </section>
-
-      <div className={styles.helperText}>
-        <strong>Cell actions:</strong> Active / Inactive are clickable toggles. Not configured opens the CPQ configurator flow. Active / Inactive first updates Neon, then automatically pushes to external PostgreSQL when BC Status is OK. If BC is NOK/ERR/DISABLED or unknown, the cell shows <strong>Pending BC</strong> and can be pushed later with <strong>Push all BC OK</strong> after BC status is refreshed to OK. Use <strong>Refresh external status</strong> to verify pushed/out-of-sync state across the current filtered dataset.
+      <div className={styles.legend} role='note'>
+        <span className={styles.legendTitle}>Allocation status</span>
+        <span className={`${styles.legendItem} ${styles.statusActive}`}>✓ Active</span>
+        <span className={`${styles.legendItem} ${styles.statusNotActive}`}>✕ Inactive</span>
+        <span className={`${styles.legendItem} ${styles.statusNotConfigured}`}>– Not configured → opens CPQ</span>
+        <span className={styles.legendDivider} aria-hidden='true' />
+        <span className={styles.legendTitle}>Sync</span>
+        <span className={styles.legendMuted}>BC Status column = BigCommerce readiness · cell pill = external PostgreSQL sync state</span>
       </div>
 
+      <section className={`${styles.panel} ${styles.filterPanel}`} aria-label='Bike allocation filters'>
+        <div className={styles.filterHeaderRow}>
+          <div className={styles.filterHeaderLeft}>
+            <button
+              type='button'
+              className={styles.collapseToggle}
+              onClick={() => setFiltersOpen((prev) => !prev)}
+              aria-expanded={filtersOpen}
+              aria-controls='bike-allocation-filters'
+            >
+              {filtersOpen ? 'Hide filters' : 'Show filters'}
+            </button>
+            <span className={styles.matchChip}>
+              {pagination.totalRows} bike{pagination.totalRows === 1 ? '' : 's'} matched
+            </span>
+            <span className={styles.scopeChip}>
+              Countries in scope: <strong>{countryTargets.length || `all ${countryColumns.length}`}</strong>
+            </span>
+          </div>
+
+          <div className={styles.filterHeaderActions}>
+            <span className={styles.scopeChip} title='Bulk actions never reach beyond the rows listed on this page.'>
+              Bulk scope: <strong>current page</strong> ({rows.length} bike{rows.length === 1 ? '' : 's'})
+            </span>
+            <button type='button' className={styles.bulkActionButton} onClick={() => void runBCStatusCheck()} disabled={bcStatusLoading || busy}>
+              {bcStatusLoading ? 'Checking BC Status…' : 'Check BC Status'}
+            </button>
+            <button type='button' className={styles.bulkActionButton} onClick={() => void refreshExternalStatus()} disabled={busy}>
+              {externalStatusLoading ? 'Refreshing external status…' : 'Refresh external status'}
+            </button>
+            <button
+              type='button'
+              className={`${styles.bulkActionButton} ${styles.bulkActionPrimary}`}
+              onClick={() => setPendingBulkStatus('active')}
+              disabled={busy || Boolean(bulkBlockedReason)}
+              title={bulkBlockedReason ?? 'Activate the bikes on this page for the selected countries'}
+            >
+              {bulkActionRunning ? 'Working…' : 'Bulk activate'}
+            </button>
+            <button
+              type='button'
+              className={`${styles.bulkActionButton} ${styles.bulkActionDestructive}`}
+              onClick={() => setPendingBulkStatus('not_active')}
+              disabled={busy || Boolean(bulkBlockedReason)}
+              title={bulkBlockedReason ?? 'Deactivate the bikes on this page for the selected countries'}
+            >
+              {bulkActionRunning ? 'Working…' : 'Bulk deactivate'}
+            </button>
+            <button
+              type='button'
+              className={styles.bulkActionButton}
+              onClick={() => void runBulkPushBcOk()}
+              disabled={busy || Boolean(bulkBlockedReason)}
+              title={bulkBlockedReason ?? 'Re-push this page to external PostgreSQL without changing Active/Inactive'}
+            >
+              {bulkActionRunning ? 'Working…' : 'Push all BC OK'}
+            </button>
+          </div>
+        </div>
+
+        {(bcCheckSummary || externalStatusSummary) && (
+          <div className={styles.metaRow}>
+            {bcCheckSummary ? (
+              <span className={styles.bcCheckMeta}>
+                BC checked {bcCheckSummary.checkedAt} · {bcCheckSummary.checkedCount} SKUs · {bcCheckSummary.ok} OK / {bcCheckSummary.nok} NOK / {bcCheckSummary.err} ERR
+              </span>
+            ) : null}
+            {externalStatusSummary ? (
+              <span className={styles.bcCheckMeta}>
+                External refreshed {externalStatusSummary.checkedAt} · {externalStatusSummary.pairCount} pairs · {externalStatusSummary.found} found ({externalStatusSummary.active} active / {externalStatusSummary.inactive} inactive)
+              </span>
+            ) : null}
+          </div>
+        )}
+
+        {bulkBlockedReason && canEdit ? (
+          <p className={styles.guardNote} role='status'>
+            Bulk actions unavailable: {bulkBlockedReason}
+          </p>
+        ) : null}
+        {!canEdit ? (
+          <p className={styles.guardNote} role='status'>
+            Read-only access: allocation changes and pushes are disabled.
+          </p>
+        ) : null}
+
+        {activeFilterChips.length ? (
+          <div className={styles.chipRow} aria-label='Active filters'>
+            {activeFilterChips.map((chip) => (
+              <button key={chip.key} type='button' className={styles.filterChip} onClick={chip.onRemove}>
+                {chip.label}
+                <span aria-hidden='true'>×</span>
+                <span className={styles.srOnly}>(remove filter)</span>
+              </button>
+            ))}
+            <button type='button' className={styles.textButton} onClick={clearAllFilters}>
+              Clear all
+            </button>
+          </div>
+        ) : null}
+
+        {filtersOpen ? (
+          <div className={styles.filterSections} id='bike-allocation-filters'>
+            <section className={styles.filterSection} aria-labelledby='territory-heading'>
+              <div className={styles.sectionTitleRow}>
+                <h3 id='territory-heading'>Territory</h3>
+                <div className={styles.sectionTitleActions}>
+                  <button type='button' className={styles.textButton} onClick={() => setCountrySelection([...allTerritoryCountries])}>
+                    All
+                  </button>
+                  <button
+                    type='button'
+                    className={styles.textButton}
+                    onClick={() => {
+                      setCountrySelection([]);
+                      setTerritorySearch('');
+                    }}
+                  >
+                    None
+                  </button>
+                </div>
+              </div>
+              <label className={styles.filterItem}>
+                <span>Search country code</span>
+                <input
+                  value={territorySearch}
+                  onChange={(event) => setTerritorySearch(event.target.value.toUpperCase())}
+                  placeholder='e.g. GB'
+                  aria-describedby='territory-help'
+                />
+              </label>
+              <p className={styles.helpText} id='territory-help'>
+                Selected countries decide which columns are shown, which cells the status filter looks at, and which
+                countries bulk actions write to. Search only hides options — it never changes the selection. With nothing
+                selected, all {countryColumns.length} columns are shown and bulk actions stay disabled.
+              </p>
+
+              <div className={styles.territoryRegionGrid}>
+                {territoryGroups.length === 0 ? (
+                  <p className={styles.emptyFilterValues}>No country matches “{territorySearch}”.</p>
+                ) : (
+                  territoryGroups.map((region) => {
+                    const regionCodes = region.subRegions.flatMap((subRegion) => subRegion.countries);
+                    const regionSelected = regionCodes.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                    const regionAllSelected = regionCodes.length > 0 && regionSelected === regionCodes.length;
+                    return (
+                      <div key={`region-${region.region}`} className={styles.territoryRegionCard}>
+                        <button
+                          type='button'
+                          className={styles.territoryGroupButton}
+                          aria-pressed={regionAllSelected}
+                          onClick={() => toggleCountryGroup(regionCodes, !regionAllSelected)}
+                        >
+                          <span className={styles.territoryRegionTitle}>{region.region}</span>
+                          <span className={styles.selectionCount}>
+                            {regionSelected}/{regionCodes.length}
+                          </span>
+                        </button>
+
+                        {region.subRegions.map((subRegion) => {
+                          const subSelected = subRegion.countries.filter((countryCode) => countrySelection.includes(countryCode)).length;
+                          const subAllSelected = subRegion.countries.length > 0 && subSelected === subRegion.countries.length;
+                          return (
+                            <div key={`${region.region}-${subRegion.subRegion}`} className={styles.subRegionBlock}>
+                              <button
+                                type='button'
+                                className={styles.territoryGroupButton}
+                                aria-pressed={subAllSelected}
+                                onClick={() => toggleCountryGroup(subRegion.countries, !subAllSelected)}
+                              >
+                                <span className={styles.subRegionTitle}>{subRegion.subRegion}</span>
+                                <span className={styles.selectionCount}>
+                                  {subSelected}/{subRegion.countries.length}
+                                </span>
+                              </button>
+                              <div className={styles.countryOptionGrid}>
+                                {subRegion.countries.map((countryCode) => (
+                                  <label key={`${region.region}-${subRegion.subRegion}-${countryCode}`} className={styles.checkboxOption}>
+                                    <input
+                                      type='checkbox'
+                                      checked={countrySelection.includes(countryCode)}
+                                      onChange={(event) => toggleTerritoryCountry(countryCode, event.target.checked)}
+                                    />
+                                    <CountryFlagLabel countryCode={countryCode} className={styles.countryOptionLabel} flagClassName={styles.countryFlag} />
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            <section className={styles.filterSection} aria-labelledby='bike-filters-heading'>
+              <div className={styles.sectionTitleRow}>
+                <h3 id='bike-filters-heading'>Bike filters</h3>
+              </div>
+
+              <div className={styles.bikeFilterGrid}>
+                <label className={styles.filterItem}>
+                  <span>Ruleset</span>
+                  <select value={rulesetFilter} onChange={(event) => setRulesetFilter(event.target.value)}>
+                    <option value=''>All</option>
+                    {filterOptions.rulesets.map((ruleset) => (
+                      <option key={ruleset} value={ruleset}>
+                        {ruleset}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.filterItem}>
+                  <span>Bike type</span>
+                  <select value={bikeTypeFilter} onChange={(event) => setBikeTypeFilter(event.target.value)}>
+                    <option value=''>All</option>
+                    {filterOptions.bikeTypes.map((bikeType) => (
+                      <option key={bikeType} value={bikeType}>
+                        {bikeType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.filterItem}>
+                  <span>IPN code contains</span>
+                  <input value={ipnFilter} onChange={(event) => setIpnFilter(event.target.value)} placeholder='Search IPN code' />
+                </label>
+
+                <div className={styles.filterItem}>
+                  <span>Feature columns</span>
+                  <MultiSelectDropdown options={availableFeatures} selected={selectedFeatures} onChange={updateSelectedFeatures} placeholder='None' />
+                </div>
+              </div>
+
+              <fieldset className={styles.statusFieldset}>
+                <legend className={styles.statusLegend}>Allocation status</legend>
+                <div className={styles.segmentedFilter}>
+                  {STATUS_OPTIONS.map((option) => {
+                    const checked = statusSelection.includes(option.value);
+                    return (
+                      <label
+                        key={option.value}
+                        className={checked ? styles.segmentedOptionActive : styles.segmentedOption}
+                        title={option.hint}
+                      >
+                        <input
+                          type='checkbox'
+                          checked={checked}
+                          onChange={(event) => toggleStatus(option.value, event.target.checked)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className={styles.helpText}>
+                  A bike is kept when <strong>any</strong> country in scope has <strong>any</strong> selected status. Country
+                  scope is your Territory selection, or every country column when nothing is selected. Selecting nothing
+                  here disables status filtering.
+                </p>
+              </fieldset>
+
+              {visibleFeatureColumns.length ? (
+                <div className={styles.featureFilterGrid}>
+                  {visibleFeatureColumns.map((feature) => (
+                    <label key={`feature-filter-${feature}`} className={styles.filterItem}>
+                      <span>{feature} contains</span>
+                      <input
+                        value={featureFilters[feature] ?? ''}
+                        onChange={(event) => setFeatureFilterValue(feature, event.target.value)}
+                        placeholder='contains'
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
+      </section>
+
       {message ? (
-        <div className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : styles.messageError}`}>
+        <div
+          className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : styles.messageError}`}
+          role={message.type === 'error' ? 'alert' : 'status'}
+        >
           {message.text}
         </div>
       ) : null}
 
-      {rows.length === 0 ? <div className={styles.empty}>No bike allocation records found for the selected filters.</div> : null}
-
       <ConfirmModal
         open={pendingBulkStatus !== null}
-        title={pendingBulkStatus === 'active' ? 'Bulk activate?' : 'Bulk deactivate?'}
-        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${filteredRows.length} items across all selected markets.`}
-        confirmLabel="Confirm"
+        title={pendingBulkStatus === 'active' ? 'Bulk activate on the current page?' : 'Bulk deactivate on the current page?'}
+        description={`This will ${pendingBulkStatus === 'active' ? 'activate' : 'deactivate'} ${currentPageIpnCodes.length} bike(s) x ${countryTargets.length} countr${countryTargets.length === 1 ? 'y' : 'ies'} (${countryTargets.join(', ')}) on the current page only. Bikes on other pages of this filtered result are not touched.`}
+        confirmLabel='Confirm'
         onConfirm={confirmBulkAction}
         onCancel={() => setPendingBulkStatus(null)}
       />
       <Toast message={toastMessage} visible={toastVisible} onDismiss={dismissToast} />
 
-      {rows.length > 0 ? (
-        <div className={styles.tableWrap}>
-          <table className={styles.matrixTable}>
-            <thead className={styles.stickyHeader}>
-              <tr>
-                <th className={styles.stickyBCStatus}>BC Status</th>
-                <th className={styles.stickyFirstColumn}>ipn_code</th>
-                {!effectiveRuleset ? <th>ruleset</th> : null}
-                {visibleFeatureColumns.map((feature) => (
-                  <th key={feature}>{feature}</th>
-                ))}
-                {countryColumns.map((country) => (
-                  <th key={country}>{country}</th>
-                ))}
-              </tr>
-              <tr className={styles.filterRow}>
-                <th className={styles.stickyBCStatusFilter} />
-                <th className={styles.stickyFirstColumnFilter}>
-                  <input
-                    value={ipnFilter}
-                    onChange={(event) => setIpnFilter(event.target.value)}
-                    placeholder="contains"
-                    aria-label="Filter ipn_code"
-                  />
-                </th>
-                {!effectiveRuleset ? <th /> : null}
-                {visibleFeatureColumns.map((feature) => (
-                  <th key={`f-${feature}`}>
-                    <input
-                      value={featureFilters[feature] ?? ''}
-                      onChange={(event) => setFeatureFilterValue(feature, event.target.value)}
-                      placeholder="contains"
-                      aria-label={`Filter ${feature}`}
-                    />
-                  </th>
-                ))}
-                {countryColumns.map((country) => (
-                  <th key={`c-${country}`}>
-                    <select
-                      value={countryFilters[country] ?? 'all'}
-                      onChange={(event) => setCountryFilterValue(country, event.target.value as CountryStatusFilter)}
-                      aria-label={`Filter ${country} status`}
-                    >
-                      <option value="all">All</option>
-                      <option value="active">Active</option>
-                      <option value="not_active">Inactive</option>
-                      <option value="not_configured">Not configured</option>
-                    </select>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr key={`${row.rowRuleset}::${row.ipnCode}`} className={styles.tableBodyRow}>
-                  <td className={styles.stickyBCStatus}>
-                    {bcStatusLoading && !bcStatusBySku[row.ipnCode] ? (
-                      <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking...</span>
-                    ) : bcStatusBySku[row.ipnCode]?.status ? (
-                      bcStatusBySku[row.ipnCode].status === 'NOK' ? (
-                        <span className="nokTooltipWrap" title="BC Status: Not OK — this configuration has not passed BigCommerce validation">
-                          <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
-                          <span className="nokTooltip">BC Status: Not OK — this configuration has not passed BigCommerce validation</span>
-                        </span>
-                      ) : (
-                        <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
-                      )
-                    ) : (
-                      <span className={styles.bcNotChecked}>Not checked</span>
-                    )}
-                  </td>
-                  <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
-                  {!effectiveRuleset ? <td>{row.rowRuleset}</td> : null}
-                  {visibleFeatureColumns.map((feature) => (
-                    <td key={`${row.rowRuleset}-${row.ipnCode}-${feature}`}>{row.featureValues[feature] || ''}</td>
-                  ))}
-                  {countryColumns.map((country) => {
-                    const status = row.countryStatuses[country];
-                    const actionKey = `${row.rowRuleset}:${row.ipnCode}:${country}`;
-                    const isBusy = cellActionKey === actionKey;
-                    const syncDisplay = getSyncDisplay(row.ipnCode, country, status);
-                    return (
-                      <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`}>
-                        <StatusCell
-                          status={status === 'not_active' ? 'inactive' : status}
-                          onToggle={() => void onCountryCellClick(row, country, status)}
-                          onPush={row.hasBcIds ? () => void pushRowToExternal(row, country) : undefined}
-                          disabled={isBusy || bulkActionRunning || pushActionKey === actionKey}
-                          pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey}
-                          statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
-                          pushLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
-                          syncLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
-                          syncTone={syncDisplay.tone}
-                          title={status === 'not_configured' ? 'Open CPQ configurator for this bike + country' : 'Toggle status'}
-                          pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : `${syncDisplay.label}: click to manually retry external PostgreSQL sync for this bike + country`}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {rows.length === 0 ? (
+        <div className={styles.empty}>
+          <strong>No bikes match these filters.</strong>
+          <div className={styles.emptyHint}>Try clearing a status, widening the territory selection, or resetting the ruleset.</div>
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className={styles.tableWrap}>
+            <table className={styles.matrixTable}>
+              <thead className={styles.stickyHeader}>
+                <tr>
+                  <th scope='col' className={styles.stickyBCStatus}>
+                    BC Status
+                  </th>
+                  <th scope='col' className={styles.stickyFirstColumn}>
+                    ipn_code
+                  </th>
+                  {!effectiveRuleset ? <th scope='col'>ruleset</th> : null}
+                  {visibleFeatureColumns.map((feature) => (
+                    <th scope='col' key={feature}>
+                      {feature}
+                    </th>
+                  ))}
+                  {renderedCountries.map((country) => (
+                    <th scope='col' key={country} className={styles.countryHeader}>
+                      <CountryFlagLabel countryCode={country} className={styles.countryHeaderLabel} flagClassName={styles.countryFlag} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.rowRuleset}::${row.ipnCode}`} className={styles.tableBodyRow}>
+                    <td className={styles.stickyBCStatus}>
+                      {bcStatusLoading && !bcStatusBySku[row.ipnCode] ? (
+                        <span className={`${styles.bcBadge} ${styles.bcStatusChecking}`}>Checking…</span>
+                      ) : bcStatusBySku[row.ipnCode]?.status ? (
+                        bcStatusBySku[row.ipnCode].status === 'NOK' ? (
+                          <span className='nokTooltipWrap' title='BC Status: Not OK — this configuration has not passed BigCommerce validation'>
+                            <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
+                            <span className='nokTooltip'>BC Status: Not OK — this configuration has not passed BigCommerce validation</span>
+                          </span>
+                        ) : (
+                          <span className={getBCBadgeClass(bcStatusBySku[row.ipnCode].status)}>{bcStatusBySku[row.ipnCode].status}</span>
+                        )
+                      ) : (
+                        <span className={styles.bcNotChecked}>Not checked</span>
+                      )}
+                    </td>
+                    <td className={styles.stickyFirstColumn}>{row.ipnCode}</td>
+                    {!effectiveRuleset ? <td>{row.rowRuleset}</td> : null}
+                    {visibleFeatureColumns.map((feature) => (
+                      <td key={`${row.rowRuleset}-${row.ipnCode}-${feature}`}>{row.featureValues[feature] || ''}</td>
+                    ))}
+                    {renderedCountries.map((country) => {
+                      const status = row.countryStatuses[country] ?? 'not_configured';
+                      const actionKey = `${row.rowRuleset}:${row.ipnCode}:${country}`;
+                      const isBusy = cellActionKey === actionKey;
+                      const syncDisplay = getSyncDisplay(row.ipnCode, country, status);
+                      const toggleDisabled = isBusy || bulkActionRunning || pushActionKey === actionKey || (!canEdit && status !== 'not_configured');
+                      return (
+                        <td key={`${row.rowRuleset}-${row.ipnCode}-${country}`} className={styles.countryCell}>
+                          <StatusCell
+                            status={status === 'not_active' ? 'inactive' : status}
+                            onToggle={() => void onCountryCellClick(row, country, status)}
+                            onPush={row.hasBcIds && canEdit ? () => void pushRowToExternal(row, country) : undefined}
+                            disabled={toggleDisabled}
+                            pushDisabled={status === 'not_configured' || bulkActionRunning || isBusy || pushActionKey === actionKey || !canEdit}
+                            statusLabel={isBusy ? 'Saving…' : statusLabel(status)}
+                            pushLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
+                            syncLabel={pushActionKey === actionKey ? 'Pushing…' : syncDisplay.label}
+                            syncTone={syncDisplay.tone}
+                            title={
+                              status === 'not_configured'
+                                ? `Open CPQ configurator for ${row.ipnCode} in ${country}`
+                                : canEdit
+                                  ? `Toggle ${row.ipnCode} ${country} (currently ${statusLabel(status)})`
+                                  : 'Read-only access'
+                            }
+                            pushTitle={status === 'not_configured' ? 'No sampler row exists yet for this bike + country' : `${syncDisplay.label}: click to manually retry external PostgreSQL sync for this bike + country`}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <nav className={styles.paginationBar} aria-label='Bike allocation pagination'>
+            <div className={styles.paginationSummary}>
+              Page {pagination.page} of {pagination.totalPages} · {pagination.totalRows} bike
+              {pagination.totalRows === 1 ? '' : 's'} matched · {pagination.pageSize} per page
+            </div>
+            <div className={styles.paginationControls}>
+              <button type='button' onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page <= 1}>
+                Prev
+              </button>
+              {paginationItems.map((item, index) => (
+                <span key={`page-${item}`} className={styles.paginationItem}>
+                  {index > 0 && item - paginationItems[index - 1] > 1 ? (
+                    <span className={styles.paginationEllipsis} aria-hidden='true'>
+                      …
+                    </span>
+                  ) : null}
+                  <button
+                    type='button'
+                    onClick={() => goToPage(item)}
+                    className={item === pagination.page ? styles.paginationCurrent : undefined}
+                    aria-current={item === pagination.page ? 'page' : undefined}
+                    aria-label={`Go to page ${item}`}
+                  >
+                    {item}
+                  </button>
+                </span>
+              ))}
+              <button
+                type='button'
+                onClick={() => goToPage(pagination.page + 1)}
+                disabled={pagination.page >= pagination.totalPages}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
+        </>
+      )}
+
+      <p className={styles.helperText}>
+        <strong>Cell actions:</strong> Active and Inactive are toggles. <strong>Not configured</strong> opens the CPQ
+        configurator with this bike and country pre-loaded — it does not create an allocation row. A toggle writes Neon
+        first, then pushes to external PostgreSQL when BC Status is OK; otherwise the cell shows{' '}
+        <strong>Pending BC</strong> and can be pushed later with <strong>Push all BC OK</strong>, which never changes
+        Active/Inactive. <strong>Refresh external status</strong> is read-only and covers every page of the current
+        filtered result.
+      </p>
     </>
   );
 }

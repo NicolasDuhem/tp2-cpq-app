@@ -59,12 +59,43 @@ Canonical `json_snapshot` and sampler payload source are:
   - rows exist but all inactive → Inactive
   - no rows → Not configured
 
+### Filtering, territory and pagination (2026-09-30)
+
+- Territory hierarchy (Region → Sub-region → Country) is built from active `cpq_country_mappings`
+  rows, restricted to countries that appear as matrix columns, with unmapped countries under
+  `Other → Unmapped`. It is cached in-process for 5 minutes alongside the filter options.
+- The Territory selection is the single country model: it controls rendered columns, the cells
+  allocation-status filtering evaluates, the countries bulk actions write to, and the country
+  scope of the external-status refresh. The old single-country dropdown and the separate flat
+  bulk-country checkbox list were removed.
+- Allocation status filter: `active` / `not_active` ("Inactive") / `not_configured`, multi-select.
+  A bike matches when **any** country in scope has **any** selected status; country scope is the
+  Territory selection, or every column when nothing is selected.
+- All dataset filters (ruleset, bike type, IPN search, feature contains-filters, territory, status)
+  are applied server-side **before** pagination, so `totalRows`/`totalPages` describe the filtered
+  dataset. IPN search is additionally pushed into the sampler SQL. The browser receives one page.
+- Filter state lives in the URL. Changing a dataset filter resets `page=1` and preserves
+  `page_size`; changing page preserves every filter. A page beyond the new total is clamped.
+- A page-number pagination bar (Prev / numbers / ellipses / Next, with a `Page X of Y` and
+  matched-row summary) is rendered directly below the table.
+
 ### User actions
 
 - Click Active/Inactive cell → toggle `CPQ_sampler_result.active` via `/api/sales/bike-allocation/toggle`.
-- Bulk activate/deactivate visible IPNs across selected countries via `/api/sales/bike-allocation/bulk-update`.
-- Click Not configured → resolve launch context (`/api/sales/bike-allocation/launch-context`) then navigate to `/cpq` with replay token.
+- Bulk activate/deactivate via `/api/sales/bike-allocation/bulk-update`. **Scope is the current
+  page only:** the payload carries exactly the IPN codes the server returned for the displayed
+  page, plus the explicitly selected countries. Navigating to another page changes the target set.
+  The confirmation dialog states the exact bike and country counts and says "current page only".
+  Bulk actions are blocked when no country is explicitly selected — "none selected" is never
+  treated as "all countries". There is no password-protected **Update all** mode on this page.
+- Push all BC OK (`/api/sales/bike-allocation/bulk-push`) has the same current-page scope and
+  never changes Active/Inactive.
+- Click Not configured → resolve launch context (`/api/sales/bike-allocation/launch-context`),
+  store the replay payload under the `tp2-cpq-launch-replay:` session-storage key, then navigate
+  to `/cpq` with the replay token. No allocation row is created.
 - Toggle and bulk routes call `revalidatePath('/sales/bike-allocation')`, and the client table issues `router.refresh()` so status repaint is immediate and sourced from fresh server data.
+- Bulk audit rows keep `metadata.scope = current_page`, so the audit trail stays identifiable as
+  current-page behaviour.
 
 ## 8) Dashboard workflow (`/dashboard`)
 

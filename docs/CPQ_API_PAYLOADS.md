@@ -131,6 +131,46 @@ Writes `CPQ_sampler_result.active` for matching cell rows.
 }
 ```
 Bulk updates `CPQ_sampler_result.active` for matching ruleset/IPN/country sets.
+`ipnCodes` is exactly the set of bikes on the operator's **current page**, and
+`countryCodes` is the explicit Territory selection. The route records
+`scope: 'current_page'` on the audit rows. Requires Edit on `sales.bike_allocation`.
+
+## `POST /api/sales/bike-allocation/bulk-push`
+```json
+{
+  "ruleset": "...",
+  "ipnCodes": ["..."],
+  "countryCodes": ["..."]
+}
+```
+Re-pushes current-page bike/country rows to external `variants` then
+`variant_eligibilities`. Does **not** change `active`. Requires Edit.
+
+## `POST /api/sales/bike-allocation/push`
+```json
+{ "ruleset": "...", "ipnCode": "...", "countryCode": "..." }
+```
+Single-cell external push, BC-gated. Requires Edit.
+
+## `POST /api/sales/bike-allocation/external-status`
+```json
+{
+  "filters": {
+    "ruleset": "...",
+    "bike_type": "...",
+    "countryCodes": ["GB"],
+    "ipnSearch": "...",
+    "allocationStatuses": ["active", "not_active", "not_configured"],
+    "featureFilters": { "Frame Colour": "green" }
+  }
+}
+```
+**Contract change (2026-09-30):** this route previously took `filters` plus a separate
+`filterCriteria` object (`ipnFilter`, `featureFilters`, `countryStatusFilters`). Territory,
+status and search filtering now all live on `filters`, so a single object describes the
+dataset and `filterCriteria` is no longer read. Read-only; requires Read. The server
+rebuilds the filtered dataset across every page and performs one batched
+`variant_eligibilities` lookup, never a per-cell query.
 
 ## `POST /api/sales/bike-allocation/launch-context`
 ```json

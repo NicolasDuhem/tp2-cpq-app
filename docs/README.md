@@ -36,3 +36,17 @@ The docs are intentionally code-derived and must be updated with behavior change
 The QPart allocation page adds a password-protected **Update all** mode for bulk activate/deactivate. Current-page bulk behavior remains the default. When enabled, the backend validates the update-all cookie and rebuilds the full filtered target set across every page before updating `qpart_country_allocation` rows for the selected countries.
 
 The same page includes a compact `OK` / `NOK` BC status filter, and QPart external PostgreSQL pushes use QPart-only values (`Qpart`) for ruleset, forecast country code, and detail id. Bike allocation external push logic is not changed by this override.
+
+
+### Sales Bike Allocation redesign (2026-09-30)
+
+`/sales/bike-allocation` now has a Region → Sub-region → Country Territory selector, country
+flags, server-applied filters, a visible page-number pagination bar and explicitly
+current-page bulk scope. See `ARCHITECTURE.md` for the design and `PAGES_AND_COMPONENTS.md`
+for the URL/filter contract and mutation semantics.
+
+Shared, unit-tested helpers live in `lib/sales/allocation-territory.ts` (territory hierarchy,
+pagination range, flag URL, status matching, URL encoding). Run them with `npm run test`
+(`node --test`); `npm run typecheck` runs `tsc --noEmit`.
+
+Screenshots of the finished UX are in `docs/screenshots/`.

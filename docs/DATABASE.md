@@ -35,7 +35,7 @@ This document reflects what current code reads/writes and what `sql/schema.sql` 
 
 - `CPQ_setup_account_context`: account/customer/currency/language + region/sub-region/country setup
 - `CPQ_setup_ruleset`: ruleset metadata + bike_type + namespace/header defaults
-- `cpq_country_mappings`: region/sub-region/country master mapping used by setup dropdowns
+- `cpq_country_mappings`: region/sub-region/country master mapping used by setup dropdowns, by the QPart allocation Territory filter, and (since 2026-09-30) by the Bike Allocation Territory filter. Bike Allocation reads it read-only through a 5-minute in-process cache to build its Region -> Sub-region -> Country hierarchy; it writes nothing to this table.
 
 ### Image/layer mapping table
 
