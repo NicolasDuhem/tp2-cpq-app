@@ -2,7 +2,35 @@
 
 This is the brief for an independent reviewer who will drive the **UAT** application in a real browser and compare what actually happens against what [`docs/data-journeys.html`](./data-journeys.html) claims.
 
-The journey map was built by reading the code. It has never been run against a live system. **The point of this exercise is to find the gap** between the documented behaviour and the observed behaviour — and a gap is a useful result, not a failure.
+**The point of this exercise is to find the gap** between the documented behaviour and the observed behaviour — and a gap is a useful result, not a failure.
+
+---
+
+## Run 1 — completed 30 September 2026
+
+> **This guide has been used once, and its results are already folded into the map.** Seventeen of the nineteen journeys were opened against `tp2-cpq-app-uat.vercel.app` (deployment `dpl_9qSgkHYHTRLoAHtktPwpWRYPnHbW`) with every request and response body captured, and **fifteen produced step-level results**. Eight claims were refuted and corrected, ten undocumented calls were added, and the headline risk — a failed external push reported as success, in green — was confirmed exactly.
+>
+> **Read [`DATA_METRO_MAP_AUDIT.md` §6b](./DATA_METRO_MAP_AUDIT.md#6b-what-the-uat-validation-run-changed) before re-running anything.** It lists what was confirmed, what was refuted, what was added and, most importantly for a second run, **what is still unobserved**. The journeys file now marks every checked step with its verdict, so a step with no flag is one nobody has watched happen.
+
+### What a second run should target
+
+The gaps left by run 1, in order of value:
+
+1. **Every production external PostgreSQL write path.** The external database accepts only the live tool's IP address, so from UAT every push times out after ~9.5 s and nothing about the two-table write order, the `Qpart` marker literals or the batch concurrency could be observed. **This cannot be closed from UAT at all** — it needs a run from a host whose IP the external database accepts.
+2. **The replay overwrite apply path** (`#replay-overwrite` steps 5–10): archive, the guarded update, the single external update. Run 1 stopped at the Apply button. These are the most carefully fenced writes in the codebase and the only ones still entirely unobserved. A safe target exists: the throwaway reference **`CFG-20260930-633B97DA`**, created by run 1.
+3. **`#qpart-updateall`** and **`#seq-resync`** — both need a password that run 1 did not have. The *Update all* unlock is a genuine second factor with a hardcoded fallback; worth confirming the dialog wording changes when it is armed, which run 1 could not check.
+4. **`#qpart-picture`** — needs a working `BLOB_READ_WRITE_TOKEN`. The delete ordering hazard (file removed before the record) is still unobserved.
+5. **`#qpart-translate` steps 5–6** — needs a real OpenAI key. Note that run 1 proved no spend occurs with a placeholder key, because the call is rejected at authentication.
+6. **`#signin`** — never run, because the tester was already signed in. The login POST, the focus trigger and the redirect are all unobserved.
+7. **`#create-user`** — still out of scope (see the hard rules). This leaves the audit's **most serious** finding, the fail-open authorization guard, resting on code-reading alone.
+
+### Clean-up still owed from run 1
+
+| What | Where |
+|---|---|
+| Part `ZZ-CLAUDE-TEST-0930` (id 2633) | `/qpart/parts/2633` — a throwaway part, safe to delete |
+| `CFG-20260930-633B97DA`, `CFG-20260930-89C1F08A` with sampler rows **599 and 600** | Both inserted `active = true`, so two G Line bikes are allocatable in AT. Run 1 could not check this on Bike Allocation, where G Line was not offered as a ruleset filter — **worth checking before a demo** |
+| 17 `cpq_image_management` rows, 18 sampler rows marked processed | The picture sync's watermark is one-way and cannot be moved back from the interface |
 
 ---
 
@@ -308,5 +336,9 @@ Then answer these five directly:
 ## 7. Feeding the result back
 
 Send back the filled tables and the five answers. Each confirmed **GAP**, **MISSING** or **EXTRA** should become a correction to `docs/data-journeys.html` and, where the same claim appears there, to `docs/data-metro-map.html`.
+
+**How run 1's results were applied, as the pattern to follow.** Each refuted claim had its step text rewritten — not annotated, rewritten, so the step no longer says the wrong thing — and gained a `uat:{v:'GAP', t:'what was actually observed'}` entry recording that it had been wrong and what replaced it. Undocumented calls became new steps flagged `MISSING`. Payload and label differences became `MINOR`. Steps that could not be exercised were flagged `ENV` (a dependency was off or unreachable) or `BLOCKED` (not reachable from the interface) rather than left looking verified. The same corrections went into the metro map at operation level, eight new findings went into both artefacts, and all five test suites were re-run. **Nothing was left saying two different things in two places** — that is the part worth copying.
+
+Then update the run record at the top of this guide, so the next reviewer starts from the gaps rather than from the beginning.
 
 Both files carry `meta.commit` / an audited-commit note. If the UAT deployment is running a different commit than the one the map was built from (`cf1000de5625801a57164a957fd6b9402cd881ce`), **say so first** — a difference in behaviour may simply be a difference in version, and that changes how every other finding should be read.
