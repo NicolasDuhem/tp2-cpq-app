@@ -299,3 +299,7 @@ Separate from the full push path documented above. The controlled overwrite on
   - `skipped` — replay returned no new Detail ID, or the previous sampler row had no item code/country, so no safe match key exists. Nothing is attempted.
   - `warning` — the update ran and matched **no** row. Reported explicitly; no insert, no widened WHERE, no retry.
   - `failed` — the external statement threw. Neon stays updated and the error text is surfaced verbatim; nothing is rolled back automatically and the inconsistency is not hidden.
+
+## Accreditation allocation external table (2026-11-20)
+
+Separate from the `variants` / `variant_eligibilities` push above and does not touch those tables. `/sales/accreditation-allocation` writes `${EXTERNAL_PG_SCHEMA}.accreditation_category_eligibilities` through `lib/external-pg/accreditation-eligibility.ts`, using the same `withExternalPgClient` connection. Each push replaces a full country inside one transaction (delete that country's rows for the channel, then insert), with the **effective** category state per accreditation level. Create the table first with `sql/external/2026-11-20_accreditation_category_eligibilities.sql`. See `docs/ACCREDITATION_ALLOCATION.md`.

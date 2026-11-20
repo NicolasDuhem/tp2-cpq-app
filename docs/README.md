@@ -21,6 +21,7 @@ The docs are intentionally code-derived and must be updated with behavior change
 - `PAGES_AND_COMPONENTS.md` — detailed page-by-page and component-by-component documentation.
 - `PAGE_DATA_POINTS.md` — page-level UI data-point/source-target audit + Admin Data point viewer scope.
 - `EXTERNAL_POSTGRES_ROW_PUSH.md` — external Azure PostgreSQL row-push behavior, env vars, and upsert-key SQL prep.
+- `ACCREDITATION_ALLOCATION.md` — `/sales/accreditation-allocation`: BigCommerce category eligibility per country × accreditation level, Neon tables, external table, APIs, permissions, go-live checklist.
 
 ## Audit artifacts
 - `DOC_GAP_ANALYSIS.md` — current audit of doc-vs-code gaps and what was fixed.

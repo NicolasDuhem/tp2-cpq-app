@@ -1,0 +1,218 @@
+/*
+ * Accreditation allocation page.
+ *
+ * The page reuses the Bike Allocation styles (sales-bike-allocation-page.module.css)
+ * for the toolbar, popovers, matrix and cells, so both pages look the same. This file
+ * only adds what the category tree and the country x level columns need. It never
+ * overrides the bike module globally: every rule here is scoped to these classes.
+ */
+
+.categoryColumn {
+  left: 0 !important;
+  min-width: 300px;
+  max-width: 420px;
+  font-weight: 400 !important;
+}
+
+.categoryCellInner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.caretButton,
+.caretSpacer {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.caretButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d5dbe8;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f3f7e;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.caretButton:hover {
+  background: #eef3ff;
+}
+
+.categoryName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.depth1 .categoryName {
+  font-weight: 800;
+  color: #0f1f45;
+}
+
+.depth2 .categoryName {
+  font-weight: 700;
+}
+
+.categoryId {
+  color: #8a94a6;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.miniTag {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+/* Ancestor shown only to keep a filtered tree readable; not part of bulk scope. */
+.contextRow td {
+  background: #fbfbfd;
+}
+
+.contextRow .categoryName {
+  color: #94a3b8;
+}
+
+.levelHeader {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.levelHeaderLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.countryGroupStart {
+  border-left: 2px solid #c9d3e6 !important;
+}
+
+/* Own state Active but a parent category is Inactive: not effectively eligible. */
+.cellBlocked {
+  opacity: 0.5;
+}
+
+.cascadeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.infoBar {
+  font-size: 11px;
+  color: #64748b;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* --- modals (copy country, manage levels) ------------------------------------ */
+
+.modalCard {
+  width: min(760px, 100%) !important;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.modalField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modalField select,
+.modalField input {
+  border: 1px solid #c6d1ea;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.modalWarning {
+  border: 1px solid #f3d38a;
+  background: #fff8e6;
+  color: #7a5200;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.levelsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.levelsTable th,
+.levelsTable td {
+  border-bottom: 1px solid #ececec;
+  padding: 6px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.levelsTable input {
+  border: 1px solid #c6d1ea;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.levelsTable .orderInput {
+  width: 70px;
+}
+
+.removedLevel td {
+  color: #94a3b8;
+  background: #fafafa;
+}
+
+.setupCard {
+  border: 1px solid #f3d38a;
+  background: #fff8e6;
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: #5c3d00;
+  font-size: 13px;
+}
+
+.setupCard code {
+  background: #fff;
+  border: 1px solid #f0dca8;
+  border-radius: 4px;
+  padding: 1px 5px;
+}

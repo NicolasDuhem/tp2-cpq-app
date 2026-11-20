@@ -17,6 +17,7 @@ const links: NavLink[] = [
   { href: '/cpq/process', label: 'Process', section: 'Information' },
   { href: '/sales/bike-allocation', label: 'Bike Allocation', pageKey: 'sales.bike_allocation', section: 'Sales Allocation' },
   { href: '/sales/qpart-allocation', label: 'QPart Allocation', pageKey: 'sales.qpart_allocation', section: 'Sales Allocation' },
+  { href: '/sales/accreditation-allocation', label: 'Accreditation Allocation', pageKey: 'sales.accreditation_allocation', section: 'Sales Allocation' },
   { href: '/sales/allocation-audit', label: 'Allocation audit', pageKey: 'sales.allocation_audit', section: 'Sales Allocation' },
   { href: '/cpq', label: 'Bike Builder', pageKey: 'cpq.configure', section: 'Bike Configurator' },
   { href: '/cpq/setup?tab=accounts', label: 'Setup Accounts', pageKey: 'cpq.setup.accounts', section: 'Bike Configurator' },

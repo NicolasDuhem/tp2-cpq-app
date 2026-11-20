@@ -22,6 +22,7 @@ Release process smoke-test note: this README-only update is intended to validate
   - Active/Inactive now updates Neon `CPQ_sampler_result.active` and then automatically pushes external PostgreSQL `variants` and `variant_eligibilities` when BC status is OK. The cell also shows a compact external sync state (`Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync`), and **Push all BC OK** retries eligible current-scope rows.
   - Supports route filters `country_code`, `ruleset`, and `bike_type` for deep-link drill-down from dashboard views.
   - Toggle/bulk mutations revalidate + refresh the route so UI status updates immediately from `CPQ_sampler_result.active`.
+- `/sales/accreditation-allocation` → Accreditation Allocation: BigCommerce Brompton B2B category eligibility per country × accreditation level (Gold/Silver/Bronze, editable). Neon is the master copy; every change is pushed per country to external PostgreSQL `accreditation_category_eligibilities`. Includes copy-country, bulk, category sync from BigCommerce and level management. Permission key `sales.accreditation_allocation`. See `docs/ACCREDITATION_ALLOCATION.md`.
 - `/sales/qpart-allocation` → sales territory allocation matrix for QPart spare parts.
   - Active/Inactive now updates Neon `qpart_country_allocation.active` and then automatically pushes external PostgreSQL `variants` and `variant_eligibilities` when BC status is OK. The cell also shows a compact external sync state (`Pushed`, `Pending BC`, `Error`, `Unknown`, or `Out of sync`), and **Push all BC OK** retries eligible rows in current-page or Update-all filtered scope.
   - Active/Inactive only (no Not configured state).
@@ -53,6 +54,7 @@ Canonical snapshot source for save/sampler is latest Configure snapshot, fallbac
 - Operational/support snapshots and allocation state: `CPQ_sampler_result` (`active` is authoritative for sales allocation status: Active=true, Inactive=false, Not configured=no row)
 - QPart sales territory allocation state: `qpart_country_allocation` (`active` is authoritative, one row per `part_id + country_code`)
 - Setup master data: `CPQ_setup_account_context`, `CPQ_setup_ruleset`
+- Accreditation allocation: `accreditation_levels`, `accreditation_bc_categories`, `accreditation_category_eligibility`, `accreditation_allocation_audit_log` (isolated from bike/QPart allocation tables)
 - Layered preview + bulk-ignore behavior: `cpq_image_management`
 - Dashboard aggregation source: `CPQ_sampler_result` + `CPQ_setup_ruleset` bike-type mapping + `cpq_country_mappings` territory metadata + `cpq_image_management` completeness status
 

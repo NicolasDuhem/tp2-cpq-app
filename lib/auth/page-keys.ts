@@ -2,6 +2,7 @@ export const PAGE_KEYS = {
   bike: 'sales.bike_allocation',
   qpart: 'sales.qpart_allocation',
   salesAllocationAudit: 'sales.allocation_audit',
+  salesAccreditationAllocation: 'sales.accreditation_allocation',
   cpqConfigure: 'cpq.configure',
   cpqSetup: 'cpq.setup',
   cpqSetupAccounts: 'cpq.setup.accounts',

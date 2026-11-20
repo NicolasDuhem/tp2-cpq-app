@@ -331,3 +331,14 @@ External bike allocation pushes use the extracted full `ForecastAs` as `public.v
 - The admin CPQ replay overwrite updates external `variant_eligibilities."DetailId"` (only that column) for the applied bike/country row, so the external eligibility keeps pointing at the CPQ detail id that the replay generated.
 - Match key includes the previous `"DetailId"` alongside `"Sku"` and `"CountryCode"`, which prevents multiple/unrelated eligibility rows for the same bike/country from being changed.
 - No external insert, no `public.variants` write, no BigCommerce call. Full details in `docs/EXTERNAL_POSTGRES_ROW_PUSH.md`.
+
+## Accreditation allocation tables (2026-11-20)
+
+Migration `sql/migrations/2026-11-20_accreditation_allocation.sql` (additive, re-runnable):
+
+- `accreditation_levels` — editable levels (`code` stable and unique, `label`, `display_order`, `is_active` soft-delete). Seeded GOLD/SILVER/BRONZE.
+- `accreditation_bc_categories` — local copy of one BigCommerce channel's category tree, PK (`channel_id`, `category_id`), with `parent_id`, `name`, `depth`, `sort_index`, `is_visible`, `is_deleted`, `synced_at`.
+- `accreditation_category_eligibility` — unique (`channel_id`, `country_code`, `accreditation_level_id`, `category_id`) → `is_active`. A missing row means inactive. Only cells whose state changes are written.
+- `accreditation_allocation_audit_log` — one row per changed cell and per level/category-sync action.
+
+External PostgreSQL: `accreditation_category_eligibilities` (DDL in `sql/external/`), replaced per country as a snapshot of the effective state. No existing Neon or external table is modified. Details: `docs/ACCREDITATION_ALLOCATION.md`.

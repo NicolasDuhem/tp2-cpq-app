@@ -532,3 +532,11 @@ No status selected means no status filtering.
 | `/cpq/ui-docs` | detailed content rendered only in admin mode | none |
 | `/sales/bike-allocation` | accessible to all | none |
 | `/api/cpq/init` + `/api/cpq/configure` | no auth gates in route | `CPQ_USE_MOCK` switches to mock mode |
+
+## Page: Sales - accreditation allocation (2026-11-20)
+
+- Route `/sales/accreditation-allocation` → `components/sales/sales-accreditation-allocation-page.tsx` (server: auth and data) → `sales-accreditation-allocation-table.client.tsx`.
+- Same toolbar and matrix design as Bike Allocation, reusing `ToolbarPopover`, `AllocationMatrixCell`, `CountryFlagLabel`, `ConfirmModal`, `Toast` and the Bike Allocation CSS module, plus a small page module for the category tree.
+- Rows are the BigCommerce Brompton B2B category tree (3 levels, collapsible). There is one column per country × accreditation level.
+- URL contract: `countries`, `levels`, `q`, `status` (client-side filtering, URL kept in sync with `history.replaceState`).
+- Copy country and Manage levels open as modals. Full behaviour: `docs/ACCREDITATION_ALLOCATION.md`.

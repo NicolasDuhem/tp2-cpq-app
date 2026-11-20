@@ -89,3 +89,9 @@ Use current session actor (`app_users.id`), `page_key`, old/new values, timestam
   - system admin → bypass.
 - Server-side enforcement is the control; the disabled button is only a UI affordance.
 - The overwrite writes an archive row (`app_cpq_replay_overwrite_archive`) capturing the acting user, but deliberately does **not** write `app_allocation_audit_log`.
+
+## Accreditation allocation permission (2026-11-20)
+
+- New page key: `sales.accreditation_allocation` (added to `PAGE_KEYS` as `salesAccreditationAllocation`, seeded by `sql/migrations/2026-11-20_accreditation_allocation.sql`, nav entry **Accreditation Allocation** in Sales Allocation).
+- `read` → view, refresh external status, CSV export. `edit` → toggle, bulk, copy country, push, BigCommerce category sync. `admin` → add/rename/reorder/remove/restore accreditation levels. System admin bypasses.
+- Changes are audited in the separate `accreditation_allocation_audit_log` table (not `app_allocation_audit_log`). See `docs/ACCREDITATION_ALLOCATION.md`.
